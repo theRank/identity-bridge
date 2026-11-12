@@ -25,7 +25,8 @@ export function fakeFetch(respond: Responder, options: { ignoreSignal?: boolean 
             url: request.url,
             method: request.method,
             headers: request.headers,
-            body: await request.text(),
+            // Decoded by hand: workerd warns when .text() reads a type such as application/secevent+jwt
+            body: new TextDecoder().decode(await request.arrayBuffer()),
             redirect: request.redirect,
             signal,
         }

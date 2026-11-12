@@ -55,7 +55,7 @@ export async function ecKeyPair(options: { alg?: EcAlgorithm; kid?: string } = {
 }
 
 // An IdP's JWKS document serving these keys' public halves
-export function idpJwks(...pairs: IdpKeyPair[]): { keys: JsonWebKey[] } {
+export function idpJwks(...pairs: IdpKeyPair[]): { keys: IdpKeyPair['publicJwk'][] } {
     return { keys: pairs.map((pair) => pair.publicJwk) }
 }
 
