@@ -29,10 +29,10 @@ interface Answer {
 
 const WEBHOOKS = '/webhooks/'
 
-const routes: Routes = { token: tokenRoute, jwks: jwksRoute, health: healthRoute, webhooks: webhooksRoute }
+const ROUTES: Routes = { token: tokenRoute, jwks: jwksRoute, health: healthRoute, webhooks: webhooksRoute }
 
 export function handle(request: Request, runtime: Runtime | RuntimeFailure, deps: Deps): Promise<Response> {
-    return dispatch(request, runtime, deps, routes)
+    return dispatch(request, runtime, deps, ROUTES)
 }
 
 // handle with the route handlers passed in, so tests can substitute them
