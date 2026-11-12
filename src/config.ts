@@ -16,7 +16,7 @@ const SCHEME = /^([a-z][a-z0-9+.-]*):/i
 // new URL() gives URLs of schemes other than http and https the origin "null", so those are checked by shape
 const OTHER_ORIGIN = /^[a-z][a-z0-9+.-]*:\/\/[^/?#]+$/
 // The URL parser strips these silently, so a raw string holding them is not the URL it parses to
-const SPACE_OR_CONTROL = /[\u0000- \u007f]/
+const SPACE_OR_CONTROL = /[\x00-\x20\x7f]/
 const PLAIN_KEY = /^[\w-]{1,64}$/
 const MAX_QUOTED = 64
 
