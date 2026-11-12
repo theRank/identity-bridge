@@ -70,6 +70,12 @@ describe('readBody', () => {
         const { body } = stream([new Uint8Array([0x61, first!]), new Uint8Array([second!, 0x62])])
         expect(await readBody(post(body), 16)).toBe('aéb')
     })
+
+    it('keeps a leading byte order mark, so the text is exactly what was signed', async () => {
+        expect(await readBody(post('﻿{"type":"user.created"}'), 64)).toBe('﻿{"type":"user.created"}')
+        const { body } = stream([new Uint8Array([0xef, 0xbb]), new Uint8Array([0xbf, 0x7b, 0x7d])])
+        expect(await readBody(post(body), 64)).toBe('﻿{}')
+    })
 })
 
 describe('json', () => {

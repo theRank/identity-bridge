@@ -1,12 +1,13 @@
 import type { LogCode, OAuthErrorCode } from './types'
 
 // null when over the limit. A declared Content-Length over it is refused unread, but the header is not
-// trusted: the bytes actually read are counted, and reading stops at the first byte past the limit.
+// trusted: the bytes actually read are counted, and reading stops at the first chunk that crosses the limit.
+// A leading BOM is kept, so valid UTF-8 comes back exactly as sent, as a signature over the raw body needs.
 export async function readBody(request: Request, maxBytes: number): Promise<string | null> {
     if (Number(request.headers.get('content-length')) > maxBytes) return null
     if (!request.body) return ''
     const reader = request.body.getReader()
-    const decoder = new TextDecoder()
+    const decoder = new TextDecoder('utf-8', { ignoreBOM: true })
     let size = 0
     let text = ''
     for (;;) {
