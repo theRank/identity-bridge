@@ -1,7 +1,6 @@
 // Keys are generated per run, so no key material is ever committed
 
 export interface BridgeKeys {
-    // The SIGNING_KEYS secret value
     json: string
     active: JsonWebKey
     retired: JsonWebKey[]
@@ -54,7 +53,6 @@ export async function ecKeyPair(options: { alg?: EcAlgorithm; kid?: string } = {
     return idpKeyPair(pair, alg, kid, EC_PUBLIC)
 }
 
-// An IdP's JWKS document serving these keys' public halves
 export function idpJwks(...pairs: IdpKeyPair[]): { keys: IdpKeyPair['publicJwk'][] } {
     return { keys: pairs.map((pair) => pair.publicJwk) }
 }

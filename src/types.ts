@@ -1,5 +1,5 @@
-// Shared types. The configuration types describe what the parser returns, with every default applied,
-// so consumers never re-apply defaults. Records are built with a null prototype: indexing any key is safe.
+// The configuration types describe what the parser returns, with every default applied, so consumers never
+// re-apply defaults. Records are built with a null prototype: indexing any key is safe.
 
 export type IdpAlgorithm = 'RS256' | 'RS384' | 'RS512' | 'PS256' | 'ES256' | 'ES384' | 'EdDSA'
 

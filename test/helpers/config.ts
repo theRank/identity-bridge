@@ -1,7 +1,6 @@
-// Configuration documents for parseConfig, shaped like the two deployments the contract describes. Each call
-// returns a fresh object, so a test can change it before serializing.
+// Configuration documents for parseConfig, shaped like a Clerk and a Casdoor deployment. Each call returns a
+// fresh object, so a test can change it before serializing.
 
-// A Clerk deployment, one Clerk application per product
 export function clerkConfig() {
     return {
         issuer: 'https://id.acme.example',
@@ -30,7 +29,6 @@ export function clerkConfig() {
     }
 }
 
-// A Casdoor deployment: one shared instance serving two products, applications using the JWT-Custom format
 export function casdoorConfig() {
     return {
         issuer: 'https://id.cn.acme.example',
