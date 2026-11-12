@@ -49,12 +49,12 @@ async function answer(request: Request, runtime: Runtime | RuntimeFailure, deps:
     if (!found) return { route: 'other', response: empty(404), ctx: {} }
     const { route, methods, handler, ctx } = found
     if (!methods.includes(request.method)) return { route, response: empty(405, { allow: methods.join(', ') }), ctx }
-    if ('reason' in runtime) return failed(route, ctx, 'runtime_unavailable')
+    if ('reason' in runtime) return failureResponse(route, ctx, 'runtime_unavailable')
     try {
         return { route, response: await handler(request, runtime, deps, ctx), ctx }
     } catch {
         // Never logged: the error may quote a token or a payload
-        return failed(route, ctx, 'internal_error')
+        return failureResponse(route, ctx, 'internal_error')
     }
 }
 
@@ -68,7 +68,7 @@ function match(path: string, routes: Routes): Match | undefined {
     return undefined
 }
 
-function failed(route: Route, ctx: RouteContext, code: LogCode): Answer {
+function failureResponse(route: Route, ctx: RouteContext, code: LogCode): Answer {
     ctx.code = code
     if (route === 'health') return { route, response: json(503, { status: 'unavailable' }), ctx }
     if (route === 'token') return { route, response: oauthError(500, 'server_error', code), ctx }
