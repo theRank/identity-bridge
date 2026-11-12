@@ -40,9 +40,13 @@ function parseDocument(at: At): Config {
     const region = doc.optional('region')?.matching(REGION)
     const tokenTtlSeconds = doc.optional('tokenTtlSeconds')?.integer(60, 3600) ?? 900
     const idps = idRecord(doc.required('idps'), true, parseIdp)
-    const products = idRecord(doc.required('products'), true, parseProduct)
+    const bound: Bound[] = []
+    const products = idRecord(doc.required('products'), true, (item, id) => parseProduct(item, id, idps, bound))
+    requireClientBinding(bound)
     const sources = doc.optional('webhookSources')
-    const webhookSources = sources ? idRecord(sources, false, parseSource) : nullRecord<WebhookSourceConfig>()
+    const webhookSources = sources
+        ? idRecord(sources, false, (item, id) => parseSource(item, id, idps, products))
+        : nullRecord<WebhookSourceConfig>()
     return { issuer, ...present('region', region), tokenTtlSeconds, idps, products, webhookSources }
 }
 
@@ -90,13 +94,39 @@ function parseClaims(at: At | undefined): ClaimMapping {
     }
 }
 
-function parseProduct(at: At, id: string): ProductConfig {
+interface Bound {
+    at: At
+    idpAt: At
+    issuer: string
+    binding: IdpBinding
+}
+
+function parseProduct(at: At, id: string, idps: Record<string, IdpConfig>, allBound: Bound[]): ProductConfig {
     const product = at.fields(['idps', 'allowedOrigins', 'events'])
+    const bound = product.required('idps').items(true).map((item) => parseBinding(item, idps))
+    // The token's iss alone selects the binding
+    bound.forEach(({ idpAt, issuer }, index) => {
+        const first = bound.findIndex((other) => other.issuer === issuer)
+        if (first !== index) idpAt.fail(`issuer ${quote(issuer)} is already bound by idps[${first}]`)
+    })
+    allBound.push(...bound)
     return {
         id,
-        idps: product.required('idps').items(true).map(parseBinding),
+        idps: bound.map(({ binding }) => binding),
         allowedOrigins: product.optional('allowedOrigins')?.items(false).map(origin) ?? [],
         ...present('events', parseEvents(product.optional('events'))),
+    }
+}
+
+// Products sharing an issuer, as on one Casdoor instance, accept each other's tokens unless every binding
+// names its clients. Each product binds an issuer at most once, so the count per issuer is a count of products.
+function requireClientBinding(bound: Bound[]): void {
+    const products = new Map<string, number>()
+    for (const { issuer } of bound) products.set(issuer, (products.get(issuer) ?? 0) + 1)
+    for (const { at, issuer, binding } of bound) {
+        if ((products.get(issuer) ?? 0) > 1 && !binding.clientIds && !binding.authorizedParties) {
+            at.fail(`must list clientIds or authorizedParties, because issuer ${quote(issuer)} is bound by several products`)
+        }
     }
 }
 
@@ -104,13 +134,16 @@ function parseEvents(at: At | undefined): ProductConfig['events'] {
     return at && { url: at.fields(['url']).required('url').https() }
 }
 
-function parseBinding(at: At): IdpBinding {
-    const binding = at.fields(['idp', 'clientIds', 'authorizedParties'])
-    return {
-        idp: binding.required('idp').string(),
-        ...present('clientIds', binding.optional('clientIds')?.items(true).map((item) => item.nonEmptyString())),
-        ...present('authorizedParties', binding.optional('authorizedParties')?.items(true).map((item) => item.nonEmptyString())),
+function parseBinding(at: At, idps: Record<string, IdpConfig>): Bound {
+    const fields = at.fields(['idp', 'clientIds', 'authorizedParties'])
+    const idpAt = fields.required('idp')
+    const idp = reference(idpAt, idps, 'idp')
+    const binding = {
+        idp: idp.id,
+        ...present('clientIds', fields.optional('clientIds')?.items(true).map((item) => item.nonEmptyString())),
+        ...present('authorizedParties', fields.optional('authorizedParties')?.items(true).map((item) => item.nonEmptyString())),
     }
+    return { at, idpAt, issuer: idp.issuer, binding }
 }
 
 function origin(at: At): string {
@@ -122,7 +155,7 @@ function origin(at: At): string {
     return at.fail('must be an origin')
 }
 
-function parseSource(at: At, id: string): WebhookSourceConfig {
+function parseSource(at: At, id: string, idps: Record<string, IdpConfig>, products: Record<string, ProductConfig>): WebhookSourceConfig {
     const source = at.fields(['type', 'idp', 'organization', 'uidField', 'products'])
     const typeAt = source.required('type')
     const type = typeAt.value
@@ -130,14 +163,35 @@ function parseSource(at: At, id: string): WebhookSourceConfig {
     const organization =
         type === 'casdoor' ? source.required('organization', 'required for casdoor sources').nonEmptyString() : undefined
     if (type === 'clerk') source.optional('organization')?.fail('not allowed for clerk sources')
-    const idp = source.required('idp').string()
-    const uidAt = source.optional('uidField')
-    const uidField = uidAt?.nonEmptyString()
-    if (type === 'clerk' && uidField !== undefined && uidField !== 'external_id') uidAt?.fail('must be "external_id" for clerk sources')
-    const products = source.required('products').items(true).map((item) => item.string())
-    const uid = present('uidField', uidField)
-    if (organization === undefined) return { id, type: 'clerk', idp, ...uid, products }
-    return { id, type: 'casdoor', idp, organization, ...uid, products }
+    const idp = reference(source.required('idp'), idps, 'idp')
+    const uid = present('uidField', parseUidField(source, type, idp))
+    // Event sub values come from this IdP, so they match only the token sub values of products that bind it
+    const targets = source.required('products').items(true).map((item) => {
+        const product = reference(item, products, 'product')
+        if (!product.events) item.fail(`product ${quote(product.id)} has no events`)
+        if (!product.idps.some((binding) => binding.idp === idp.id)) item.fail(`product ${quote(product.id)} does not bind idp ${quote(idp.id)}`)
+        return product.id
+    })
+    if (organization === undefined) return { id, type: 'clerk', idp: idp.id, ...uid, products: targets }
+    return { id, type: 'casdoor', idp: idp.id, organization, ...uid, products: targets }
+}
+
+// Webhooks derive the same user id as tokens only when they read the override the IdP's uid claim carries
+function parseUidField(source: Fields, type: WebhookSourceConfig['type'], idp: IdpConfig): string | undefined {
+    if (idp.claims.uid === undefined) {
+        source.optional('uidField')?.fail(`not allowed, because idp ${quote(idp.id)} maps no uid claim`)
+        return undefined
+    }
+    const at = source.required('uidField', `required, because idp ${quote(idp.id)} maps a uid claim`)
+    const uidField = at.nonEmptyString()
+    // Clerk's override lives in external_id, the one backend-only field in its tokens and in every user event
+    if (type === 'clerk' && uidField !== 'external_id') at.fail('must be "external_id" for clerk sources')
+    return uidField
+}
+
+function reference<T>(at: At, record: Record<string, T>, kind: string): T {
+    const key = at.string()
+    return record[key] ?? at.fail(`unknown ${kind} ${quote(key)}`)
 }
 
 // A value in the document with its JSON path, so that every check can say where it failed

@@ -402,3 +402,123 @@ describe('parseConfig field rules', () => {
         expect(rejection(edited(base, edit))).toBe(message)
     })
 })
+
+const SHARED_ISSUER = 'must list clientIds or authorizedParties, because issuer "https://casdoor.example" is bound by several products'
+
+// A second IdP record with the Casdoor example's issuer, as when two applications of one instance are configured apart
+function secondCasdoorRecord(doc: Doc) {
+    doc.idps['casdoor-globex'] = { ...doc.idps.casdoor }
+    doc.products.globex.idps = [{ idp: 'casdoor-globex' }]
+}
+
+function otherIdp(doc: Doc) {
+    doc.idps.other = { issuer: 'https://other.example', jwksUri: 'https://other.example/jwks', claims: { uid: 'uid' } }
+}
+
+// A product with events that binds an IdP other than the Casdoor source's
+function betaProduct(doc: Doc) {
+    otherIdp(doc)
+    doc.products.beta = { idps: [{ idp: 'other' }], events: { url: 'https://beta.example/events' } }
+}
+
+describe('parseConfig cross-references', () => {
+    it.each<Case>([
+        ['an unknown binding idp', 'clerk', (doc) => (doc.products.acme.idps[0].idp = 'clerk-acm'), 'products.acme.idps[0].idp: unknown idp "clerk-acm"'],
+        ['a binding idp named constructor', 'clerk', (doc) => (doc.products.acme.idps[0].idp = 'constructor'), 'products.acme.idps[0].idp: unknown idp "constructor"'],
+        ['a binding idp named __proto__', 'clerk', (doc) => (doc.products.acme.idps[0].idp = '__proto__'), 'products.acme.idps[0].idp: unknown idp "__proto__"'],
+        [
+            'one IdP bound twice by a product',
+            'clerk',
+            (doc) => doc.products.acme.idps.push({ idp: 'clerk-acme' }),
+            'products.acme.idps[1].idp: issuer "https://clerk.acme.example" is already bound by idps[0]',
+        ],
+        [
+            'two IdP records with one issuer bound by a product',
+            'clerk',
+            (doc) => {
+                doc.idps['clerk-acme-staging'] = { ...doc.idps['clerk-acme'], jwksUri: 'https://clerk.acme.example/staging/jwks' }
+                doc.products.acme.idps.push({ idp: 'clerk-acme-staging' })
+            },
+            'products.acme.idps[1].idp: issuer "https://clerk.acme.example" is already bound by idps[0]',
+        ],
+        ['a shared IdP without client binding', 'casdoor', (doc) => delete doc.products.globex.idps[0].clientIds, `products.globex.idps[0]: ${SHARED_ISSUER}`],
+        ['a shared IdP without client binding on the first product', 'casdoor', (doc) => delete doc.products.acme.idps[0].clientIds, `products.acme.idps[0]: ${SHARED_ISSUER}`],
+        ['two IdP records with one issuer bound by two products without client binding', 'casdoor', secondCasdoorRecord, `products.globex.idps[0]: ${SHARED_ISSUER}`],
+        [
+            'two IdP records with one issuer, the first product without client binding',
+            'casdoor',
+            (doc) => {
+                secondCasdoorRecord(doc)
+                doc.products.globex.idps[0].clientIds = ['globex-web-client']
+                delete doc.products.acme.idps[0].clientIds
+            },
+            `products.acme.idps[0]: ${SHARED_ISSUER}`,
+        ],
+        ['an unknown source idp', 'clerk', (doc) => (doc.webhookSources['clerk-acme'].idp = 'clerk-acm'), 'webhookSources.clerk-acme.idp: unknown idp "clerk-acm"'],
+        [
+            'a uidField without claims.uid',
+            'clerk',
+            (doc) => delete doc.idps['clerk-acme'].claims.uid,
+            'webhookSources.clerk-acme.uidField: not allowed, because idp "clerk-acme" maps no uid claim',
+        ],
+        [
+            'claims.uid without a uidField',
+            'clerk',
+            (doc) => delete doc.webhookSources['clerk-acme'].uidField,
+            'webhookSources.clerk-acme.uidField: required, because idp "clerk-acme" maps a uid claim',
+        ],
+        [
+            'a Casdoor uidField without claims.uid',
+            'casdoor',
+            (doc) => delete doc.idps.casdoor.claims.uid,
+            'webhookSources.casdoor-acme.uidField: not allowed, because idp "casdoor" maps no uid claim',
+        ],
+        [
+            'Casdoor claims.uid without a uidField',
+            'casdoor',
+            (doc) => delete doc.webhookSources['casdoor-acme'].uidField,
+            'webhookSources.casdoor-acme.uidField: required, because idp "casdoor" maps a uid claim',
+        ],
+        ['an unknown source product', 'clerk', (doc) => (doc.webhookSources['clerk-acme'].products = ['acm']), 'webhookSources.clerk-acme.products[0]: unknown product "acm"'],
+        [
+            'a source product without events',
+            'casdoor',
+            (doc) => doc.webhookSources['casdoor-acme'].products.push('globex'),
+            'webhookSources.casdoor-acme.products[1]: product "globex" has no events',
+        ],
+        [
+            "a source product not binding the source's IdP",
+            'casdoor',
+            (doc) => {
+                betaProduct(doc)
+                doc.webhookSources['casdoor-acme'].products.push('beta')
+            },
+            'webhookSources.casdoor-acme.products[1]: product "beta" does not bind idp "casdoor"',
+        ],
+    ])('rejects %s', (_name, base, edit, message) => {
+        expect(rejection(edited(base, edit))).toBe(message)
+    })
+
+    it.each<Accepted>([
+        ['a shared IdP bound through authorizedParties', 'casdoor', (doc) => (doc.products.globex.idps = [{ idp: 'casdoor', authorizedParties: ['globex-web-client'] }])],
+        ['two IdP records with one issuer, each binding listing client ids', 'casdoor', (doc) => {
+            secondCasdoorRecord(doc)
+            doc.products.globex.idps[0].clientIds = ['globex-web-client']
+        }],
+        ['two products on distinct issuers without client binding', 'casdoor', (doc) => {
+            betaProduct(doc)
+            delete doc.products.globex
+        }],
+        ['a product binding IdPs with distinct issuers', 'casdoor', (doc) => {
+            otherIdp(doc)
+            doc.products.acme.idps.push({ idp: 'other' })
+        }],
+        ['a source without uidField for an IdP without claims.uid', 'clerk', (doc) => {
+            delete doc.idps['clerk-acme'].claims.uid
+            delete doc.webhookSources['clerk-acme'].uidField
+        }],
+        ['a Casdoor source with any Properties key as uidField', 'casdoor', (doc) => (doc.webhookSources['casdoor-acme'].uidField = 'bridge-uid')],
+    ])('accepts %s', (_name, base, edit) => {
+        expect(() => parseConfig(edited(base, edit))).not.toThrow()
+    })
+})
