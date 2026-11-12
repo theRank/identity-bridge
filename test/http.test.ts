@@ -53,6 +53,16 @@ describe('readBody', () => {
         expect(await readBody(post('a'.repeat(100), { 'content-length': '10' }), 16)).toBeNull()
     })
 
+    it('counts the bytes of a stream whose Content-Length claims fewer, and stops reading it', async () => {
+        const { body, state } = stream(Array.from({ length: 25 }, () => encoder.encode('aaaa')))
+        const lying = post(body, { 'content-length': '10' })
+        // workerd keeps the header and streams every byte, so only the byte count can refuse this body
+        expect(lying.headers.get('content-length')).toBe('10')
+        expect(await readBody(lying, 16)).toBeNull()
+        expect(state.cancelled).toBe(true)
+        expect(state.pulls).toBeLessThan(25)
+    })
+
     it('refuses a declared Content-Length over the limit without reading the body', async () => {
         const never = new ReadableStream<Uint8Array>({ pull: () => new Promise<void>(() => {}) })
         expect(await readBody(post(never, { 'content-length': '17' }), 16)).toBeNull()
