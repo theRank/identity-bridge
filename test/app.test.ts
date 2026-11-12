@@ -107,6 +107,35 @@ describe('routing', () => {
         expect(logs.map((line) => line.route)).toEqual([route])
     })
 
+    // Through the real route table: each route still answers its stub's 501 until its handler is written
+    it('wires every route of handle to its handler', async () => {
+        const { deps, logs } = fakeDeps()
+        const answered: [string, number][] = []
+        for (const [method, path] of [
+            ['POST', '/token'],
+            ['OPTIONS', '/token'],
+            ['GET', '/.well-known/jwks.json'],
+            ['GET', '/healthz'],
+            ['POST', '/webhooks/clerk-acme'],
+        ] as const) {
+            answered.push([`${method} ${path}`, (await handle(request(method, path), runtime, deps)).status])
+        }
+        expect(answered).toEqual([
+            ['POST /token', 501],
+            ['OPTIONS /token', 501],
+            ['GET /.well-known/jwks.json', 501],
+            ['GET /healthz', 501],
+            ['POST /webhooks/clerk-acme', 501],
+        ])
+        expect(logs.map((line) => [line.route, line.outcome, line.code])).toEqual([
+            ['token', 'error', undefined],
+            ['token', 'error', undefined],
+            ['jwks', 'error', undefined],
+            ['health', 'error', undefined],
+            ['webhook', 'error', undefined],
+        ])
+    })
+
     it('gives the webhook handler its source in the context, and others an empty context', async () => {
         const { routes, calls } = fakeRoutes()
         const { deps } = fakeDeps()
