@@ -107,33 +107,30 @@ describe('routing', () => {
         expect(logs.map((line) => line.route)).toEqual([route])
     })
 
-    // Through the real route table: each route still answers its stub's 501 until its handler is written
-    it('wires every route of handle to its handler', async () => {
+    it.each([
+        ['POST', '/token', 'token'],
+        ['OPTIONS', '/token', 'token'],
+        ['GET', '/.well-known/jwks.json', 'jwks'],
+        ['GET', '/healthz', 'health'],
+        ['POST', '/webhooks/clerk-acme', 'webhook'],
+    ] as const)('wires %s %s through handle to its handler', async (method, path, route) => {
+        // The source exists, so a real webhook handler cannot answer this with an unknown_source 404
+        const loaded = {
+            config: {
+                issuer: 'https://bridge.example',
+                tokenTtlSeconds: 900,
+                idps: {},
+                products: {},
+                webhookSources: { 'clerk-acme': { id: 'clerk-acme', type: 'clerk', idp: 'clerk-acme', products: [] } },
+            },
+            keys: { kid: 'unused', privateKey: {} as CryptoKey, jwks: { keys: [] } },
+            webhookSecret: () => 'whsec_dW51c2Vk',
+        } satisfies Runtime
         const { deps, logs } = fakeDeps()
-        const answered: [string, number][] = []
-        for (const [method, path] of [
-            ['POST', '/token'],
-            ['OPTIONS', '/token'],
-            ['GET', '/.well-known/jwks.json'],
-            ['GET', '/healthz'],
-            ['POST', '/webhooks/clerk-acme'],
-        ] as const) {
-            answered.push([`${method} ${path}`, (await handle(request(method, path), runtime, deps)).status])
-        }
-        expect(answered).toEqual([
-            ['POST /token', 501],
-            ['OPTIONS /token', 501],
-            ['GET /.well-known/jwks.json', 501],
-            ['GET /healthz', 501],
-            ['POST /webhooks/clerk-acme', 501],
-        ])
-        expect(logs.map((line) => [line.route, line.outcome, line.code])).toEqual([
-            ['token', 'error', undefined],
-            ['token', 'error', undefined],
-            ['jwks', 'error', undefined],
-            ['health', 'error', undefined],
-            ['webhook', 'error', undefined],
-        ])
+        const response = await handle(request(method, path), loaded, deps)
+        // Status not pinned, so real handlers can replace the stubs: only a 404 or 405 means unwired
+        expect([404, 405]).not.toContain(response.status)
+        expect(logs.map((line) => line.route)).toEqual([route])
     })
 
     it('gives the webhook handler its source in the context, and others an empty context', async () => {
