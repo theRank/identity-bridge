@@ -48,14 +48,24 @@ export interface IdpBinding {
     authorizedParties?: string[]
 }
 
-export interface WebhookSourceConfig {
+// A union, so the organization can only be read after narrowing on type: no source can pass an organization
+// check by lacking one
+export type WebhookSourceConfig = ClerkSourceConfig | CasdoorSourceConfig
+
+interface SourceConfigFields {
     id: string
-    type: 'clerk' | 'casdoor'
     idp: string
-    // Required for casdoor sources, absent for clerk ones
-    organization?: string
     uidField?: string
     products: string[]
+}
+
+export interface ClerkSourceConfig extends SourceConfigFields {
+    type: 'clerk'
+}
+
+export interface CasdoorSourceConfig extends SourceConfigFields {
+    type: 'casdoor'
+    organization: string
 }
 
 export interface Deps {
