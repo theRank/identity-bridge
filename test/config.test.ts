@@ -877,3 +877,101 @@ describe('parseConfig cross-references', () => {
         expect(() => parseConfig(edited(base, edit))).not.toThrow()
     })
 })
+
+describe('parseConfig edge cases', () => {
+    it('keeps a required claim named __proto__ as a plain entry', () => {
+        const json = casdoorConfigJson.replace('"requiredClaims":{', '"requiredClaims":{"__proto__":"x",')
+        const claims = parseConfig(json).idps.casdoor!.requiredClaims
+        expect(Object.keys(claims)).toEqual(['__proto__', 'tokenType'])
+        expect(claims['__proto__']).toBe('x')
+        expect(Object.getPrototypeOf(claims)).toBeNull()
+    })
+
+    it('rejects __proto__ as an id', () => {
+        expect(rejection(clerkConfigJson.replace('"idps":{', '"idps":{"__proto__":{},'))).toBe(`idps.__proto__: ${ID_RULE}`)
+    })
+
+    it('accepts constructor as a product id and indexes it like any other', () => {
+        const config = parseConfig(edited('minimal', (doc) => (doc.products = { constructor: doc.products.app })))
+        expect(config.products.constructor).toMatchObject({ id: 'constructor' })
+    })
+
+    it('treats prototype member names as unknown references', () => {
+        expect(rejection(edited('clerk', (doc) => (doc.webhookSources['clerk-acme'].products = ['constructor'])))).toBe(
+            'webhookSources.clerk-acme.products[0]: unknown product "constructor"',
+        )
+        expect(rejection(edited('clerk', (doc) => (doc.webhookSources['clerk-acme'].idp = 'hasOwnProperty')))).toBe(
+            'webhookSources.clerk-acme.idp: unknown idp "hasOwnProperty"',
+        )
+    })
+
+    it('quotes claim names that are not plain keys in the path', () => {
+        const role = 'https://acme.example/claims/role'
+        const accepted = parseConfig(edited('casdoor', (doc) => (doc.idps.casdoor.requiredClaims[role] = 'member')))
+        expect(accepted.idps.casdoor!.requiredClaims[role]).toBe('member')
+        expect(rejection(edited('casdoor', (doc) => (doc.idps.casdoor.requiredClaims[role] = null)))).toBe(
+            `idps.casdoor.requiredClaims["${role}"]: must be a string, number or boolean`,
+        )
+    })
+
+    it('shortens the long values and keys it quotes', () => {
+        const long = 'x'.repeat(200)
+        expect(rejection(edited('clerk', (doc) => (doc.products.acme.idps[0].idp = long)))).toBe(
+            `products.acme.idps[0].idp: unknown idp "${'x'.repeat(64)}…"`,
+        )
+        expect(rejection(edited('clerk', (doc) => (doc[long] = 1)))).toBe(`["${'x'.repeat(64)}…"]: unknown key`)
+    })
+
+    it.each(['9e2', '900.0', '9.0e2'])('reads the duration %s as the integer 900', (written) => {
+        const json = clerkConfigJson.replace('"tokenTtlSeconds":900', `"tokenTtlSeconds":${written}`)
+        expect(json).not.toBe(clerkConfigJson)
+        expect(parseConfig(json).tokenTtlSeconds).toBe(900)
+    })
+
+    it('reports a missing document as invalid JSON', () => {
+        expect(rejection(undefined as unknown as string)).toBe('invalid JSON')
+    })
+
+    it('reports unknown keys before the other fields of their object', () => {
+        expect(rejection(edited('clerk', (doc) => Object.assign(doc, { issuer: 'http://id.acme.example', issuers: [] })))).toBe(
+            'issuers: unknown key',
+        )
+    })
+
+    it.each<Case>([
+        ['a leading space', 'clerk', (doc) => (doc.issuer = ' https://id.acme.example'), 'issuer: must be an https URL'],
+        ['a newline inside', 'clerk', (doc) => (doc.issuer = 'https://id.acme\n.example'), 'issuer: must be an https URL'],
+        [
+            'a tab',
+            'clerk',
+            (doc) => (doc.idps['clerk-acme'].jwksUri = 'https://clerk.acme.example/\tjwks'),
+            'idps.clerk-acme.jwksUri: must be an https URL',
+        ],
+        [
+            'a trailing newline',
+            'clerk',
+            (doc) => (doc.products.acme.events.url = 'https://api.acme.example/events\n'),
+            'products.acme.events.url: must be an https URL',
+        ],
+    ])('rejects a URL with %s, which the URL parser would strip', (_name, base, edit, message) => {
+        expect(rejection(edited(base, edit))).toBe(message)
+    })
+
+    it('reports the first product without client binding among three sharing an issuer', () => {
+        const json = edited('casdoor', (doc) => {
+            doc.products.initech = { idps: [{ idp: 'casdoor', clientIds: ['initech-web-client'] }] }
+            delete doc.products.globex.idps[0].clientIds
+        })
+        expect(rejection(json)).toBe(`products.globex.idps[0]: ${SHARED_ISSUER}`)
+    })
+
+    it("requires a source's products to bind its IdP record, not only its issuer", () => {
+        const json = edited('casdoor', (doc) => {
+            secondCasdoorRecord(doc)
+            doc.products.globex.idps[0].clientIds = ['globex-web-client']
+            doc.products.globex.events = { url: 'https://globex.example/events' }
+            doc.webhookSources['casdoor-acme'].products.push('globex')
+        })
+        expect(rejection(json)).toBe('webhookSources.casdoor-acme.products[1]: product "globex" does not bind idp "casdoor"')
+    })
+})
