@@ -7,7 +7,7 @@ export async function readBody(request: Request, maxBytes: number): Promise<stri
     if (Number(request.headers.get('content-length')) > maxBytes) return null
     if (!request.body) return ''
     const reader = request.body.getReader()
-    const decoder = new TextDecoder('utf-8', { ignoreBOM: true })
+    const decoder = new TextDecoder('utf-8', { fatal: false, ignoreBOM: true })
     let size = 0
     let text = ''
     for (;;) {
