@@ -1,0 +1,28 @@
+{
+    "name": "@therank/identity-bridge-server",
+    "version": "0.0.0",
+    "description": "Server SDK for identity-bridge: verify bridge access tokens and lifecycle events",
+    "license": "Apache-2.0",
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/theRank/identity-bridge.git",
+        "directory": "packages/server"
+    },
+    "type": "module",
+    "main": "./dist/index.js",
+    "exports": {
+        ".": "./dist/index.js"
+    },
+    "files": [
+        "dist"
+    ],
+    "scripts": {
+        "build": "tsc -p ."
+    },
+    "dependencies": {
+        "jose": "6.2.17"
+    },
+    "publishConfig": {
+        "access": "public"
+    }
+}

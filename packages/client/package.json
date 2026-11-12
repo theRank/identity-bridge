@@ -1,0 +1,25 @@
+{
+    "name": "@therank/identity-bridge-client",
+    "version": "0.0.0",
+    "description": "Client SDK for identity-bridge: exchange an identity provider token for a bridge access token",
+    "license": "Apache-2.0",
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/theRank/identity-bridge.git",
+        "directory": "packages/client"
+    },
+    "type": "module",
+    "main": "./dist/index.js",
+    "exports": {
+        ".": "./dist/index.js"
+    },
+    "files": [
+        "dist"
+    ],
+    "scripts": {
+        "build": "tsc -p ."
+    },
+    "publishConfig": {
+        "access": "public"
+    }
+}
