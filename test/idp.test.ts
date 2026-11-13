@@ -55,10 +55,6 @@ beforeAll(async () => {
     keys = { clerk, other, casdoor, casdoorSecond, ec, short, ed }
 })
 
-beforeEach(() => {
-    resetJwksCache()
-})
-
 afterEach(() => {
     vi.restoreAllMocks()
 })
@@ -639,15 +635,25 @@ describe('verifySubjectToken', () => {
             expect(calls).toHaveLength(1)
         })
 
-        it('picks up a rotated key after an unknown kid when the cooldown has passed', async () => {
-            resetJwksCache({ cooldownDuration: 0 })
-            let published = keys.clerk
-            const { verify, calls } = clerk(undefined, () => Response.json(idpJwks(published)))
-            expect((await verify(await signToken(keys.clerk, clerkClaims()))).subject).toBe(CLERK_SUB)
-            published = keys.other
-            expect((await verify(await signToken(keys.other, clerkClaims()))).subject).toBe(CLERK_SUB)
-            expect(calls).toHaveLength(2)
-            expect(await failure(verify(await signToken(keys.clerk, clerkClaims())))).toStrictEqual(rejected('unknown_key'))
+        describe('with no cooldown', () => {
+            beforeEach(() => {
+                resetJwksCache({ cooldownDuration: 0 })
+            })
+
+            // The override applies to every set created until the next reset
+            afterEach(() => {
+                resetJwksCache()
+            })
+
+            it('picks up a rotated key after an unknown kid', async () => {
+                let published = keys.clerk
+                const { verify, calls } = clerk(undefined, () => Response.json(idpJwks(published)))
+                expect((await verify(await signToken(keys.clerk, clerkClaims()))).subject).toBe(CLERK_SUB)
+                published = keys.other
+                expect((await verify(await signToken(keys.other, clerkClaims()))).subject).toBe(CLERK_SUB)
+                expect(calls).toHaveLength(2)
+                expect(await failure(verify(await signToken(keys.clerk, clerkClaims())))).toStrictEqual(rejected('unknown_key'))
+            })
         })
 
         describe('with the default cooldown', () => {
