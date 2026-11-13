@@ -58,6 +58,13 @@ describe('deriveUserId', () => {
         expect(new Set(ids).size).toBe(3)
     })
 
+    // TextEncoder alone would turn a lone surrogate into U+FFFD; JSON.stringify escapes it first
+    it('keeps subjects apart that differ only in a lone surrogate', async () => {
+        const ids = await Promise.all([deriveUserId(CLERK, 'a\ud800'), deriveUserId(CLERK, 'a�'), deriveUserId(CLERK, 'a\udc00')])
+        expect(new Set(ids).size).toBe(3)
+        for (const id of ids) expect(id).toMatch(V5)
+    })
+
     it('returns an override of any version lowercased, ignoring the issuer and subject', async () => {
         for (const uid of ['00000000-0000-0000-0000-000000000000', '6F9619FF-8B86-1D01-B42D-00CF4FC964FF', 'aBcDeF01-2345-6789-abcd-ef0123456789']) {
             expect(await deriveUserId(CLERK, SUBJECT, uid)).toBe(uid.toLowerCase())
