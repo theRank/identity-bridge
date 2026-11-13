@@ -68,7 +68,8 @@ async function readKey(value: unknown, member: string, isPrivate: boolean): Prom
 
     // RFC 7638 over the JWK members: jose imports a private JWK as non-extractable, and refuses to
     // thumbprint such a key
-    const thumbprint = await calculateJwkThumbprint({ kty, crv, x, y })
+    const thumbprint = await calculateJwkThumbprint({ kty, crv, x, y }).catch(() => undefined)
+    if (thumbprint === undefined) throw new KeyError(member, 'not a valid P-256 key')
     if (kid !== undefined && kid !== thumbprint) throw new KeyError(member, 'kid must equal the key thumbprint')
 
     // Only the key members are imported, so ext and key_ops in the secret cannot make the key exportable or

@@ -1,5 +1,5 @@
 import { calculateJwkThumbprint, createLocalJWKSet, jwtVerify, SignJWT } from 'jose'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { importSigningKeys, KeyError } from '../src/keys'
 import { bridgeSigningKeys } from './helpers/keys'
 
@@ -240,5 +240,29 @@ describe('importSigningKeys rejections', () => {
             expect(error.message).toBe('SIGNING_KEYS: invalid JSON')
             for (const run of runsOf(active.d!)) expect(error.message).not.toContain(run)
         }
+    })
+})
+
+// Faults inside WebCrypto and jose, whose error text may quote the key
+describe('importSigningKeys faults', () => {
+    const subtle = crypto.subtle
+    const digest = subtle.digest.bind(subtle)
+
+    afterEach(() => {
+        vi.restoreAllMocks()
+    })
+
+    it.each([
+        ['active', 0, 'SIGNING_KEYS.active: not a valid P-256 key'],
+        ['retired', 1, 'SIGNING_KEYS.retired[0]: not a valid P-256 key'],
+    ])('turns a thumbprint failure of the %s key into a fixed KeyError', async (_, passing, message) => {
+        const secret = await bridgeSigningKeys(1)
+        const spy = vi.spyOn(subtle, 'digest')
+        for (let call = 0; call < passing; call++) spy.mockImplementationOnce(digest)
+        spy.mockRejectedValueOnce(new Error(`digest failed for ${secret.active.d}`))
+        const error = await rejection(secret.json)
+        expect(error.message).toBe(message)
+        expect(error.cause).toBeUndefined()
+        for (const run of runsOf(secret.active.d!)) expect(error.message).not.toContain(run)
     })
 })
