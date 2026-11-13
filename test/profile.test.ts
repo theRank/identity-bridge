@@ -11,6 +11,11 @@ const FULL: RawProfile = {
     picture: 'https://img.acme.example/ada.png',
 }
 
+// The same number in another script's digits; zero is the code point of that script's 0
+function otherDigits(phone: string, zero: number): string {
+    return phone.replace(/[0-9]/g, (digit) => String.fromCharCode(zero + Number(digit)))
+}
+
 const NOT_STRINGS: unknown[] = [null, 42, 0, true, false, {}, [], ['ada@acme.example'], new String('ada@acme.example'), Symbol('x'), 10n]
 
 describe('cleanProfile', () => {
@@ -80,8 +85,8 @@ describe('cleanProfile', () => {
             '(415) 555-0123',
             '+14155550123\n',
             ' +14155550123',
-            '+１４１５５５５０１２３',
-            '+١٢٣٤٥٦٧٨',
+            otherDigits('+14155550123', 0xff10),
+            otherDigits('+12345678', 0x0660),
         ])('drops %j, which is not E.164', (phone) => {
             expect(cleanProfile({ ...FULL, phone })).not.toHaveProperty('phoneNumber')
         })
@@ -90,10 +95,10 @@ describe('cleanProfile', () => {
     describe('name', () => {
         it('trims the name', () => {
             expect(cleanProfile({ ...FULL, name: '  Ada Lovelace \n' }).name).toBe('Ada Lovelace')
-            expect(cleanProfile({ ...FULL, name: '　王小明　' }).name).toBe('王小明')
+            expect(cleanProfile({ ...FULL, name: '\u3000王小明\u3000' }).name).toBe('王小明')
         })
 
-        it.each(['', ' ', '\t\n', '　'])('drops %j, which is empty once trimmed', (name) => {
+        it.each(['', ' ', '\t\n', '\u3000'])('drops %j, which is empty once trimmed', (name) => {
             expect(cleanProfile({ ...FULL, name })).not.toHaveProperty('name')
         })
 

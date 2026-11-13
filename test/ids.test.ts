@@ -60,7 +60,7 @@ describe('deriveUserId', () => {
 
     // TextEncoder alone would turn a lone surrogate into U+FFFD; JSON.stringify escapes it first
     it('keeps subjects apart that differ only in a lone surrogate', async () => {
-        const ids = await Promise.all([deriveUserId(CLERK, 'a\ud800'), deriveUserId(CLERK, 'a�'), deriveUserId(CLERK, 'a\udc00')])
+        const ids = await Promise.all([deriveUserId(CLERK, 'a\ud800'), deriveUserId(CLERK, 'a\ufffd'), deriveUserId(CLERK, 'a\udc00')])
         expect(new Set(ids).size).toBe(3)
         for (const id of ids) expect(id).toMatch(V5)
     })
@@ -87,7 +87,7 @@ describe('deriveUserId', () => {
     it.each([
         ['a UUID with a non-hex digit', '6f9619ff-8b86-4d01-b42d-00cf4fc964fg'],
         ['a UUID with hyphens moved', '6f9619ff8-b86-4d01-b42d-00cf4fc964ff'],
-        ['a UUID with fullwidth digits', '６f9619ff-8b86-4d01-b42d-00cf4fc964ff'],
+        ['a UUID with fullwidth digits', '\uff16f9619ff-8b86-4d01-b42d-00cf4fc964ff'],
         ['a UUID-shaped String object', new String('6f9619ff-8b86-4d01-b42d-00cf4fc964ff')],
     ])('refuses %s as an override', async (_, uid) => {
         await expect(deriveUserId(CLERK, SUBJECT, uid)).rejects.toBeInstanceOf(BadUidError)
