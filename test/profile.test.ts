@@ -163,6 +163,23 @@ describe('cleanProfile', () => {
             expect(cleanProfile({ ...FULL, picture })).not.toHaveProperty('picture')
         })
 
+        // Userinfo makes the string read as one host while it points at another
+        it.each([
+            'https://img.acme.example@evil.example/ada.png',
+            'https://user:pass@img.acme.example/ada.png',
+            'https://:pass@img.acme.example/ada.png',
+            'https://user@img.acme.example/ada.png',
+            'https://@img.acme.example/ada.png',
+            'https:img.acme.example@evil.example/ada.png',
+        ])('drops %j, which carries userinfo', (picture) => {
+            expect(cleanProfile({ ...FULL, picture })).not.toHaveProperty('picture')
+        })
+
+        it('keeps an @ after the host', () => {
+            const picture = 'https://img.acme.example/@ada/avatar.png?by=ada@acme.example'
+            expect(cleanProfile({ ...FULL, picture }).picture).toBe(picture)
+        })
+
         it('keeps characters past the C1 range', () => {
             const picture = 'https://img.acme.example/\u00a0caf\u00e9.png'
             expect(cleanProfile({ ...FULL, picture }).picture).toBe(picture)
