@@ -31,12 +31,10 @@ export class ExchangeError extends Error {
 
 // Each failure throws ExchangeError; an error it cannot classify is rethrown as it is
 export async function verifySubjectToken(token: string, product: ProductConfig, config: Config, deps: Deps): Promise<VerifiedSubject> {
-    const issuer = unverifiedIssuer(token)
-    // Issuers are distinct across IdP records and a product binds each record once, so at most one matches
-    const binding = product.idps.find((candidate) => config.idps[candidate.idp]?.issuer === issuer)
-    const idp = binding && config.idps[binding.idp]
+    const bound = boundIdp(product, config, unverifiedIssuer(token))
     // No network call for an issuer the product does not trust
-    if (binding === undefined || idp === undefined) throw new ExchangeError('untrusted_issuer')
+    if (bound === undefined) throw new ExchangeError('untrusted_issuer')
+    const { binding, idp } = bound
 
     const payload = await verifySignature(token, idp, deps)
     for (const [name, value] of Object.entries(idp.requiredClaims)) {
@@ -61,6 +59,15 @@ function unverifiedIssuer(token: string): string {
     const issuer = claim(payload, 'iss')
     if (typeof issuer !== 'string') throw new ExchangeError('malformed_token')
     return issuer
+}
+
+// Issuers are distinct across IdP records and a product binds each record once, so at most one binding matches
+function boundIdp(product: ProductConfig, config: Config, issuer: string): { binding: IdpBinding; idp: IdpConfig } | undefined {
+    for (const binding of product.idps) {
+        const idp = config.idps[binding.idp]
+        if (idp?.issuer === issuer) return { binding, idp }
+    }
+    return undefined
 }
 
 async function verifySignature(token: string, idp: IdpConfig, deps: Deps): Promise<JWTPayload> {
