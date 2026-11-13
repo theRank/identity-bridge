@@ -57,6 +57,20 @@ describe('importSigningKeys', () => {
         })
     })
 
+    // Computed here without jose: SHA-256 of the required members in lexical order, no whitespace
+    it('uses the RFC 7638 SHA-256 thumbprint as each kid', async () => {
+        const secret = await bridgeSigningKeys(2)
+        const keys = await importSigningKeys(secret.json)
+        for (const [index, jwk] of [secret.active, ...secret.retired].entries()) {
+            const input = `{"crv":"P-256","kty":"EC","x":"${jwk.x}","y":"${jwk.y}"}`
+            const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(input)))
+            const kid = btoa(String.fromCharCode(...digest)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+            expect(kid).toMatch(/^[A-Za-z0-9_-]{43}$/)
+            expect(keys.jwks.keys[index]!.kid).toBe(kid)
+        }
+        expect(keys.kid).toBe(keys.jwks.keys[0]!.kid)
+    })
+
     it('publishes exactly the public members', async () => {
         const secret = await bridgeSigningKeys(1)
         const kid = await calculateJwkThumbprint(publicPart(secret.active))
