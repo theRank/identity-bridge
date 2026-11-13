@@ -39,7 +39,8 @@ function parseDocument(at: At): Config {
     const issuer = doc.required('issuer').issuer()
     const region = doc.optional('region')?.matching(REGION)
     const tokenTtlSeconds = doc.optional('tokenTtlSeconds')?.integer(60, 3600) ?? 900
-    const idps = idRecord(doc.required('idps'), true, parseIdp)
+    const issuers = new Map<string, string>()
+    const idps = idRecord(doc.required('idps'), true, (item, id) => parseIdp(item, id, issuers))
     const bound: Bound[] = []
     const products = idRecord(doc.required('products'), true, (item, id) => parseProduct(item, id, idps, bound))
     requireClientBinding(bound)
@@ -50,11 +51,11 @@ function parseDocument(at: At): Config {
     return { issuer, ...present('region', region), tokenTtlSeconds, idps, products, webhookSources }
 }
 
-function parseIdp(at: At, id: string): IdpConfig {
+function parseIdp(at: At, id: string, issuers: Map<string, string>): IdpConfig {
     const idp = at.fields(['issuer', 'jwksUri', 'algorithms', 'maxTokenAgeSeconds', 'clockToleranceSeconds', 'requiredClaims', 'claims'])
     return {
         id,
-        issuer: idp.required('issuer').issuer(),
+        issuer: distinctIssuer(idp.required('issuer'), id, issuers),
         jwksUri: idp.required('jwksUri').https(),
         algorithms: idp.optional('algorithms')?.items(true).map(algorithm) ?? ['RS256', 'ES256'],
         maxTokenAgeSeconds: idp.optional('maxTokenAgeSeconds')?.integer(30, 3600) ?? 900,
@@ -62,6 +63,15 @@ function parseIdp(at: At, id: string): IdpConfig {
         requiredClaims: parseRequiredClaims(idp.optional('requiredClaims')),
         claims: parseClaims(idp.optional('claims')),
     }
+}
+
+// One issuer has one claim mapping, so each person has one user id
+function distinctIssuer(at: At, id: string, issuers: Map<string, string>): string {
+    const issuer = at.issuer()
+    const first = issuers.get(issuer)
+    if (first !== undefined) at.fail(`${quote(issuer)} is already the issuer of idp ${quote(first)}`)
+    issuers.set(issuer, id)
+    return issuer
 }
 
 function algorithm(at: At): IdpAlgorithm {
@@ -97,17 +107,16 @@ function parseClaims(at: At | undefined): ClaimMapping {
 interface Bound {
     at: At
     idpAt: At
-    issuer: string
     binding: IdpBinding
 }
 
 function parseProduct(at: At, id: string, idps: Record<string, IdpConfig>, allBound: Bound[]): ProductConfig {
     const product = at.fields(['idps', 'allowedOrigins', 'events'])
     const bound = product.required('idps').items(true).map((item) => parseBinding(item, idps))
-    // The token's iss alone selects the binding
-    bound.forEach(({ idpAt, issuer }, index) => {
-        const first = bound.findIndex((other) => other.issuer === issuer)
-        if (first !== index) idpAt.fail(`issuer ${quote(issuer)} is already bound by idps[${first}]`)
+    // IdP issuers are distinct, so the token's iss selects one binding unless a record is bound twice
+    bound.forEach(({ idpAt, binding }, index) => {
+        const first = bound.findIndex((other) => other.binding.idp === binding.idp)
+        if (first !== index) idpAt.fail(`idp ${quote(binding.idp)} is already bound at idps[${first}]`)
     })
     allBound.push(...bound)
     return {
@@ -118,14 +127,14 @@ function parseProduct(at: At, id: string, idps: Record<string, IdpConfig>, allBo
     }
 }
 
-// Products sharing an issuer, as on one Casdoor instance, accept each other's tokens unless every binding
-// names its clients. Each product binds an issuer at most once, so the count per issuer is a count of products.
+// Products sharing an IdP, as on one Casdoor instance, accept each other's tokens unless every binding names
+// its clients. Each product binds an IdP at most once, so the count per IdP is a count of products.
 function requireClientBinding(bound: Bound[]): void {
     const products = new Map<string, number>()
-    for (const { issuer } of bound) products.set(issuer, (products.get(issuer) ?? 0) + 1)
-    for (const { at, issuer, binding } of bound) {
-        if ((products.get(issuer) ?? 0) > 1 && !binding.clientIds && !binding.authorizedParties) {
-            at.fail(`must list clientIds or authorizedParties, because issuer ${quote(issuer)} is bound by several products`)
+    for (const { binding } of bound) products.set(binding.idp, (products.get(binding.idp) ?? 0) + 1)
+    for (const { at, binding } of bound) {
+        if ((products.get(binding.idp) ?? 0) > 1 && !binding.clientIds && !binding.authorizedParties) {
+            at.fail(`must list clientIds or authorizedParties, because idp ${quote(binding.idp)} is bound by several products`)
         }
     }
 }
@@ -143,7 +152,7 @@ function parseBinding(at: At, idps: Record<string, IdpConfig>): Bound {
         ...present('clientIds', fields.optional('clientIds')?.items(true).map((item) => item.nonEmptyString())),
         ...present('authorizedParties', fields.optional('authorizedParties')?.items(true).map((item) => item.nonEmptyString())),
     }
-    return { at, idpAt, issuer: idp.issuer, binding }
+    return { at, idpAt, binding }
 }
 
 function origin(at: At): string {

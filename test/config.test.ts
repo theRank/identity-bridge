@@ -697,7 +697,7 @@ describe('parseConfig field rules', () => {
     })
 })
 
-const SHARED_ISSUER = 'must list clientIds or authorizedParties, because issuer "https://casdoor.example" is bound by several products'
+const SHARED_IDP = 'must list clientIds or authorizedParties, because idp "casdoor" is bound by several products'
 
 // A second IdP record with the Casdoor example's issuer, as when two applications of one instance are configured apart
 function secondCasdoorRecord(doc: Doc) {
@@ -739,44 +739,31 @@ describe('parseConfig cross-references', () => {
             'one IdP bound twice by a product',
             'clerk',
             (doc) => doc.products.acme.idps.push({ idp: 'clerk-acme' }),
-            'products.acme.idps[1].idp: issuer "https://clerk.acme.example" is already bound by idps[0]',
+            'products.acme.idps[1].idp: idp "clerk-acme" is already bound at idps[0]',
         ],
         [
-            'two IdP records with one issuer bound by a product',
+            'two IdP records with one issuer',
             'clerk',
-            (doc) => {
-                doc.idps['clerk-acme-staging'] = { ...doc.idps['clerk-acme'], jwksUri: 'https://clerk.acme.example/staging/jwks' }
-                doc.products.acme.idps.push({ idp: 'clerk-acme-staging' })
-            },
-            'products.acme.idps[1].idp: issuer "https://clerk.acme.example" is already bound by idps[0]',
+            (doc) => (doc.idps['clerk-acme-staging'] = { ...doc.idps['clerk-acme'], jwksUri: 'https://clerk.acme.example/staging/jwks' }),
+            'idps.clerk-acme-staging.issuer: "https://clerk.acme.example" is already the issuer of idp "clerk-acme"',
+        ],
+        [
+            'two IdP records with one issuer bound by two products',
+            'casdoor',
+            secondCasdoorRecord,
+            'idps.casdoor-globex.issuer: "https://casdoor.example" is already the issuer of idp "casdoor"',
         ],
         [
             'a shared IdP without client binding',
             'casdoor',
             (doc) => delete doc.products.globex.idps[0].clientIds,
-            `products.globex.idps[0]: ${SHARED_ISSUER}`,
+            `products.globex.idps[0]: ${SHARED_IDP}`,
         ],
         [
             'a shared IdP without client binding on the first product',
             'casdoor',
             (doc) => delete doc.products.acme.idps[0].clientIds,
-            `products.acme.idps[0]: ${SHARED_ISSUER}`,
-        ],
-        [
-            'two IdP records with one issuer bound by two products without client binding',
-            'casdoor',
-            secondCasdoorRecord,
-            `products.globex.idps[0]: ${SHARED_ISSUER}`,
-        ],
-        [
-            'two IdP records with one issuer, the first product without client binding',
-            'casdoor',
-            (doc) => {
-                secondCasdoorRecord(doc)
-                doc.products.globex.idps[0].clientIds = ['globex-web-client']
-                delete doc.products.acme.idps[0].clientIds
-            },
-            `products.acme.idps[0]: ${SHARED_ISSUER}`,
+            `products.acme.idps[0]: ${SHARED_IDP}`,
         ],
         [
             'an unknown source idp',
@@ -838,14 +825,6 @@ describe('parseConfig cross-references', () => {
             'a shared IdP bound through authorizedParties',
             'casdoor',
             (doc) => (doc.products.globex.idps = [{ idp: 'casdoor', authorizedParties: ['globex-web-client'] }]),
-        ],
-        [
-            'two IdP records with one issuer, each binding listing client ids',
-            'casdoor',
-            (doc) => {
-                secondCasdoorRecord(doc)
-                doc.products.globex.idps[0].clientIds = ['globex-web-client']
-            },
         ],
         [
             'two products on distinct issuers without client binding',
@@ -957,21 +936,16 @@ describe('parseConfig edge cases', () => {
         expect(rejection(edited(base, edit))).toBe(message)
     })
 
-    it('reports the first product without client binding among three sharing an issuer', () => {
+    it('reports the first product without client binding among three sharing an IdP', () => {
         const json = edited('casdoor', (doc) => {
             doc.products.initech = { idps: [{ idp: 'casdoor', clientIds: ['initech-web-client'] }] }
             delete doc.products.globex.idps[0].clientIds
         })
-        expect(rejection(json)).toBe(`products.globex.idps[0]: ${SHARED_ISSUER}`)
+        expect(rejection(json)).toBe(`products.globex.idps[0]: ${SHARED_IDP}`)
     })
 
-    it("requires a source's products to bind its IdP record, not only its issuer", () => {
-        const json = edited('casdoor', (doc) => {
-            secondCasdoorRecord(doc)
-            doc.products.globex.idps[0].clientIds = ['globex-web-client']
-            doc.products.globex.events = { url: 'https://globex.example/events' }
-            doc.webhookSources['casdoor-acme'].products.push('globex')
-        })
-        expect(rejection(json)).toBe('webhookSources.casdoor-acme.products[1]: product "globex" does not bind idp "casdoor"')
+    it('rejects a second IdP record with an issuer even when no product binds it', () => {
+        const json = edited('casdoor', (doc) => (doc.idps.spare = { ...doc.idps.casdoor }))
+        expect(rejection(json)).toBe('idps.spare.issuer: "https://casdoor.example" is already the issuer of idp "casdoor"')
     })
 })
