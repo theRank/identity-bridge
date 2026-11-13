@@ -47,11 +47,13 @@ describe('GET /healthz', () => {
 
     it('answers 503 unavailable, without naming what failed, when the self-test fails', async () => {
         const digest = crypto.subtle.digest.bind(crypto.subtle)
-        vi.spyOn(crypto.subtle, 'digest').mockImplementation(async (algorithm, data) =>
-            algorithmName(algorithm) === 'SHA-1' ? new ArrayBuffer(20) : digest(algorithm, data),
-        )
+        const spy = vi
+            .spyOn(crypto.subtle, 'digest')
+            .mockImplementation(async (algorithm, data) => (algorithmName(algorithm) === 'SHA-1' ? new ArrayBuffer(20) : digest(algorithm, data)))
         const { deps, logs } = fakeDeps()
         const response = await (await freshHandle())(new Request(HEALTH_URL), runtime, deps)
+        // The forced wrong digest is what the self-test saw
+        expect(spy.mock.calls.map(([algorithm]) => algorithmName(algorithm))).toContain('SHA-1')
         expect(response.status).toBe(503)
         expect(response.headers.get('content-type')).toBe('application/json')
         expect(await response.json()).toStrictEqual({ status: 'unavailable' })
