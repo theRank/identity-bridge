@@ -234,6 +234,27 @@ describe('verifySubjectToken', () => {
             )
         })
 
+        describe('with a binding that lists both clientIds and authorizedParties', () => {
+            const bothLists = (doc: Doc) => {
+                doc.products.acme.idps[0].authorizedParties = ['acme-web-client']
+            }
+
+            it('accepts a token whose aud and azp both match', async () => {
+                const { verify } = casdoor(bothLists)
+                expect((await verify(await signToken(keys.casdoor, casdoorClaims()))).subject).toBe(CASDOOR_SUB)
+            })
+
+            it.each([
+                ['aud matches but azp does not', { aud: ['acme-web-client'], azp: 'acme-app-client' }],
+                ['azp matches but aud does not', { aud: ['https://api.acme.example'], azp: 'acme-web-client' }],
+            ])('rejects a token whose %s', async (_, overrides) => {
+                const { verify } = casdoor(bothLists)
+                expect(await failure(verify(await signToken(keys.casdoor, casdoorClaims(overrides))))).toStrictEqual(
+                    rejected('client_mismatch', 'casdoor'),
+                )
+            })
+        })
+
         it('rejects an ID token by its tokenType', async () => {
             const { verify } = casdoor()
             const idToken = casdoorClaims({ tokenType: 'id-token', jti: 'admin/1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d' })
