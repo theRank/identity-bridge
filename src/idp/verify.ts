@@ -47,7 +47,7 @@ export async function verifySubjectToken(token: string, product: ProductConfig, 
     const subject = claim(payload, 'sub')
     if (typeof subject !== 'string' || subject === '') throw new ExchangeError('missing_claim', idp.id)
     const verified: VerifiedSubject = { idp, subject, profile: cleanProfile(mapped.profile) }
-    if ('uid' in mapped) verified.uid = mapped.uid
+    if (Object.hasOwn(mapped, 'uid')) verified.uid = mapped.uid
     return verified
 }
 
