@@ -1,4 +1,4 @@
-import { SignJWT } from 'jose'
+import { compactVerify, createLocalJWKSet, SignJWT } from 'jose'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { parseConfig } from '../src/config'
 import { resetJwksCache } from '../src/idp/jwks'
@@ -412,6 +412,16 @@ describe('verifySubjectToken', () => {
             const token = await signToken(keys.clerk, clerkClaims(), { crit: ['urn:example:binding'], 'urn:example:binding': true })
             expect(await failure(verify(token))).toStrictEqual(rejected('malformed_token'))
             expect(calls).toHaveLength(0)
+        })
+
+        // With b64 false the payload segment is signed as it stands, so the token still decodes and its signature
+        // verifies; only jwtVerify's refusal of unencoded payloads stops it
+        it('rejects a correctly signed token with an unencoded payload as malformed_token', async () => {
+            const { verify, calls } = clerk()
+            const token = await signToken(keys.clerk, clerkClaims(), { crit: ['b64'], b64: false })
+            await expect(compactVerify(token, createLocalJWKSet(idpJwks(keys.clerk)))).resolves.toHaveProperty('protectedHeader.b64', false)
+            expect(await failure(verify(token))).toStrictEqual(rejected('malformed_token'))
+            expect(calls).toHaveLength(1)
         })
 
         it('rejects a signature that is not base64url as malformed_token', async () => {
