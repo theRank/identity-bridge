@@ -78,31 +78,18 @@ describe('deriveUserId', () => {
         }
     })
 
-    const VALID = '6f9619ff-8b86-4d01-b42d-00cf4fc964ff'
-    const MALFORMED: [string, unknown][] = [
-        ['the nil UUID', '00000000-0000-0000-0000-000000000000'],
-        ['the max UUID', 'ffffffff-ffff-ffff-ffff-ffffffffffff'],
-        ['the max UUID in uppercase', 'FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF'],
-        ['the max UUID in mixed case', 'ffffffff-FFFF-ffff-FFFF-ffffffffffff'],
-        ['an empty string', ''],
-        ['a word', 'admin'],
-        ['a UUID without hyphens', VALID.replace(/-/g, '')],
-        ['a UUID in braces', `{${VALID}}`],
-        ['a UUID URN', `urn:uuid:${VALID}`],
-        ['a UUID with a leading space', ` ${VALID}`],
-        ['a UUID with a trailing newline', `${VALID}\n`],
-        ['a UUID with a non-hex digit', `${VALID.slice(0, -1)}g`],
+    it.each(golden.malformedUids)('refuses the golden malformed override $case', async ({ uid }) => {
+        await expect(deriveUserId(CLERK, SUBJECT, uid)).rejects.toBeInstanceOf(BadUidError)
+        await expect(deriveUserId('https://casdoor.example', 'b4f6e2a0-3c1d-4e5f-9a7b-8c9d0e1f2a3b', uid)).rejects.toBeInstanceOf(BadUidError)
+    })
+
+    // Beyond the shared fixture: shapes only these tests need
+    it.each([
+        ['a UUID with a non-hex digit', '6f9619ff-8b86-4d01-b42d-00cf4fc964fg'],
         ['a UUID with hyphens moved', '6f9619ff8-b86-4d01-b42d-00cf4fc964ff'],
         ['a UUID with fullwidth digits', '６f9619ff-8b86-4d01-b42d-00cf4fc964ff'],
-        ['a number', 42],
-        ['zero', 0],
-        ['true', true],
-        ['false', false],
-        ['an object', { uid: VALID }],
-        ['an array', [VALID]],
-    ]
-
-    it.each(MALFORMED)('refuses %s as an override', async (_, uid) => {
+        ['a UUID-shaped String object', new String('6f9619ff-8b86-4d01-b42d-00cf4fc964ff')],
+    ])('refuses %s as an override', async (_, uid) => {
         await expect(deriveUserId(CLERK, SUBJECT, uid)).rejects.toBeInstanceOf(BadUidError)
     })
 
@@ -147,6 +134,18 @@ describe('eventId', () => {
         const error = await eventId(sourceId as string, idpEventId as string).catch((caught: unknown) => caught)
         expect(error).toBeInstanceOf(TypeError)
         expect((error as TypeError).message).toBe('sourceId and idpEventId must be non-empty strings')
+    })
+
+    it('gives Casdoor records that share a name different ids under different actions', () => {
+        const name = (idpEventId: string) => idpEventId.slice(idpEventId.indexOf(':') + 1)
+        const casdoor = golden.eventIds.filter((entry) => entry.sourceId === 'casdoor-acme')
+        const sharing = casdoor.filter((entry) => casdoor.some((other) => other !== entry && name(other.idpEventId) === name(entry.idpEventId)))
+        expect(new Set(sharing.map((entry) => entry.idpEventId.split(':')[0])).size).toBeGreaterThan(1)
+        expect(new Set(sharing.map((entry) => entry.expected)).size).toBe(sharing.length)
+    })
+
+    it('has a distinct golden id for every event', () => {
+        expect(new Set(golden.eventIds.map((entry) => entry.expected)).size).toBe(golden.eventIds.length)
     })
 
     it('is the same on every redelivery', async () => {

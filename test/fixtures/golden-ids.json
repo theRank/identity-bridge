@@ -74,10 +74,90 @@
             "expected": "24ae99fa-ed7d-534b-89a7-0c42b506e020"
         },
         {
+            "case": "casdoor signup record sharing the new-user record's name",
+            "sourceId": "casdoor-acme",
+            "idpEventId": "signup:5d1c3b7a-2e4f-4a6b-8c9d-0e1f2a3b4c5d",
+            "expected": "ac819947-d5c3-5bdf-a915-5bdec865b45a"
+        },
+        {
             "case": "casdoor delete-user record",
             "sourceId": "casdoor-acme",
             "idpEventId": "delete-user:9e8d7c6b-5a4f-4e3d-8c2b-1a0f9e8d7c6b",
             "expected": "b9b35f65-58e4-597b-a718-ca13874774ab"
+        }
+    ],
+    "malformedUids": [
+        {
+            "case": "nil UUID",
+            "uid": "00000000-0000-0000-0000-000000000000"
+        },
+        {
+            "case": "max UUID",
+            "uid": "ffffffff-ffff-ffff-ffff-ffffffffffff"
+        },
+        {
+            "case": "max UUID in uppercase",
+            "uid": "FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF"
+        },
+        {
+            "case": "max UUID in mixed case",
+            "uid": "ffffffff-FFFF-ffff-FFFF-ffffffffffff"
+        },
+        {
+            "case": "UUID without dashes",
+            "uid": "6f9619ff8b864d01b42d00cf4fc964ff"
+        },
+        {
+            "case": "UUID in braces",
+            "uid": "{6f9619ff-8b86-4d01-b42d-00cf4fc964ff}"
+        },
+        {
+            "case": "UUID URN",
+            "uid": "urn:uuid:6f9619ff-8b86-4d01-b42d-00cf4fc964ff"
+        },
+        {
+            "case": "UUID with a trailing newline",
+            "uid": "6f9619ff-8b86-4d01-b42d-00cf4fc964ff\n"
+        },
+        {
+            "case": "UUID with a leading space",
+            "uid": " 6f9619ff-8b86-4d01-b42d-00cf4fc964ff"
+        },
+        {
+            "case": "empty string",
+            "uid": ""
+        },
+        {
+            "case": "word",
+            "uid": "admin"
+        },
+        {
+            "case": "number",
+            "uid": 42
+        },
+        {
+            "case": "zero",
+            "uid": 0
+        },
+        {
+            "case": "true",
+            "uid": true
+        },
+        {
+            "case": "false",
+            "uid": false
+        },
+        {
+            "case": "object",
+            "uid": {
+                "uid": "6f9619ff-8b86-4d01-b42d-00cf4fc964ff"
+            }
+        },
+        {
+            "case": "array",
+            "uid": [
+                "6f9619ff-8b86-4d01-b42d-00cf4fc964ff"
+            ]
         }
     ]
 }
