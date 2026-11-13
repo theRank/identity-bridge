@@ -558,6 +558,17 @@ describe('/token', () => {
             await expectIssued(response)
         })
 
+        it('gives no CORS headers to a POST without Origin, on success and on an error after the product is resolved', async () => {
+            const { send, logs } = cors()
+            const issued = await send(post(form(await casdoorToken())))
+            expect(corsHeaders(issued)).toStrictEqual(NONE)
+            await expectIssued(issued)
+            const rejected = await send(post(form(await signToken(keys.other, casdoorClaims(), { kid: keys.casdoor.kid }))))
+            expect(corsHeaders(rejected)).toStrictEqual(NONE)
+            await expectError(rejected, 400, 'invalid_request', NOT_ACCEPTABLE)
+            expect(logs.map((logged) => logged.product)).toEqual(['acme', 'acme'])
+        })
+
         it('echoes a listed origin on a bad_signature error', async () => {
             const { send, logs } = cors()
             const token = await signToken(keys.other, casdoorClaims(), { kid: keys.casdoor.kid })
