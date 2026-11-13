@@ -99,7 +99,14 @@ describe('mintAccessToken', () => {
         const { keys, config } = await setup(parseConfig(JSON.stringify(doc)))
         const token = await mintAccessToken(keys, config, 'globex', { userId: USER, idpId: 'casdoor', profile: {} }, NOW, JTI)
         const { payload } = await verify(token, keys, { typ: 'at+jwt', issuer: 'https://id.cn.acme.example', audience: 'globex' })
-        expect(payload).toMatchObject({ iss: 'https://id.cn.acme.example', aud: 'globex', client_id: 'globex', idp: 'casdoor', region: 'cn', exp: NOW + 3600 })
+        expect(payload).toMatchObject({
+            iss: 'https://id.cn.acme.example',
+            aud: 'globex',
+            client_id: 'globex',
+            idp: 'casdoor',
+            region: 'cn',
+            exp: NOW + 3600,
+        })
     })
 
     it('uses nowSec for the times and never the clock', async () => {

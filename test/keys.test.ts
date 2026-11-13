@@ -44,7 +44,7 @@ describe('importSigningKeys', () => {
         const keys = await importSigningKeys(secret.json)
         const thumbprints = await Promise.all([secret.active, ...secret.retired].map((jwk) => calculateJwkThumbprint(publicPart(jwk))))
         expect(keys.kid).toBe(thumbprints[0])
-        expect(keys.jwks).toEqual({
+        expect(keys.jwks).toStrictEqual({
             keys: [secret.active, ...secret.retired].map((jwk, index) => ({
                 kty: 'EC',
                 crv: 'P-256',
@@ -59,7 +59,8 @@ describe('importSigningKeys', () => {
 
     it('publishes exactly the public members', async () => {
         const secret = await bridgeSigningKeys(1)
-        const jwk = { ...secret.active, kid: await calculateJwkThumbprint(publicPart(secret.active)), alg: 'ES256', use: 'sig', ext: true, key_ops: ['sign'] }
+        const kid = await calculateJwkThumbprint(publicPart(secret.active))
+        const jwk = { ...secret.active, kid, alg: 'ES256', use: 'sig', ext: true, key_ops: ['sign'] }
         const keys = await importSigningKeys(JSON.stringify({ active: jwk, retired: secret.retired }))
         for (const key of keys.jwks.keys) {
             expect(Object.keys(key).sort()).toEqual(MEMBERS)
@@ -125,6 +126,11 @@ describe('importSigningKeys', () => {
 })
 
 describe('importSigningKeys rejections', () => {
+    // Members set to undefined are left out when the secret is serialized
+    const active = (doc: Doc, members: Doc) => ({ ...doc, active: { ...doc.active, ...members } })
+    const retired = (doc: Doc, ...keys: unknown[]) => ({ ...doc, retired: keys })
+    const another = async () => (await bridgeSigningKeys()).active
+
     const CASES: [name: string, edit: (doc: Doc) => Promise<unknown> | unknown, message: string][] = [
         ['a document that is null', () => null, 'SIGNING_KEYS: must be an object'],
         ['a document that is an array', (doc) => [doc], 'SIGNING_KEYS: must be an object'],
@@ -134,40 +140,52 @@ describe('importSigningKeys rejections', () => {
         ['an active key that is null', (doc) => ({ ...doc, active: null }), 'SIGNING_KEYS.active: must be a JWK object'],
         ['an active key that is an array', (doc) => ({ ...doc, active: [doc.active] }), 'SIGNING_KEYS.active: must be a JWK object'],
         ['an active key that is a string', (doc) => ({ ...doc, active: JSON.stringify(doc.active) }), 'SIGNING_KEYS.active: must be a JWK object'],
-        ['an active RSA key', (doc) => ({ ...doc, active: { ...doc.active, kty: 'RSA' } }), 'SIGNING_KEYS.active: must be an EC key'],
-        ['an active key without kty', (doc) => ({ ...doc, active: { ...doc.active, kty: undefined } }), 'SIGNING_KEYS.active: must be an EC key'],
+        ['an active RSA key', (doc) => active(doc, { kty: 'RSA' }), 'SIGNING_KEYS.active: must be an EC key'],
+        ['an active key without kty', (doc) => active(doc, { kty: undefined }), 'SIGNING_KEYS.active: must be an EC key'],
         ['an active P-384 key', async (doc) => ({ ...doc, active: await p384PrivateJwk() }), 'SIGNING_KEYS.active: must use curve P-256'],
-        ['an active key on curve secp256k1', (doc) => ({ ...doc, active: { ...doc.active, crv: 'secp256k1' } }), 'SIGNING_KEYS.active: must use curve P-256'],
-        ['an active key without x', (doc) => ({ ...doc, active: { ...doc.active, x: undefined } }), 'SIGNING_KEYS.active: x and y required'],
-        ['an active key with a numeric y', (doc) => ({ ...doc, active: { ...doc.active, y: 1 } }), 'SIGNING_KEYS.active: x and y required'],
+        ['an active key on curve secp256k1', (doc) => active(doc, { crv: 'secp256k1' }), 'SIGNING_KEYS.active: must use curve P-256'],
+        ['an active key without x', (doc) => active(doc, { x: undefined }), 'SIGNING_KEYS.active: x and y required'],
+        ['an active key with a numeric y', (doc) => active(doc, { y: 1 }), 'SIGNING_KEYS.active: x and y required'],
         ['an active key without d', (doc) => ({ ...doc, active: publicPart(doc.active) }), 'SIGNING_KEYS.active: private key required'],
-        ['an active key with an empty d', (doc) => ({ ...doc, active: { ...doc.active, d: '' } }), 'SIGNING_KEYS.active: private key required'],
-        ['an active key with a numeric d', (doc) => ({ ...doc, active: { ...doc.active, d: 7 } }), 'SIGNING_KEYS.active: private key required'],
-        ['an active key for ES384', (doc) => ({ ...doc, active: { ...doc.active, alg: 'ES384' } }), 'SIGNING_KEYS.active: alg must be ES256'],
-        ['an active key for encryption', (doc) => ({ ...doc, active: { ...doc.active, use: 'enc' } }), 'SIGNING_KEYS.active: use must be sig'],
-        ['an active kid that is not the thumbprint', (doc) => ({ ...doc, active: { ...doc.active, kid: 'key-1' } }), 'SIGNING_KEYS.active: kid must equal the key thumbprint'],
+        ['an active key with an empty d', (doc) => active(doc, { d: '' }), 'SIGNING_KEYS.active: private key required'],
+        ['an active key with a numeric d', (doc) => active(doc, { d: 7 }), 'SIGNING_KEYS.active: private key required'],
+        ['an active key for ES384', (doc) => active(doc, { alg: 'ES384' }), 'SIGNING_KEYS.active: alg must be ES256'],
+        ['an active key for encryption', (doc) => active(doc, { use: 'enc' }), 'SIGNING_KEYS.active: use must be sig'],
+        ['an active kid that is not the thumbprint', (doc) => active(doc, { kid: 'k1' }), 'SIGNING_KEYS.active: kid must equal the key thumbprint'],
         [
             "an active kid that is a retired key's thumbprint",
-            async (doc) => ({ ...doc, active: { ...doc.active, kid: await calculateJwkThumbprint(doc.retired[0]) } }),
+            async (doc) => active(doc, { kid: await calculateJwkThumbprint(doc.retired[0]) }),
             'SIGNING_KEYS.active: kid must equal the key thumbprint',
         ],
-        ['an active key with a point off the curve', (doc) => ({ ...doc, active: { ...doc.active, x: doc.active.y } }), 'SIGNING_KEYS.active: not a valid P-256 key'],
-        ['an active key with a short x', (doc) => ({ ...doc, active: { ...doc.active, x: 'AAAA' } }), 'SIGNING_KEYS.active: not a valid P-256 key'],
-        ['an active d of another key', async (doc) => ({ ...doc, active: { ...doc.active, d: (await bridgeSigningKeys()).active.d } }), 'SIGNING_KEYS.active: not a valid P-256 key'],
-        ['an active d that is not base64url', (doc) => ({ ...doc, active: { ...doc.active, d: `${doc.active.d.slice(1)}*` } }), 'SIGNING_KEYS.active: not a valid P-256 key'],
+        ['an active key with a point off the curve', (doc) => active(doc, { x: doc.active.y }), 'SIGNING_KEYS.active: not a valid P-256 key'],
+        ['an active key with a short x', (doc) => active(doc, { x: 'AAAA' }), 'SIGNING_KEYS.active: not a valid P-256 key'],
+        ['an active d of another key', async (doc) => active(doc, { d: (await another()).d }), 'SIGNING_KEYS.active: not a valid P-256 key'],
+        ['an active d that is not base64url', (doc) => active(doc, { d: `${doc.active.d.slice(1)}*` }), 'SIGNING_KEYS.active: not a valid P-256 key'],
         ['retired keys that are not an array', (doc) => ({ ...doc, retired: doc.retired[0] }), 'SIGNING_KEYS.retired: must be an array'],
         ['retired keys that are null', (doc) => ({ ...doc, retired: null }), 'SIGNING_KEYS.retired: must be an array'],
-        ['a retired key that is null', (doc) => ({ ...doc, retired: [doc.retired[0], null] }), 'SIGNING_KEYS.retired[1]: must be a JWK object'],
-        ['a private key in retired', async (doc) => ({ ...doc, retired: [doc.retired[0], (await bridgeSigningKeys()).active] }), 'SIGNING_KEYS.retired[1]: private key not allowed'],
-        ['the active private key in retired', (doc) => ({ ...doc, retired: [doc.active] }), 'SIGNING_KEYS.retired[0]: private key not allowed'],
-        ['a retired key with a null d', (doc) => ({ ...doc, retired: [{ ...doc.retired[0], d: null }] }), 'SIGNING_KEYS.retired[0]: private key not allowed'],
-        ['a retired P-384 key', async (doc) => ({ ...doc, retired: [publicPart(await p384PrivateJwk())] }), 'SIGNING_KEYS.retired[0]: must use curve P-256'],
-        ['a retired RSA key', (doc) => ({ ...doc, retired: [{ kty: 'RSA', n: 'AQAB', e: 'AQAB' }] }), 'SIGNING_KEYS.retired[0]: must be an EC key'],
-        ['a retired kid that is not the thumbprint', (doc) => ({ ...doc, retired: [{ ...doc.retired[0], kid: 'old' }] }), 'SIGNING_KEYS.retired[0]: kid must equal the key thumbprint'],
-        ['a retired key for ES512', (doc) => ({ ...doc, retired: [{ ...doc.retired[0], alg: 'ES512' }] }), 'SIGNING_KEYS.retired[0]: alg must be ES256'],
-        ['a retired key with a point off the curve', (doc) => ({ ...doc, retired: [{ ...doc.retired[0], y: doc.retired[0].x }] }), 'SIGNING_KEYS.retired[0]: not a valid P-256 key'],
-        ['the active key repeated in retired', (doc) => ({ ...doc, retired: [publicPart(doc.active)] }), 'SIGNING_KEYS.retired[0]: repeats an earlier key'],
-        ['a retired key listed twice', (doc) => ({ ...doc, retired: [doc.retired[0], doc.retired[0]] }), 'SIGNING_KEYS.retired[1]: repeats an earlier key'],
+        ['a retired key that is null', (doc) => retired(doc, doc.retired[0], null), 'SIGNING_KEYS.retired[1]: must be a JWK object'],
+        [
+            'a private key in retired',
+            async (doc) => retired(doc, doc.retired[0], await another()),
+            'SIGNING_KEYS.retired[1]: private key not allowed',
+        ],
+        ['the active private key in retired', (doc) => retired(doc, doc.active), 'SIGNING_KEYS.retired[0]: private key not allowed'],
+        ['a retired key with a null d', (doc) => retired(doc, { ...doc.retired[0], d: null }), 'SIGNING_KEYS.retired[0]: private key not allowed'],
+        ['a retired P-384 key', async (doc) => retired(doc, publicPart(await p384PrivateJwk())), 'SIGNING_KEYS.retired[0]: must use curve P-256'],
+        ['a retired RSA key', (doc) => retired(doc, { kty: 'RSA', n: 'AQAB', e: 'AQAB' }), 'SIGNING_KEYS.retired[0]: must be an EC key'],
+        [
+            'a retired kid that is not the thumbprint',
+            (doc) => retired(doc, { ...doc.retired[0], kid: 'old' }),
+            'SIGNING_KEYS.retired[0]: kid must equal the key thumbprint',
+        ],
+        ['a retired key for ES512', (doc) => retired(doc, { ...doc.retired[0], alg: 'ES512' }), 'SIGNING_KEYS.retired[0]: alg must be ES256'],
+        [
+            'a retired key with a point off the curve',
+            (doc) => retired(doc, { ...doc.retired[0], y: doc.retired[0].x }),
+            'SIGNING_KEYS.retired[0]: not a valid P-256 key',
+        ],
+        ['the active key repeated in retired', (doc) => retired(doc, publicPart(doc.active)), 'SIGNING_KEYS.retired[0]: repeats an earlier key'],
+        ['a retired key listed twice', (doc) => retired(doc, doc.retired[0], doc.retired[0]), 'SIGNING_KEYS.retired[1]: repeats an earlier key'],
     ]
 
     it.each(CASES)('refuses %s', async (_, edit, message) => {

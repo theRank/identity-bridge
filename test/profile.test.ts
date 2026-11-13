@@ -126,12 +126,14 @@ describe('cleanProfile', () => {
         })
 
         // The URL parser strips these, so the string as written is not the URL it parses to
-        it.each([' https://img.acme.example/ada.png', 'https://img.acme.example/ada.png\n', 'https://img.acme\t.example/ada.png', '\x00https://img.acme.example/a.png'])(
-            'drops %j, which holds whitespace or a control character',
-            (picture) => {
-                expect(cleanProfile({ ...FULL, picture })).not.toHaveProperty('picture')
-            },
-        )
+        it.each([
+            ' https://img.acme.example/ada.png',
+            'https://img.acme.example/ada.png\n',
+            'https://img.acme\t.example/ada.png',
+            '\x00https://img.acme.example/ada.png',
+        ])('drops %j, which holds whitespace or a control character', (picture) => {
+            expect(cleanProfile({ ...FULL, picture })).not.toHaveProperty('picture')
+        })
 
         it('keeps a picture without any verified flag', () => {
             expect(cleanProfile({ picture: 'https://img.acme.example/ada.png', emailVerified: false, phoneVerified: false })).toEqual({
