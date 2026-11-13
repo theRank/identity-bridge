@@ -2,7 +2,7 @@ import { empty, json, oauthError, readBody } from '../http'
 import { BadUidError, deriveUserId } from '../ids'
 import { ExchangeError, verifySubjectToken, type VerifiedSubject } from '../idp/verify'
 import { mintAccessToken } from '../tokens'
-import type { Deps, LogCode, OAuthErrorCode, ProductConfig, RouteContext, RouteHandler, Runtime } from '../types'
+import type { Config, Deps, LogCode, OAuthErrorCode, ProductConfig, RouteContext, RouteHandler, Runtime } from '../types'
 
 const FORM = 'application/x-www-form-urlencoded'
 const MAX_BODY_BYTES = 16384
@@ -20,7 +20,10 @@ const RECOGNIZED = [
     'scope',
     'resource',
 ]
-const NO_STORE = { 'cache-control': 'no-store', pragma: 'no-cache', vary: 'Origin' }
+const NO_STORE = { 'cache-control': 'no-store', pragma: 'no-cache' }
+// On every answer, POST and OPTIONS alike, because whether CORS headers are given depends on the Origin
+const VARY = { vary: 'Origin' }
+const PREFLIGHT = { 'access-control-allow-methods': 'POST', 'access-control-allow-headers': 'Content-Type', 'access-control-max-age': '600' }
 const STATUS: Record<ExchangeError['error'], number> = { invalid_request: 400, temporarily_unavailable: 503 }
 
 type Rejection = [error: OAuthErrorCode, code: LogCode]
@@ -33,7 +36,7 @@ interface ExchangeRequest {
 }
 
 export const tokenRoute: RouteHandler = async (request, runtime, deps, ctx) => {
-    if (request.method === 'OPTIONS') return empty(501)
+    if (request.method === 'OPTIONS') return preflight(request, runtime.config)
     return exchange(request, runtime, deps, ctx)
 }
 
@@ -47,17 +50,31 @@ async function exchange(request: Request, runtime: Runtime, deps: Deps, ctx: Rou
     const product = runtime.config.products[params.audience]
     if (product === undefined) return reject(ctx, 400, 'invalid_target', 'unknown_product')
     ctx.product = product.id
-    return issue(params.subjectToken, product, runtime, deps, ctx)
+    const cors = allowedOrigin(request, product)
+    try {
+        return await issue(params.subjectToken, product, runtime, deps, ctx, cors)
+    } catch {
+        // Answered here because handle's answer has no CORS headers, so a browser could not read it. The error is
+        // dropped, as it may quote the token.
+        return reject(ctx, 500, 'server_error', 'internal_error', cors)
+    }
 }
 
-async function issue(subjectToken: string, product: ProductConfig, runtime: Runtime, deps: Deps, ctx: RouteContext): Promise<Response> {
+async function issue(
+    subjectToken: string,
+    product: ProductConfig,
+    runtime: Runtime,
+    deps: Deps,
+    ctx: RouteContext,
+    cors: Record<string, string>,
+): Promise<Response> {
     let verified: VerifiedSubject
     try {
         verified = await verifySubjectToken(subjectToken, product, runtime.config, deps)
     } catch (error) {
         if (!(error instanceof ExchangeError)) throw error
         if (error.idp !== undefined) ctx.idp = error.idp
-        return reject(ctx, STATUS[error.error], error.error, error.code)
+        return reject(ctx, STATUS[error.error], error.error, error.code, cors)
     }
     const { idp, subject, uid, profile } = verified
     ctx.idp = idp.id
@@ -67,7 +84,7 @@ async function issue(subjectToken: string, product: ProductConfig, runtime: Runt
         userId = await deriveUserId(idp.issuer, subject, uid)
     } catch (error) {
         if (!(error instanceof BadUidError)) throw error
-        return reject(ctx, 400, 'invalid_request', 'bad_uid')
+        return reject(ctx, 400, 'invalid_request', 'bad_uid', cors)
     }
     const identity = { userId, idpId: idp.id, profile }
     const accessToken = await mintAccessToken(runtime.keys, runtime.config, product.id, identity, Math.floor(deps.now() / 1000), deps.randomUUID())
@@ -77,7 +94,21 @@ async function issue(subjectToken: string, product: ProductConfig, runtime: Runt
         token_type: 'Bearer',
         expires_in: runtime.config.tokenTtlSeconds,
     }
-    return json(200, body, NO_STORE)
+    return json(200, body, { ...NO_STORE, ...VARY, ...cors })
+}
+
+// The product is named only in the body, which a preflight does not carry, so an origin of any product is allowed
+function preflight(request: Request, config: Config): Response {
+    const origin = request.headers.get('origin')
+    const listed = origin !== null && Object.values(config.products).some((product) => product.allowedOrigins.includes(origin))
+    return empty(204, listed ? { ...VARY, 'access-control-allow-origin': origin, ...PREFLIGHT } : VARY)
+}
+
+// CORS is a browser control, not authentication: an origin the product does not list is still served, only
+// without the header that lets a browser read the answer
+function allowedOrigin(request: Request, product: ProductConfig): Record<string, string> {
+    const origin = request.headers.get('origin')
+    return origin !== null && product.allowedOrigins.includes(origin) ? { 'access-control-allow-origin': origin } : {}
 }
 
 function mediaType(contentType: string | null): string {
@@ -121,7 +152,7 @@ function validate(params: Map<string, string[]>): ExchangeRequest | Rejection {
     return { subjectToken, audience }
 }
 
-function reject(ctx: RouteContext, status: number, error: OAuthErrorCode, code: LogCode): Response {
+function reject(ctx: RouteContext, status: number, error: OAuthErrorCode, code: LogCode, headers?: HeadersInit): Response {
     ctx.code = code
-    return oauthError(status, error, code)
+    return oauthError(status, error, code, headers)
 }

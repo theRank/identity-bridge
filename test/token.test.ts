@@ -480,6 +480,166 @@ describe('POST /token', () => {
         })
     })
 
+    describe('CORS', () => {
+        const ACME_ORIGIN = 'https://cn.acme.example'
+        const GLOBEX_ORIGIN = 'https://globex.example'
+        const CORS_HEADERS = ['access-control-allow-origin', 'access-control-allow-methods', 'access-control-allow-headers', 'access-control-max-age']
+
+        // Two products on one Casdoor instance, each listing an origin of its own
+        function cors(deps: Partial<Deps> = {}, respond?: Responder): Setup {
+            return setup('casdoor', {
+                edit: (doc) => {
+                    doc.products.globex.allowedOrigins = [GLOBEX_ORIGIN]
+                },
+                deps,
+                ...(respond === undefined ? {} : { respond }),
+            })
+        }
+
+        function preflight(origin?: string): Request {
+            const headers: Record<string, string> = { 'access-control-request-method': 'POST', 'access-control-request-headers': 'content-type' }
+            if (origin !== undefined) headers.origin = origin
+            return new Request(TOKEN_URL, { method: 'OPTIONS', headers })
+        }
+
+        function corsHeaders(response: Response): Record<string, string | null> {
+            return Object.fromEntries(CORS_HEADERS.map((name) => [name, response.headers.get(name)]))
+        }
+
+        const NONE = Object.fromEntries(CORS_HEADERS.map((name) => [name, null]))
+        const allowed = (origin: string) => ({ ...NONE, 'access-control-allow-origin': origin })
+
+        it.each([ACME_ORIGIN, GLOBEX_ORIGIN])('answers a preflight from %s, which a product lists, 204 with CORS headers', async (origin) => {
+            const { send, logs, calls } = cors()
+            const response = await send(preflight(origin))
+            expect(response.status).toBe(204)
+            expect(await response.text()).toBe('')
+            expect(response.headers.get('vary')).toBe('Origin')
+            expect(corsHeaders(response)).toStrictEqual({
+                'access-control-allow-origin': origin,
+                'access-control-allow-methods': 'POST',
+                'access-control-allow-headers': 'Content-Type',
+                'access-control-max-age': '600',
+            })
+            expect(logs).toEqual([{ route: 'token', status: 204, ms: 0, outcome: 'ok' }])
+            expect(calls).toHaveLength(0)
+        })
+
+        it.each([
+            ['an origin no product lists', 'https://evil.example'],
+            ['a listed origin in another case', 'https://CN.acme.example'],
+            ['a listed origin with a trailing slash', `${ACME_ORIGIN}/`],
+            ['the opaque origin', 'null'],
+            ['no Origin', undefined],
+        ])('answers a preflight with %s 204 without CORS headers', async (_, origin) => {
+            const { send } = cors()
+            const response = await send(preflight(origin))
+            expect(response.status).toBe(204)
+            expect(response.headers.get('vary')).toBe('Origin')
+            expect(corsHeaders(response)).toStrictEqual(NONE)
+        })
+
+        it('echoes an origin the product lists on success, and nothing else', async () => {
+            const { send } = cors()
+            const response = await send(post(form(await casdoorToken()), FORM, { origin: ACME_ORIGIN }))
+            expect(corsHeaders(response)).toStrictEqual(allowed(ACME_ORIGIN))
+            await expectIssued(response)
+        })
+
+        it.each([
+            ['an origin only another product lists', GLOBEX_ORIGIN],
+            ['an origin no product lists', 'https://evil.example'],
+            ['a listed origin in another case', 'https://CN.acme.example'],
+        ])('still exchanges for %s, without CORS headers', async (_, origin) => {
+            const { send } = cors()
+            const response = await send(post(form(await casdoorToken()), FORM, { origin }))
+            expect(corsHeaders(response)).toStrictEqual(NONE)
+            await expectIssued(response)
+        })
+
+        it('echoes a listed origin on a bad_signature error', async () => {
+            const { send, logs } = cors()
+            const token = await signToken(keys.other, casdoorClaims(), { kid: keys.casdoor.kid })
+            const response = await send(post(form(token), FORM, { origin: ACME_ORIGIN }))
+            expect(corsHeaders(response)).toStrictEqual(allowed(ACME_ORIGIN))
+            await expectError(response, 400, 'invalid_request', NOT_ACCEPTABLE)
+            expect(logs).toEqual([line(400, 'bad_signature', { product: 'acme', idp: 'casdoor' })])
+        })
+
+        it('echoes a listed origin on an unexpected error thrown after the product is resolved', async () => {
+            const token = await casdoorToken()
+            const { send, logs } = cors({
+                randomUUID: () => {
+                    throw new Error(`no randomness for ${token}`)
+                },
+            })
+            const response = await send(post(form(token), FORM, { origin: ACME_ORIGIN }))
+            const text = await response.clone().text()
+            expect(corsHeaders(response)).toStrictEqual(allowed(ACME_ORIGIN))
+            await expectError(response, 500, 'server_error', FAILED)
+            expect(logs).toEqual([line(500, 'internal_error', { product: 'acme', idp: 'casdoor' })])
+            expect(text + JSON.stringify(logs)).not.toContain(token.split('.')[1])
+        })
+
+        it.each([
+            ['untrusted_issuer', 400, () => casdoorToken({ iss: 'https://evil.example' }), undefined],
+            ['bad_uid', 400, () => casdoorToken({ uid: 'admin' }), 'casdoor'],
+            ['jwks_unavailable', 503, () => casdoorToken(), 'casdoor'],
+        ] satisfies [LogCode, number, () => Promise<string>, string | undefined][])(
+            'echoes a listed origin on a %s error',
+            async (code, status, token, idp) => {
+                const { send, logs } = cors({}, code === 'jwks_unavailable' ? () => new Response(null, { status: 500 }) : undefined)
+                const response = await send(post(form(await token()), FORM, { origin: ACME_ORIGIN }))
+                expect(response.status).toBe(status)
+                expect(corsHeaders(response)).toStrictEqual(allowed(ACME_ORIGIN))
+                expect(logs).toEqual([line(status, code, idp === undefined ? { product: 'acme' } : { product: 'acme', idp })])
+            },
+        )
+
+        it.each([
+            ['a bad content type', 'text/plain', 400, (token: string) => form(token)],
+            ['a body over 16 KiB', FORM, 413, (token: string) => `${form(token)}&pad=`.padEnd(MAX_BODY_BYTES + 1, 'a')],
+            ['a scope', FORM, 400, (token: string) => form(token, set('scope', 'openid'))],
+            ['an unknown audience', FORM, 400, (token: string) => form(token, set('audience', 'initech'))],
+        ])('gives no CORS headers on an error before the product is resolved: %s', async (_, contentType, status, body) => {
+            const { send } = cors()
+            const response = await send(post(body(await casdoorToken()), contentType, { origin: ACME_ORIGIN }))
+            expect(response.status).toBe(status)
+            expect(response.headers.get('vary')).toBe('Origin')
+            expect(corsHeaders(response)).toStrictEqual(NONE)
+        })
+
+        it('leaves an unexpected error before the product is resolved to handle, without CORS headers', async () => {
+            const { send, logs } = cors()
+            const body = new ReadableStream<Uint8Array>({
+                pull(controller) {
+                    controller.error(new Error('connection reset'))
+                },
+            })
+            const response = await send(new Request(TOKEN_URL, { method: 'POST', headers: { 'content-type': FORM, origin: ACME_ORIGIN }, body }))
+            expect(corsHeaders(response)).toStrictEqual(NONE)
+            await expectError(response, 500, 'server_error', FAILED)
+            expect(logs).toEqual([line(500, 'internal_error')])
+        })
+
+        it('carries Vary: Origin on every response', async () => {
+            const { send } = cors()
+            const token = await casdoorToken()
+            const requests = [
+                preflight(ACME_ORIGIN),
+                preflight('https://evil.example'),
+                preflight(),
+                post(form(token), FORM, { origin: ACME_ORIGIN }),
+                post(form(token), FORM, { origin: 'https://evil.example' }),
+                post(form(token)),
+                post(form(token), 'application/json', { origin: ACME_ORIGIN }),
+                post(form('not-a-jwt'), FORM, { origin: ACME_ORIGIN }),
+                post(form(token, set('audience', 'initech')), FORM, { origin: ACME_ORIGIN }),
+            ]
+            for (const request of requests) expect((await send(request)).headers.get('vary')).toBe('Origin')
+        })
+    })
+
     describe('user ids', () => {
         const DEPLOYMENTS: Record<string, Deployment> = { 'https://clerk.acme.example': 'clerk', 'https://casdoor.example': 'casdoor' }
 
