@@ -177,11 +177,14 @@ function parseBinding(at: At, product: string, idps: Idps): Bound {
 
 function origin(at: At): string {
     const value = at.value
-    if (typeof value === 'string' && !SPACE_OR_CONTROL.test(value)) {
-        const scheme = SCHEME.exec(value)?.[1]?.toLowerCase()
-        if (scheme === 'http' || scheme === 'https' ? parseUrl(value)?.origin === value : OTHER_ORIGIN.test(value)) return value
-    }
+    if (typeof value === 'string' && !SPACE_OR_CONTROL.test(value) && isOrigin(value)) return value
     return at.fail('must be an origin')
+}
+
+function isOrigin(value: string): boolean {
+    const scheme = SCHEME.exec(value)?.[1]?.toLowerCase()
+    if (scheme === 'http' || scheme === 'https') return parseUrl(value)?.origin === value
+    return OTHER_ORIGIN.test(value)
 }
 
 function parseSource(at: At, id: string, idps: Idps, products: Products): WebhookSourceConfig {
@@ -259,7 +262,7 @@ class At {
         return Object.entries(value).map(([key, item]) => [key, new At(item, childPath(this.path, key))])
     }
 
-    // An object with no keys but the given ones
+    // Unknown keys fail, so a misspelled key stops the deploy rather than being ignored
     fields(keys: readonly string[]): Fields {
         const entries = this.entries()
         for (const [key, at] of entries) if (!keys.includes(key)) at.fail('unknown key')
@@ -297,22 +300,26 @@ class At {
     }
 
     https(): string {
-        const value = this.value
-        const url = typeof value === 'string' && !SPACE_OR_CONTROL.test(value) ? parseUrl(value) : undefined
-        if (typeof value !== 'string' || url?.protocol !== 'https:') return this.fail('must be an https URL')
+        return this.httpsUrl().raw
+    }
+
+    // Consumers use the raw string as written, so it is returned with its parse
+    httpsUrl(): { raw: string; url: URL } {
+        const raw = this.value
+        const url = typeof raw === 'string' && !SPACE_OR_CONTROL.test(raw) ? parseUrl(raw) : undefined
+        if (typeof raw !== 'string' || url?.protocol !== 'https:') return this.fail('must be an https URL')
         // new Request() refuses URLs with credentials, and the configuration is not secret
         if (url.username !== '' || url.password !== '') this.fail('must not have a username or password')
-        return value
+        return { raw, url }
     }
 
     // Compared exactly with a token's iss. new URL() adds a trailing slash itself and reports an empty search
     // for a bare "?", so the raw string is checked, not href.
     issuer(): string {
-        const value = this.https()
-        if (/[/?#]$/.test(value)) this.fail('must not end with "/", "?" or "#"')
-        const url = new URL(value)
+        const { raw, url } = this.httpsUrl()
+        if (/[/?#]$/.test(raw)) this.fail('must not end with "/", "?" or "#"')
         if (url.search !== '' || url.hash !== '') this.fail('must not have a query or fragment')
-        return value
+        return raw
     }
 }
 
