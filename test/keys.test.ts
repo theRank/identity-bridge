@@ -167,6 +167,7 @@ describe('importSigningKeys rejections', () => {
         ],
         ['an active key with a point off the curve', (doc) => active(doc, { x: doc.active.y }), 'SIGNING_KEYS.active: not a valid P-256 key'],
         ['an active key with a short x', (doc) => active(doc, { x: 'AAAA' }), 'SIGNING_KEYS.active: not a valid P-256 key'],
+        // workerd refuses this at import; runtimes that do not are covered by the faults below
         ['an active d of another key', async (doc) => active(doc, { d: (await another()).d }), 'SIGNING_KEYS.active: not a valid P-256 key'],
         ['an active d that is not base64url', (doc) => active(doc, { d: `${doc.active.d.slice(1)}*` }), 'SIGNING_KEYS.active: not a valid P-256 key'],
         ['retired keys that are not an array', (doc) => ({ ...doc, retired: doc.retired[0] }), 'SIGNING_KEYS.retired: must be an array'],
@@ -250,6 +251,38 @@ describe('importSigningKeys faults', () => {
 
     afterEach(() => {
         vi.restoreAllMocks()
+    })
+
+    // A runtime that imports a private JWK without checking d against x and y, as workerd does
+    function acceptMismatchedImports(owner: JsonWebKey) {
+        const importKey = subtle.importKey.bind(subtle)
+        vi.spyOn(subtle, 'importKey').mockImplementation(((format: any, keyData: any, ...rest: any[]) => {
+            const own = format === 'jwk' && keyData.d === owner.d ? { ...keyData, x: owner.x, y: owner.y } : keyData
+            return (importKey as any)(format, own, ...rest)
+        }) as typeof subtle.importKey)
+    }
+
+    it('refuses an active d of another key even where the import does not check it', async () => {
+        const [secret, owner] = await Promise.all([bridgeSigningKeys(1), bridgeSigningKeys()])
+        acceptMismatchedImports(owner.active)
+        const json = JSON.stringify({ active: { ...secret.active, d: owner.active.d }, retired: secret.retired })
+        const error = await rejection(json)
+        expect(error.message).toBe('SIGNING_KEYS.active: private key does not match x and y')
+        for (const run of runsOf(owner.active.d!)) expect(error.message).not.toContain(run)
+    })
+
+    it('still accepts a matching key where the import does not check it', async () => {
+        const secret = await bridgeSigningKeys(1)
+        acceptMismatchedImports(secret.active)
+        expect((await importSigningKeys(secret.json)).jwks.keys).toHaveLength(2)
+    })
+
+    it('turns a failure to sign the key check into a fixed KeyError', async () => {
+        const secret = await bridgeSigningKeys()
+        vi.spyOn(subtle, 'sign').mockRejectedValue(new Error(`cannot sign with ${secret.active.d}`))
+        const error = await rejection(secret.json)
+        expect(error.message).toBe('SIGNING_KEYS.active: not a valid P-256 key')
+        for (const run of runsOf(secret.active.d!)) expect(error.message).not.toContain(run)
     })
 
     it.each([

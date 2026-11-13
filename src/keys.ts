@@ -1,7 +1,10 @@
-import { calculateJwkThumbprint, importJWK } from 'jose'
+import { calculateJwkThumbprint, importJWK, type JWK } from 'jose'
 import type { PublicJwk, SigningKeys } from './types'
 
 const SECRET = 'SIGNING_KEYS'
+const ACTIVE = `${SECRET}.active`
+const ECDSA = { name: 'ECDSA', hash: 'SHA-256' }
+const KEY_CHECK = new TextEncoder().encode('identity-bridge signing key check')
 
 // The message names the member in fixed words. JSON.parse and jose error text can quote the input, which holds
 // the private key, and the message reaches the runtime load log line, so neither is ever passed on.
@@ -13,9 +16,10 @@ export class KeyError extends Error {
     }
 }
 
-interface ImportedKey {
+interface CheckedKey {
     jwk: PublicJwk
-    key: CryptoKey
+    publicKey: CryptoKey
+    secret: { d?: string }
 }
 
 export async function importSigningKeys(json: string): Promise<SigningKeys> {
@@ -30,11 +34,12 @@ export async function importSigningKeys(json: string): Promise<SigningKeys> {
     if (Object.keys(document).some((key) => key !== 'active' && key !== 'retired')) {
         throw new KeyError(SECRET, 'only active and retired are allowed')
     }
-    if (document.active === undefined) throw new KeyError(`${SECRET}.active`, 'required')
+    if (document.active === undefined) throw new KeyError(ACTIVE, 'required')
     const retired = document.retired === undefined ? [] : document.retired
     if (!Array.isArray(retired)) throw new KeyError(`${SECRET}.retired`, 'must be an array')
 
-    const active = await readKey(document.active, `${SECRET}.active`, true)
+    const active = await readKey(document.active, ACTIVE, true)
+    const privateKey = await importPrivateKey(active, ACTIVE)
     const published = [active.jwk]
     for (const [index, item] of retired.entries()) {
         const member = `${SECRET}.retired[${index}]`
@@ -43,14 +48,14 @@ export async function importSigningKeys(json: string): Promise<SigningKeys> {
         published.push(jwk)
     }
 
-    const keys: SigningKeys = { kid: active.jwk.kid, privateKey: active.key, jwks: { keys: published } }
+    const keys: SigningKeys = { kid: active.jwk.kid, privateKey, jwks: { keys: published } }
     for (const jwk of published) Object.freeze(jwk)
     Object.freeze(published)
     Object.freeze(keys.jwks)
     return Object.freeze(keys)
 }
 
-async function readKey(value: unknown, member: string, isPrivate: boolean): Promise<ImportedKey> {
+async function readKey(value: unknown, member: string, isPrivate: boolean): Promise<CheckedKey> {
     if (!isObject(value)) throw new KeyError(member, 'must be a JWK object')
     const { kty, crv, x, y, d, kid, alg, use } = value
     if (kty !== 'EC') throw new KeyError(member, 'must be an EC key')
@@ -72,12 +77,39 @@ async function readKey(value: unknown, member: string, isPrivate: boolean): Prom
     if (thumbprint === undefined) throw new KeyError(member, 'not a valid P-256 key')
     if (kid !== undefined && kid !== thumbprint) throw new KeyError(member, 'kid must equal the key thumbprint')
 
-    // Only the key members are imported, so ext and key_ops in the secret cannot make the key exportable or
-    // take away its sign usage. Retired keys are imported too, so that a broken one fails the load rather than
-    // being published.
-    const key = await importJWK({ kty, crv, x, y, ...secret }, 'ES256').catch(() => undefined)
-    if (!(key instanceof CryptoKey)) throw new KeyError(member, 'not a valid P-256 key')
-    return { jwk: { kty, crv, x, y, kid: thumbprint, alg: 'ES256', use: 'sig' }, key }
+    // Retired keys are imported too, so that a broken one fails the load rather than being published
+    const publicKey = await importKey({ kty, crv, x, y })
+    if (publicKey === undefined) throw new KeyError(member, 'not a valid P-256 key')
+    return { jwk: { kty, crv, x, y, kid: thumbprint, alg: 'ES256', use: 'sig' }, publicKey, secret }
+}
+
+// Only the key members are imported, so ext and key_ops in the secret cannot make the key exportable or take
+// away its sign usage. workerd already refuses a d that does not belong to x and y; the signature round trip is
+// for runtimes that do not check, where the JWKS would publish a key that verifies none of the tokens.
+async function importPrivateKey({ jwk, publicKey, secret }: CheckedKey, member: string): Promise<CryptoKey> {
+    const { kty, crv, x, y } = jwk
+    const privateKey = await importKey({ kty, crv, x, y, ...secret })
+    if (privateKey === undefined) throw new KeyError(member, 'not a valid P-256 key')
+    const matches = await roundTrip(privateKey, publicKey)
+    if (matches === undefined) throw new KeyError(member, 'not a valid P-256 key')
+    if (!matches) throw new KeyError(member, 'private key does not match x and y')
+    return privateKey
+}
+
+// undefined when the runtime cannot sign or verify with the keys at all
+async function roundTrip(privateKey: CryptoKey, publicKey: CryptoKey): Promise<boolean | undefined> {
+    try {
+        const signature = await crypto.subtle.sign(ECDSA, privateKey, KEY_CHECK)
+        return await crypto.subtle.verify(ECDSA, publicKey, signature, KEY_CHECK)
+    } catch {
+        return undefined
+    }
+}
+
+// The error, whose text may quote the key, is dropped
+async function importKey(jwk: JWK): Promise<CryptoKey | undefined> {
+    const key = await importJWK(jwk, 'ES256').catch(() => undefined)
+    return key instanceof CryptoKey ? key : undefined
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
