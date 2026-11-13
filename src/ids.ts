@@ -30,16 +30,25 @@ export async function uuidV5(namespace: string, name: string): Promise<string> {
     return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
 }
 
-// A malformed override fails rather than falling back, which would give one person two ids
+// A malformed override fails rather than falling back, which would give one person two ids. The callers check
+// the subject too; checking again here means a missing one can never hash into an id shared by everyone.
 export async function deriveUserId(idpIssuer: string, idpSubject: string, uid?: unknown): Promise<string> {
+    if (!isNonEmptyString(idpIssuer) || !isNonEmptyString(idpSubject)) {
+        throw new TypeError('idpIssuer and idpSubject must be non-empty strings')
+    }
     if (uid === undefined || uid === null) return uuidV5(USER_ID_NAMESPACE, JSON.stringify([idpIssuer, idpSubject]))
     if (typeof uid === 'string' && UUID.test(uid) && !NIL_OR_MAX.test(uid)) return uid.toLowerCase()
     throw new BadUidError()
 }
 
 // Identical across redeliveries of one IdP event, so products can drop repeats by jti
-export function eventId(sourceId: string, idpEventId: string): Promise<string> {
+export async function eventId(sourceId: string, idpEventId: string): Promise<string> {
+    if (!isNonEmptyString(sourceId) || !isNonEmptyString(idpEventId)) throw new TypeError('sourceId and idpEventId must be non-empty strings')
     return uuidV5(EVENT_ID_NAMESPACE, JSON.stringify([sourceId, idpEventId]))
+}
+
+function isNonEmptyString(value: unknown): value is string {
+    return typeof value === 'string' && value !== ''
 }
 
 function hexBytes(hex: string): Uint8Array {

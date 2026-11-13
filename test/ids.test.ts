@@ -106,6 +106,23 @@ describe('deriveUserId', () => {
         await expect(deriveUserId(CLERK, SUBJECT, uid)).rejects.toBeInstanceOf(BadUidError)
     })
 
+    const BAD_NAMES: [string, unknown, unknown][] = [
+        ['an empty issuer', '', SUBJECT],
+        ['an empty subject', CLERK, ''],
+        ['a missing subject', CLERK, undefined],
+        ['a null issuer', null, SUBJECT],
+        ['a numeric subject', CLERK, 42],
+        ['an object as issuer', { iss: CLERK }, SUBJECT],
+    ]
+
+    it.each(BAD_NAMES)('refuses %s with a TypeError that does not quote it', async (_, issuer, subject) => {
+        for (const uid of [undefined, '6f9619ff-8b86-4d01-b42d-00cf4fc964ff']) {
+            const error = await deriveUserId(issuer as string, subject as string, uid).catch((caught: unknown) => caught)
+            expect(error).toBeInstanceOf(TypeError)
+            expect((error as TypeError).message).toBe('idpIssuer and idpSubject must be non-empty strings')
+        }
+    })
+
     it('never quotes the override in the error', async () => {
         const uid = 'secret-admin-value'
         const error = await deriveUserId(CLERK, SUBJECT, uid).catch((caught: unknown) => caught)
@@ -118,6 +135,18 @@ describe('deriveUserId', () => {
 describe('eventId', () => {
     it.each(golden.eventIds)('gives the golden id for $case', async (entry) => {
         expect(await eventId(entry.sourceId, entry.idpEventId)).toBe(entry.expected)
+    })
+
+    it.each([
+        ['an empty source id', '', 'msg_1'],
+        ['an empty event id', 'clerk-acme', ''],
+        ['a missing event id', 'clerk-acme', undefined],
+        ['a null source id', null, 'msg_1'],
+        ['a numeric event id', 'clerk-acme', 7],
+    ])('rejects %s with a TypeError that does not quote it', async (_, sourceId, idpEventId) => {
+        const error = await eventId(sourceId as string, idpEventId as string).catch((caught: unknown) => caught)
+        expect(error).toBeInstanceOf(TypeError)
+        expect((error as TypeError).message).toBe('sourceId and idpEventId must be non-empty strings')
     })
 
     it('is the same on every redelivery', async () => {
