@@ -13,7 +13,7 @@ export class KeyError extends Error {
     }
 }
 
-interface ReadKey {
+interface ImportedKey {
     jwk: PublicJwk
     key: CryptoKey
 }
@@ -50,7 +50,7 @@ export async function importSigningKeys(json: string): Promise<SigningKeys> {
     return Object.freeze(keys)
 }
 
-async function readKey(value: unknown, member: string, isPrivate: boolean): Promise<ReadKey> {
+async function readKey(value: unknown, member: string, isPrivate: boolean): Promise<ImportedKey> {
     if (!isObject(value)) throw new KeyError(member, 'must be a JWK object')
     const { kty, crv, x, y, d, kid, alg, use } = value
     if (kty !== 'EC') throw new KeyError(member, 'must be an EC key')
