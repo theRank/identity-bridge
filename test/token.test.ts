@@ -582,6 +582,18 @@ describe('/token', () => {
             expect(text + JSON.stringify(logs)).not.toContain(token.split('.')[1])
         })
 
+        it('echoes a listed origin when verification fails with an error that is not an exchange error', async () => {
+            // dispatch reads the clock before and after the handler; only the read in between, by verification, is
+            // NaN, which verification refuses with a plain Error before any fetch
+            let reads = 0
+            const { send, logs, calls } = cors({ now: () => (++reads === 2 ? NaN : START_MS) })
+            const response = await send(post(form(await casdoorToken()), FORM, { origin: ACME_ORIGIN }))
+            expect(corsHeaders(response)).toStrictEqual(allowed(ACME_ORIGIN))
+            await expectError(response, 500, 'server_error', FAILED)
+            expect(logs).toEqual([line(500, 'internal_error', { product: 'acme' })])
+            expect(calls).toHaveLength(0)
+        })
+
         it.each([
             ['untrusted_issuer', 400, () => casdoorToken({ iss: 'https://evil.example' }), undefined],
             ['bad_uid', 400, () => casdoorToken({ uid: 'admin' }), 'casdoor'],
