@@ -9,6 +9,7 @@ import { fakeDeps, START_MS } from './helpers/deps'
 import { fakeFetch, type FetchCall, type Responder } from './helpers/fetch'
 import { casdoorClaims, clerkClaims, NOW_SEC, signToken } from './helpers/idp'
 import { bridgeSigningKeys, ecKeyPair, idpJwks, rsaKeyPair, type IdpKeyPair } from './helpers/keys'
+import golden from './fixtures/golden-ids.json'
 
 // Cases edit the documents into any shape
 type Doc = Record<string, any>
@@ -476,6 +477,26 @@ describe('POST /token', () => {
             const { send, logs } = setup()
             await expectError(await send(post(`scope=a&scope=b&pad=`.padEnd(MAX_BODY_BYTES + 1, 'a'))), 413, 'invalid_request', TOO_LARGE)
             expect(logs).toEqual([line(413, 'too_large')])
+        })
+    })
+
+    describe('user ids', () => {
+        const DEPLOYMENTS: Record<string, Deployment> = { 'https://clerk.acme.example': 'clerk', 'https://casdoor.example': 'casdoor' }
+
+        it.each(golden.userIds)('gives the golden sub for $case', async (entry) => {
+            const deployment = DEPLOYMENTS[entry.issuer]
+            expect(deployment).toBeDefined()
+            // An entry without uid sends no uid claim, so the default Casdoor uid is removed
+            const claims = { iss: entry.issuer, sub: entry.subject, uid: 'uid' in entry ? entry.uid : undefined }
+            const token = deployment === 'clerk' ? await clerkToken(claims) : await casdoorToken(claims)
+            const { send } = setup(deployment)
+            expect(decodeJwt(await expectIssued(await send(post(form(token))))).sub).toBe(entry.expected)
+        })
+
+        it.each(golden.malformedUids)('rejects the $case uid override as bad_uid', async ({ uid }) => {
+            const { send, logs } = setup()
+            await expectError(await send(post(form(await clerkToken({ uid })))), 400, 'invalid_request', NOT_ACCEPTABLE)
+            expect(logs).toEqual([line(400, 'bad_uid', { product: 'acme', idp: 'clerk-acme' })])
         })
     })
 
