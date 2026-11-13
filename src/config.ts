@@ -191,13 +191,17 @@ function parseSource(at: At, id: string, idps: Record<string, IdpConfig>, produc
     if (type === 'clerk') source.optional('organization')?.fail('not allowed for clerk sources')
     const idp = reference(source.required('idp'), idps, 'idp')
     const uid = present('uidField', parseUidField(source, type, idp))
-    // Event sub values come from this IdP, so they match only the token sub values of products that bind it
-    const targets = source.required('products').items(true).map((item) => {
+    // Event sub values come from this IdP, so they match only the token sub values of products that bind it.
+    // A repeat would deliver each event to the product twice, concurrently.
+    const targets: string[] = []
+    for (const item of source.required('products').items(true)) {
         const product = reference(item, products, 'product')
         if (!product.events) item.fail(`product ${quote(product.id)} has no events`)
         if (!product.idps.some((binding) => binding.idp === idp.id)) item.fail(`product ${quote(product.id)} does not bind idp ${quote(idp.id)}`)
-        return product.id
-    })
+        const first = targets.indexOf(product.id)
+        if (first !== -1) item.fail(`product ${quote(product.id)} is already listed at products[${first}]`)
+        targets.push(product.id)
+    }
     if (organization === undefined) return { id, type: 'clerk', idp: idp.id, ...uid, products: targets }
     return { id, type: 'casdoor', idp: idp.id, organization, ...uid, products: targets }
 }

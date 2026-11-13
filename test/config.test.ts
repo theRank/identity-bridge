@@ -829,6 +829,12 @@ describe('parseConfig cross-references', () => {
             'webhookSources.clerk-acme.products[0]: unknown product "acm"',
         ],
         [
+            'a repeated source product',
+            'clerk',
+            (doc) => doc.webhookSources['clerk-acme'].products.push('acme'),
+            'webhookSources.clerk-acme.products[1]: product "acme" is already listed at products[0]',
+        ],
+        [
             'a source product without events',
             'casdoor',
             (doc) => doc.webhookSources['casdoor-acme'].products.push('globex'),
