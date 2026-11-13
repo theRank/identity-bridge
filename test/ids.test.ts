@@ -66,7 +66,13 @@ describe('deriveUserId', () => {
     })
 
     it('returns an override of any version lowercased, ignoring the issuer and subject', async () => {
-        for (const uid of ['00000000-0000-0000-0000-000000000000', '6F9619FF-8B86-1D01-B42D-00CF4FC964FF', 'aBcDeF01-2345-6789-abcd-ef0123456789']) {
+        const uids = [
+            '6F9619FF-8B86-1D01-B42D-00CF4FC964FF',
+            'aBcDeF01-2345-6789-abcd-ef0123456789',
+            '00000000-0000-0000-0000-000000000001',
+            'ffffffff-ffff-ffff-ffff-fffffffffffe',
+        ]
+        for (const uid of uids) {
             expect(await deriveUserId(CLERK, SUBJECT, uid)).toBe(uid.toLowerCase())
             expect(await deriveUserId('https://casdoor.example', 'other', uid)).toBe(uid.toLowerCase())
         }
@@ -74,6 +80,10 @@ describe('deriveUserId', () => {
 
     const VALID = '6f9619ff-8b86-4d01-b42d-00cf4fc964ff'
     const MALFORMED: [string, unknown][] = [
+        ['the nil UUID', '00000000-0000-0000-0000-000000000000'],
+        ['the max UUID', 'ffffffff-ffff-ffff-ffff-ffffffffffff'],
+        ['the max UUID in uppercase', 'FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF'],
+        ['the max UUID in mixed case', 'ffffffff-FFFF-ffff-FFFF-ffffffffffff'],
         ['an empty string', ''],
         ['a word', 'admin'],
         ['a UUID without hyphens', VALID.replace(/-/g, '')],

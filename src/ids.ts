@@ -4,6 +4,8 @@ export const EVENT_ID_NAMESPACE = '73c4ff75-fed7-4a0c-8541-3ff240e8f331'
 
 // Any version and variant: an override names an id the product already uses
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+// Backends write these as empty defaults, which would merge every such user into one
+const NIL_OR_MAX = /^(0{8}-0{4}-0{4}-0{4}-0{12}|f{8}-f{4}-f{4}-f{4}-f{12})$/i
 
 // The message never quotes the value
 export class BadUidError extends Error {
@@ -31,7 +33,7 @@ export async function uuidV5(namespace: string, name: string): Promise<string> {
 // A malformed override fails rather than falling back, which would give one person two ids
 export async function deriveUserId(idpIssuer: string, idpSubject: string, uid?: unknown): Promise<string> {
     if (uid === undefined || uid === null) return uuidV5(USER_ID_NAMESPACE, JSON.stringify([idpIssuer, idpSubject]))
-    if (typeof uid === 'string' && UUID.test(uid)) return uid.toLowerCase()
+    if (typeof uid === 'string' && UUID.test(uid) && !NIL_OR_MAX.test(uid)) return uid.toLowerCase()
     throw new BadUidError()
 }
 
