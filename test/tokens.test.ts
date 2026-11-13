@@ -24,6 +24,19 @@ const PROFILE_CLAIMS = {
     picture: 'https://img.acme.example/ada.png',
 }
 
+// The claims of an access token for product acme under the Clerk configuration, before any profile claims
+const ACME_CLAIMS = {
+    iss: 'https://id.acme.example',
+    sub: USER,
+    aud: 'acme',
+    client_id: 'acme',
+    iat: NOW,
+    exp: NOW + 900,
+    jti: JTI,
+    idp: 'clerk-acme',
+    region: 'us',
+}
+
 async function setup(config: Config = parseConfig(clerkConfigJson)): Promise<{ keys: SigningKeys; config: Config }> {
     return { keys: await importSigningKeys((await bridgeSigningKeys(1)).json), config }
 }
@@ -64,18 +77,7 @@ describe('mintAccessToken', () => {
         const token = await mintAccessToken(keys, config, 'acme', { userId: USER, idpId: 'clerk-acme', profile: PROFILE }, NOW, JTI)
         const { protectedHeader, payload } = await verify(token, keys, { typ: 'at+jwt', issuer: 'https://id.acme.example', audience: 'acme' })
         expect(protectedHeader).toStrictEqual({ alg: 'ES256', typ: 'at+jwt', kid: keys.kid })
-        expect(payload).toStrictEqual({
-            iss: 'https://id.acme.example',
-            sub: USER,
-            aud: 'acme',
-            client_id: 'acme',
-            iat: NOW,
-            exp: NOW + 900,
-            jti: JTI,
-            idp: 'clerk-acme',
-            region: 'us',
-            ...PROFILE_CLAIMS,
-        })
+        expect(payload).toStrictEqual({ ...ACME_CLAIMS, ...PROFILE_CLAIMS })
     })
 
     it('carries no region when none is configured', async () => {
@@ -98,10 +100,7 @@ describe('mintAccessToken', () => {
         const { keys, config } = await setup()
         const token = await mintAccessToken(keys, config, 'acme', { userId: USER, idpId: 'clerk-acme', profile: { name: 'Ada' } }, NOW, JTI)
         const { payload } = await verify(token, keys, { typ: 'at+jwt' })
-        expect(payload).toMatchObject({ name: 'Ada' })
-        for (const claim of ['email', 'email_verified', 'phone_number', 'phone_number_verified', 'phoneNumber', 'picture', 'scope']) {
-            expect(payload).not.toHaveProperty(claim)
-        }
+        expect(payload).toStrictEqual({ ...ACME_CLAIMS, name: 'Ada' })
     })
 
     it('carries only the claims it maps, whatever else the profile object holds', async () => {
@@ -109,9 +108,7 @@ describe('mintAccessToken', () => {
         const profile = { ...PROFILE, email_verified: true, scope: 'admin' } as Profile
         const token = await mintAccessToken(keys, config, 'acme', { userId: USER, idpId: 'clerk-acme', profile }, NOW, JTI)
         const { payload } = await verify(token, keys, { typ: 'at+jwt' })
-        expect(Object.keys(payload).sort()).toEqual(
-            ['aud', 'client_id', 'email', 'exp', 'iat', 'idp', 'iss', 'jti', 'name', 'phone_number', 'picture', 'region', 'sub'],
-        )
+        expect(payload).toStrictEqual({ ...ACME_CLAIMS, ...PROFILE_CLAIMS })
     })
 
     it('takes the issuer, region and lifetime from the configuration and the audience from the product', async () => {
@@ -119,13 +116,16 @@ describe('mintAccessToken', () => {
         const { keys, config } = await setup(parseConfig(JSON.stringify(doc)))
         const token = await mintAccessToken(keys, config, 'globex', { userId: USER, idpId: 'casdoor', profile: {} }, NOW, JTI)
         const { payload } = await verify(token, keys, { typ: 'at+jwt', issuer: 'https://id.cn.acme.example', audience: 'globex' })
-        expect(payload).toMatchObject({
+        expect(payload).toStrictEqual({
             iss: 'https://id.cn.acme.example',
+            sub: USER,
             aud: 'globex',
             client_id: 'globex',
+            iat: NOW,
+            exp: NOW + 3600,
+            jti: JTI,
             idp: 'casdoor',
             region: 'cn',
-            exp: NOW + 3600,
         })
     })
 
