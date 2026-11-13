@@ -628,6 +628,24 @@ describe('parseConfig field rules', () => {
             (doc) => doc.products.acme.allowedOrigins.push('Capacitor://localhost'),
             'products.acme.allowedOrigins[1]: must be an origin',
         ],
+        [
+            'capacitor://local host',
+            'clerk',
+            (doc) => doc.products.acme.allowedOrigins.push('capacitor://local host'),
+            'products.acme.allowedOrigins[1]: must be an origin',
+        ],
+        [
+            'an other-scheme origin with a tab',
+            'clerk',
+            (doc) => doc.products.acme.allowedOrigins.push('capacitor://localhost\t'),
+            'products.acme.allowedOrigins[1]: must be an origin',
+        ],
+        [
+            'an https origin with a trailing space',
+            'clerk',
+            (doc) => doc.products.acme.allowedOrigins.push('https://a.example '),
+            'products.acme.allowedOrigins[1]: must be an origin',
+        ],
         ['a numeric origin', 'clerk', (doc) => doc.products.acme.allowedOrigins.push(443), 'products.acme.allowedOrigins[1]: must be an origin'],
         [
             'events that are not an object',

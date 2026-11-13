@@ -174,7 +174,7 @@ function parseBinding(at: At, product: string, idps: Record<string, IdpConfig>):
 
 function origin(at: At): string {
     const value = at.value
-    if (typeof value === 'string') {
+    if (typeof value === 'string' && !SPACE_OR_CONTROL.test(value)) {
         const scheme = SCHEME.exec(value)?.[1]?.toLowerCase()
         if (scheme === 'http' || scheme === 'https' ? parseUrl(value)?.origin === value : OTHER_ORIGIN.test(value)) return value
     }
