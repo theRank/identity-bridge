@@ -107,12 +107,15 @@ function parseClaims(at: At | undefined): ClaimMapping {
 interface Bound {
     at: At
     idpAt: At
+    product: string
     binding: IdpBinding
+    // The clientIds and authorizedParties entries
+    clients: At[]
 }
 
 function parseProduct(at: At, id: string, idps: Record<string, IdpConfig>, allBound: Bound[]): ProductConfig {
     const product = at.fields(['idps', 'allowedOrigins', 'events'])
-    const bound = product.required('idps').items(true).map((item) => parseBinding(item, idps))
+    const bound = product.required('idps').items(true).map((item) => parseBinding(item, id, idps))
     // IdP issuers are distinct, so the token's iss selects one binding unless a record is bound twice
     bound.forEach(({ idpAt, binding }, index) => {
         const first = bound.findIndex((other) => other.binding.idp === binding.idp)
@@ -128,13 +131,25 @@ function parseProduct(at: At, id: string, idps: Record<string, IdpConfig>, allBo
 }
 
 // Products sharing an IdP, as on one Casdoor instance, accept each other's tokens unless every binding names
-// its clients. Each product binds an IdP at most once, so the count per IdP is a count of products.
+// clients of its own. Each product binds an IdP at most once, so the count per IdP is a count of products.
 function requireClientBinding(bound: Bound[]): void {
     const products = new Map<string, number>()
     for (const { binding } of bound) products.set(binding.idp, (products.get(binding.idp) ?? 0) + 1)
-    for (const { at, binding } of bound) {
-        if ((products.get(binding.idp) ?? 0) > 1 && !binding.clientIds && !binding.authorizedParties) {
+    // Per IdP, the product that first listed each value. A Casdoor token carries its client id as both aud and
+    // azp, so a value names one client whichever of the two lists holds it.
+    const owners = new Map<string, Map<string, string>>()
+    for (const { at, product, binding, clients } of bound) {
+        if ((products.get(binding.idp) ?? 0) < 2) continue
+        if (clients.length === 0) {
             at.fail(`must list clientIds or authorizedParties, because idp ${quote(binding.idp)} is bound by several products`)
+        }
+        const owner = owners.get(binding.idp) ?? new Map<string, string>()
+        owners.set(binding.idp, owner)
+        for (const client of clients) {
+            const value = client.string()
+            const first = owner.get(value) ?? product
+            if (first !== product) client.fail(`${quote(value)} is also a client of product ${quote(first)}`)
+            owner.set(value, first)
         }
     }
 }
@@ -143,16 +158,18 @@ function parseEvents(at: At | undefined): ProductConfig['events'] {
     return at && { url: at.fields(['url']).required('url').https() }
 }
 
-function parseBinding(at: At, idps: Record<string, IdpConfig>): Bound {
+function parseBinding(at: At, product: string, idps: Record<string, IdpConfig>): Bound {
     const fields = at.fields(['idp', 'clientIds', 'authorizedParties'])
     const idpAt = fields.required('idp')
     const idp = reference(idpAt, idps, 'idp')
+    const clientIds = fields.optional('clientIds')?.items(true)
+    const authorizedParties = fields.optional('authorizedParties')?.items(true)
     const binding = {
         idp: idp.id,
-        ...present('clientIds', fields.optional('clientIds')?.items(true).map((item) => item.nonEmptyString())),
-        ...present('authorizedParties', fields.optional('authorizedParties')?.items(true).map((item) => item.nonEmptyString())),
+        ...present('clientIds', clientIds?.map((item) => item.nonEmptyString())),
+        ...present('authorizedParties', authorizedParties?.map((item) => item.nonEmptyString())),
     }
-    return { at, idpAt, binding }
+    return { at, idpAt, product, binding, clients: [...(clientIds ?? []), ...(authorizedParties ?? [])] }
 }
 
 function origin(at: At): string {

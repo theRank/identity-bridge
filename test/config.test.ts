@@ -766,6 +766,33 @@ describe('parseConfig cross-references', () => {
             `products.acme.idps[0]: ${SHARED_IDP}`,
         ],
         [
+            'a client id shared by two products of one IdP',
+            'casdoor',
+            (doc) => doc.products.globex.idps[0].clientIds.push('acme-app-client'),
+            'products.globex.idps[0].clientIds[1]: "acme-app-client" is also a client of product "acme"',
+        ],
+        [
+            'an authorized party shared by two products of one IdP',
+            'casdoor',
+            (doc) => {
+                doc.products.acme.idps[0].authorizedParties = ['https://acme.example']
+                doc.products.globex.idps[0].authorizedParties = ['https://acme.example']
+            },
+            'products.globex.idps[0].authorizedParties[0]: "https://acme.example" is also a client of product "acme"',
+        ],
+        [
+            "a client id of one product listed as another's authorized party",
+            'casdoor',
+            (doc) => (doc.products.globex.idps[0].authorizedParties = ['acme-web-client']),
+            'products.globex.idps[0].authorizedParties[0]: "acme-web-client" is also a client of product "acme"',
+        ],
+        [
+            'a third product reusing a client id of the first',
+            'casdoor',
+            (doc) => (doc.products.initech = { idps: [{ idp: 'casdoor', clientIds: ['initech-web-client', 'acme-web-client'] }] }),
+            'products.initech.idps[0].clientIds[1]: "acme-web-client" is also a client of product "acme"',
+        ],
+        [
             'an unknown source idp',
             'clerk',
             (doc) => (doc.webhookSources['clerk-acme'].idp = 'clerk-acm'),
@@ -825,6 +852,22 @@ describe('parseConfig cross-references', () => {
             'a shared IdP bound through authorizedParties',
             'casdoor',
             (doc) => (doc.products.globex.idps = [{ idp: 'casdoor', authorizedParties: ['globex-web-client'] }]),
+        ],
+        [
+            'a client value repeated within one binding',
+            'casdoor',
+            (doc) => {
+                doc.products.acme.idps[0].clientIds.push('acme-web-client')
+                doc.products.acme.idps[0].authorizedParties = ['acme-web-client']
+            },
+        ],
+        [
+            'one client id on bindings of different IdPs',
+            'casdoor',
+            (doc) => {
+                betaProduct(doc)
+                doc.products.beta.idps[0].clientIds = ['acme-web-client']
+            },
         ],
         [
             'two products on distinct issuers without client binding',
