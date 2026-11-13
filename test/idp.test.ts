@@ -8,7 +8,7 @@ import { casdoorConfig, clerkConfig } from './helpers/config'
 import { fakeDeps } from './helpers/deps'
 import { fakeFetch, hang, type FetchCall, type Responder } from './helpers/fetch'
 import { base64url, casdoorClaims, clerkClaims, NOW_SEC, signToken, unsignedToken } from './helpers/idp'
-import { ecKeyPair, idpJwks, rsaKeyPair, type IdpKeyPair } from './helpers/keys'
+import { bridgeSigningKeys, ecKeyPair, idpJwks, rsaKeyPair, type IdpKeyPair } from './helpers/keys'
 
 // Cases edit the documents into any shape
 type Doc = Record<string, any>
@@ -168,6 +168,14 @@ describe('verifySubjectToken', () => {
             const { verify } = clerk()
             const claims = clerkClaims({ name: '  Ada Lovelace  ', picture: 'http://img.clerk.example/ada.png', email: 'not an email' })
             expect((await verify(await signToken(keys.clerk, claims))).profile).toStrictEqual({ name: 'Ada Lovelace' })
+        })
+
+        it('keeps a phone number only when its default verified claim is true', async () => {
+            const { verify } = clerk()
+            const phone = { phone_number: '+14155550123', phone_number_verified: true }
+            expect((await verify(await signToken(keys.clerk, clerkClaims(phone)))).profile).toHaveProperty('phoneNumber', '+14155550123')
+            const unverified = clerkClaims({ ...phone, phone_number_verified: 'true' })
+            expect((await verify(await signToken(keys.clerk, unverified))).profile).not.toHaveProperty('phoneNumber')
         })
 
         it('accepts an ES256 token when the IdP allows ES256', async () => {
@@ -495,6 +503,17 @@ describe('verifySubjectToken', () => {
             expect(await failure(verify(await signToken(keys.clerk, clerkClaims())))).toStrictEqual(unavailable())
         })
 
+        it('answers jwks_unavailable for a JWKS that publishes a private key', async () => {
+            const { active } = await bridgeSigningKeys()
+            const { verify } = clerk(
+                (doc) => {
+                    doc.idps['clerk-acme'].algorithms = ['ES256']
+                },
+                () => Response.json({ keys: [{ ...active, kid: keys.ec.kid, alg: 'ES256', use: 'sig' }] }),
+            )
+            expect(await failure(verify(await signToken(keys.ec, clerkClaims())))).toStrictEqual(unavailable())
+        })
+
         it('answers jwks_unavailable when the timeout signal jose passes aborts', async () => {
             vi.spyOn(AbortSignal, 'timeout').mockImplementation(() => AbortSignal.abort(new DOMException('The operation timed out.', 'TimeoutError')))
             const { verify, calls } = clerk(undefined, hang)
@@ -568,6 +587,42 @@ describe('verifySubjectToken', () => {
             published = keys.other
             expect(await failure(verify(await signToken(keys.other, clerkClaims())))).toStrictEqual(rejected('unknown_key'))
             expect(calls).toHaveLength(1)
+        })
+    })
+
+    describe('order of checks', () => {
+        const idToken = () => casdoorClaims({ tokenType: 'id-token' })
+
+        it('checks the algorithm before looking for the key', async () => {
+            const { verify, calls } = casdoor()
+            expect(await failure(verify(unsignedToken({ alg: 'none', kid: 'ins_unknown' }, idToken())))).toStrictEqual(
+                rejected('bad_algorithm', 'casdoor'),
+            )
+            expect(calls).toHaveLength(0)
+        })
+
+        it('checks the signature before any claim', async () => {
+            const { verify } = casdoor()
+            const forged = await signToken(keys.other, casdoorClaims({ tokenType: 'id-token', exp: NOW_SEC - 3600 }), { kid: keys.casdoor.kid })
+            expect(await failure(verify(forged))).toStrictEqual(rejected('bad_signature', 'casdoor'))
+        })
+
+        it('checks the time claims before the required claims', async () => {
+            const { verify } = casdoor()
+            const expired = await signToken(keys.casdoor, casdoorClaims({ tokenType: 'id-token', exp: NOW_SEC - 3600 }))
+            expect(await failure(verify(expired))).toStrictEqual(rejected('expired', 'casdoor'))
+        })
+
+        it('checks the required claims before the client binding', async () => {
+            const { verify } = casdoor()
+            const globexIdToken = await signToken(keys.casdoor, { ...idToken(), aud: ['globex-web-client'], azp: 'globex-web-client' })
+            expect(await failure(verify(globexIdToken))).toStrictEqual(rejected('claim_mismatch', 'casdoor'))
+        })
+
+        it('checks the client binding before the subject', async () => {
+            const { verify } = casdoor()
+            const globex = await signToken(keys.casdoor, casdoorClaims({ aud: ['globex-web-client'], sub: '' }))
+            expect(await failure(verify(globex))).toStrictEqual(rejected('client_mismatch', 'casdoor'))
         })
     })
 
