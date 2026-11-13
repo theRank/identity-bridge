@@ -36,16 +36,17 @@ function algorithmName(algorithm: string | { name: string }): string {
 }
 
 describe('GET /healthz', () => {
-    it('answers 200 ok when the self-test passes', async () => {
+    it('answers 200 ok, not to be cached, when the self-test passes', async () => {
         const { deps, logs } = fakeDeps()
         const response = await handle(new Request(HEALTH_URL), runtime, deps)
         expect(response.status).toBe(200)
         expect(response.headers.get('content-type')).toBe('application/json')
+        expect(response.headers.get('cache-control')).toBe('no-store')
         expect(await response.json()).toStrictEqual({ status: 'ok' })
         expect(logs).toEqual([{ route: 'health', status: 200, ms: 0, outcome: 'ok' }])
     })
 
-    it('answers 503 unavailable, without naming what failed, when the self-test fails', async () => {
+    it('answers 503 unavailable, not to be cached and without naming what failed, when the self-test fails', async () => {
         const digest = crypto.subtle.digest.bind(crypto.subtle)
         const spy = vi
             .spyOn(crypto.subtle, 'digest')
@@ -56,6 +57,7 @@ describe('GET /healthz', () => {
         expect(spy.mock.calls.map(([algorithm]) => algorithmName(algorithm))).toContain('SHA-1')
         expect(response.status).toBe(503)
         expect(response.headers.get('content-type')).toBe('application/json')
+        expect(response.headers.get('cache-control')).toBe('no-store')
         expect(await response.json()).toStrictEqual({ status: 'unavailable' })
         expect(logs).toEqual([{ route: 'health', status: 503, ms: 0, outcome: 'error' }])
     })
