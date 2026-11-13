@@ -615,6 +615,23 @@ describe('verifySubjectToken', () => {
     })
 
     describe('key sets', () => {
+        // A Casdoor organization with an issuer of its own publishes the instance's JWKS
+        it('keeps a key set per IdP record when two records share a jwksUri', async () => {
+            const orgIssuer = 'https://casdoor.example/orgs/acme'
+            const { verify, calls } = casdoor((doc) => {
+                doc.idps['casdoor-acme'] = { ...doc.idps.casdoor, issuer: orgIssuer }
+                doc.products.acme.idps.push({ idp: 'casdoor-acme' })
+            })
+            const instanceToken = await signToken(keys.casdoor, casdoorClaims())
+            const orgToken = await signToken(keys.casdoor, casdoorClaims({ iss: orgIssuer }))
+            expect((await verify(instanceToken)).idp.id).toBe('casdoor')
+            expect((await verify(orgToken)).idp.id).toBe('casdoor-acme')
+            expect(calls.map((call) => call.url)).toEqual(['https://casdoor.example/.well-known/jwks', 'https://casdoor.example/.well-known/jwks'])
+            await verify(instanceToken)
+            await verify(orgToken)
+            expect(calls).toHaveLength(2)
+        })
+
         it('fetches the JWKS once for consecutive exchanges', async () => {
             const { verify, calls } = clerk()
             await verify(await signToken(keys.clerk, clerkClaims()))
