@@ -50,7 +50,7 @@ async function exchange(request: Request, runtime: Runtime, deps: Deps, ctx: Rou
     const product = runtime.config.products[params.audience]
     if (product === undefined) return reject(ctx, 400, 'invalid_target', 'unknown_product')
     ctx.product = product.id
-    const cors = allowedOrigin(request, product)
+    const cors = corsHeaders(request, product)
     try {
         return await issue(params.subjectToken, product, runtime, deps, ctx, cors)
     } catch {
@@ -106,7 +106,7 @@ function preflight(request: Request, config: Config): Response {
 
 // CORS is a browser control, not authentication: an origin the product does not list is still served, only
 // without the header that lets a browser read the answer
-function allowedOrigin(request: Request, product: ProductConfig): Record<string, string> {
+function corsHeaders(request: Request, product: ProductConfig): Record<string, string> {
     const origin = request.headers.get('origin')
     return origin !== null && product.allowedOrigins.includes(origin) ? { 'access-control-allow-origin': origin } : {}
 }

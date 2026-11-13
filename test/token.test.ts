@@ -503,7 +503,7 @@ describe('/token', () => {
             return new Request(TOKEN_URL, { method: 'OPTIONS', headers })
         }
 
-        function corsHeaders(response: Response): Record<string, string | null> {
+        function corsOf(response: Response): Record<string, string | null> {
             return Object.fromEntries(CORS_HEADERS.map((name) => [name, response.headers.get(name)]))
         }
 
@@ -516,7 +516,7 @@ describe('/token', () => {
             expect(response.status).toBe(204)
             expect(await response.text()).toBe('')
             expect(response.headers.get('vary')).toBe('Origin')
-            expect(corsHeaders(response)).toStrictEqual({
+            expect(corsOf(response)).toStrictEqual({
                 'access-control-allow-origin': origin,
                 'access-control-allow-methods': 'POST',
                 'access-control-allow-headers': 'Content-Type',
@@ -537,13 +537,13 @@ describe('/token', () => {
             const response = await send(preflight(origin))
             expect(response.status).toBe(204)
             expect(response.headers.get('vary')).toBe('Origin')
-            expect(corsHeaders(response)).toStrictEqual(NONE)
+            expect(corsOf(response)).toStrictEqual(NONE)
         })
 
         it('echoes an origin the product lists on success, and nothing else', async () => {
             const { send } = cors()
             const response = await send(post(form(await casdoorToken()), FORM, { origin: ACME_ORIGIN }))
-            expect(corsHeaders(response)).toStrictEqual(allowed(ACME_ORIGIN))
+            expect(corsOf(response)).toStrictEqual(allowed(ACME_ORIGIN))
             await expectIssued(response)
         })
 
@@ -554,17 +554,17 @@ describe('/token', () => {
         ])('still exchanges for %s, without CORS headers', async (_, origin) => {
             const { send } = cors()
             const response = await send(post(form(await casdoorToken()), FORM, { origin }))
-            expect(corsHeaders(response)).toStrictEqual(NONE)
+            expect(corsOf(response)).toStrictEqual(NONE)
             await expectIssued(response)
         })
 
         it('gives no CORS headers to a POST without Origin, on success and on an error after the product is resolved', async () => {
             const { send, logs } = cors()
             const issued = await send(post(form(await casdoorToken())))
-            expect(corsHeaders(issued)).toStrictEqual(NONE)
+            expect(corsOf(issued)).toStrictEqual(NONE)
             await expectIssued(issued)
             const rejected = await send(post(form(await signToken(keys.other, casdoorClaims(), { kid: keys.casdoor.kid }))))
-            expect(corsHeaders(rejected)).toStrictEqual(NONE)
+            expect(corsOf(rejected)).toStrictEqual(NONE)
             await expectError(rejected, 400, 'invalid_request', NOT_ACCEPTABLE)
             expect(logs.map((logged) => logged.product)).toEqual(['acme', 'acme'])
         })
@@ -573,7 +573,7 @@ describe('/token', () => {
             const { send, logs } = cors()
             const token = await signToken(keys.other, casdoorClaims(), { kid: keys.casdoor.kid })
             const response = await send(post(form(token), FORM, { origin: ACME_ORIGIN }))
-            expect(corsHeaders(response)).toStrictEqual(allowed(ACME_ORIGIN))
+            expect(corsOf(response)).toStrictEqual(allowed(ACME_ORIGIN))
             await expectError(response, 400, 'invalid_request', NOT_ACCEPTABLE)
             expect(logs).toEqual([line(400, 'bad_signature', { product: 'acme', idp: 'casdoor' })])
         })
@@ -587,7 +587,7 @@ describe('/token', () => {
             })
             const response = await send(post(form(token), FORM, { origin: ACME_ORIGIN }))
             const text = await response.clone().text()
-            expect(corsHeaders(response)).toStrictEqual(allowed(ACME_ORIGIN))
+            expect(corsOf(response)).toStrictEqual(allowed(ACME_ORIGIN))
             await expectError(response, 500, 'server_error', FAILED)
             expect(logs).toEqual([line(500, 'internal_error', { product: 'acme', idp: 'casdoor' })])
             expect(text + JSON.stringify(logs)).not.toContain(token.split('.')[1])
@@ -599,7 +599,7 @@ describe('/token', () => {
             let reads = 0
             const { send, logs, calls } = cors({ now: () => (++reads === 2 ? NaN : START_MS) })
             const response = await send(post(form(await casdoorToken()), FORM, { origin: ACME_ORIGIN }))
-            expect(corsHeaders(response)).toStrictEqual(allowed(ACME_ORIGIN))
+            expect(corsOf(response)).toStrictEqual(allowed(ACME_ORIGIN))
             await expectError(response, 500, 'server_error', FAILED)
             expect(logs).toEqual([line(500, 'internal_error', { product: 'acme' })])
             expect(calls).toHaveLength(0)
@@ -615,7 +615,7 @@ describe('/token', () => {
                 const { send, logs } = cors({}, code === 'jwks_unavailable' ? () => new Response(null, { status: 500 }) : undefined)
                 const response = await send(post(form(await token()), FORM, { origin: ACME_ORIGIN }))
                 expect(response.status).toBe(status)
-                expect(corsHeaders(response)).toStrictEqual(allowed(ACME_ORIGIN))
+                expect(corsOf(response)).toStrictEqual(allowed(ACME_ORIGIN))
                 expect(logs).toEqual([line(status, code, idp === undefined ? { product: 'acme' } : { product: 'acme', idp })])
             },
         )
@@ -630,7 +630,7 @@ describe('/token', () => {
             const response = await send(post(body(await casdoorToken()), contentType, { origin: ACME_ORIGIN }))
             expect(response.status).toBe(status)
             expect(response.headers.get('vary')).toBe('Origin')
-            expect(corsHeaders(response)).toStrictEqual(NONE)
+            expect(corsOf(response)).toStrictEqual(NONE)
         })
 
         it('leaves an unexpected error before the product is resolved to handle, without CORS headers', async () => {
@@ -641,7 +641,7 @@ describe('/token', () => {
                 },
             })
             const response = await send(new Request(TOKEN_URL, { method: 'POST', headers: { 'content-type': FORM, origin: ACME_ORIGIN }, body }))
-            expect(corsHeaders(response)).toStrictEqual(NONE)
+            expect(corsOf(response)).toStrictEqual(NONE)
             await expectError(response, 500, 'server_error', FAILED)
             expect(logs).toEqual([line(500, 'internal_error')])
         })
