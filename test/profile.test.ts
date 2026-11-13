@@ -140,6 +140,23 @@ describe('cleanProfile', () => {
             expect(cleanProfile({ ...FULL, picture })).not.toHaveProperty('picture')
         })
 
+        // The URL parser reads a backslash as a slash in https URLs, and C1 controls include line breaks such as NEL
+        it.each([
+            'https:\\\\img.acme.example\\ada.png',
+            'https://img.acme.example\\ada.png',
+            'https://img.acme.example/ada\\.png',
+            '\u0080https://img.acme.example/ada.png',
+            'https://img.acme.example/ada.png\u0085',
+            'https://img.acme.example/\u009f.png',
+        ])('drops %j, which holds a backslash or a C1 control character', (picture) => {
+            expect(cleanProfile({ ...FULL, picture })).not.toHaveProperty('picture')
+        })
+
+        it('keeps characters past the C1 range', () => {
+            const picture = 'https://img.acme.example/\u00a0caf\u00e9.png'
+            expect(cleanProfile({ ...FULL, picture }).picture).toBe(picture)
+        })
+
         it('keeps a picture without any verified flag', () => {
             expect(cleanProfile({ picture: 'https://img.acme.example/ada.png', emailVerified: false, phoneVerified: false })).toEqual({
                 picture: 'https://img.acme.example/ada.png',

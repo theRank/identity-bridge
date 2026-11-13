@@ -1,8 +1,9 @@
 import type { Profile, RawProfile } from './types'
 
 const E164 = /^\+[1-9]\d{6,14}$/
-// The URL parser strips these silently, so a raw string holding them is not the URL it parses to
-const SPACE_OR_CONTROL = /[\x00-\x20\x7f]/
+// The URL parser strips C0 controls and spaces silently and reads a backslash as a slash, so a raw string
+// holding them is not the URL it parses to; C1 controls include line breaks such as NEL
+const UNSAFE_IN_URL = /[\x00-\x20\x7f-\x9f\\]/
 
 // Values come from tokens and payloads, so each is checked here; anything unusable is left out
 export function cleanProfile(raw: RawProfile): Profile {
@@ -18,7 +19,7 @@ export function cleanProfile(raw: RawProfile): Profile {
 
 // try rather than URL.parse, which not every edge runtime provides
 function isHttpsUrl(value: string): boolean {
-    if (SPACE_OR_CONTROL.test(value)) return false
+    if (UNSAFE_IN_URL.test(value)) return false
     try {
         return new URL(value).protocol === 'https:'
     } catch {
