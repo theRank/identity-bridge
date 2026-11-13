@@ -22,7 +22,11 @@ async function load(fetch: Deps['fetch'], url: string, init: RequestInit): Promi
     } catch (cause) {
         throw new JwksFetchError('JWKS request failed', { cause })
     }
-    if (response.status !== 200) throw new JwksFetchError('JWKS response status is not 200')
+    if (response.status !== 200) {
+        // Releases the connection rather than leaving the body unread
+        await response.body?.cancel().catch(() => {})
+        throw new JwksFetchError('JWKS response status is not 200')
+    }
     let text: string
     try {
         // Decoded by hand: workerd warns when .text() reads a body whose type does not look like text

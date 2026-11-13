@@ -71,6 +71,29 @@ describe('jwksFetch', () => {
         expect(await rejection(load(respond))).toBeInstanceOf(JwksFetchError)
     })
 
+    it('cancels the body of a response whose status is not 200', async () => {
+        let cancelled = false
+        const body = new ReadableStream({
+            pull(controller) {
+                controller.enqueue(new TextEncoder().encode('<html>'))
+            },
+            cancel() {
+                cancelled = true
+            },
+        })
+        expect(await rejection(load(() => new Response(body, { status: 500 })))).toBeInstanceOf(JwksFetchError)
+        expect(cancelled).toBe(true)
+    })
+
+    it('still fails with JwksFetchError when cancelling the body fails', async () => {
+        const body = new ReadableStream({
+            cancel() {
+                throw new TypeError('cannot cancel')
+            },
+        })
+        expect(await rejection(load(() => new Response(body, { status: 502 })))).toBeInstanceOf(JwksFetchError)
+    })
+
     it('fails with JwksFetchError when the fetch rejects', async () => {
         const error = await rejection(load(() => Promise.reject(new TypeError('Network connection lost.'))))
         expect(error).toBeInstanceOf(JwksFetchError)
