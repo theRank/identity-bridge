@@ -283,8 +283,11 @@ class At {
 
     https(): string {
         const value = this.value
-        if (typeof value === 'string' && !SPACE_OR_CONTROL.test(value) && parseUrl(value)?.protocol === 'https:') return value
-        return this.fail('must be an https URL')
+        const url = typeof value === 'string' && !SPACE_OR_CONTROL.test(value) ? parseUrl(value) : undefined
+        if (typeof value !== 'string' || url?.protocol !== 'https:') return this.fail('must be an https URL')
+        // new Request() refuses URLs with credentials, and the configuration is not secret
+        if (url.username !== '' || url.password !== '') this.fail('must not have a username or password')
+        return value
     }
 
     // Compared exactly with a token's iss. new URL() adds a trailing slash itself and reports an empty search
