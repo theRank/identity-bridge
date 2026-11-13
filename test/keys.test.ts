@@ -79,6 +79,14 @@ describe('importSigningKeys', () => {
         expect(privateKey.usages).toEqual(['sign'])
     })
 
+    it('ignores ext and key_ops in the secret', async () => {
+        const secret = await bridgeSigningKeys()
+        const keys = await importSigningKeys(JSON.stringify({ active: { ...secret.active, ext: true, key_ops: ['verify'] } }))
+        expect(keys.privateKey.extractable).toBe(false)
+        expect(keys.privateKey.usages).toEqual(['sign'])
+        await new SignJWT({ sub: 'user' }).setProtectedHeader({ alg: 'ES256', kid: keys.kid }).sign(keys.privateKey)
+    })
+
     it('signs tokens that verify against its own JWKS', async () => {
         const keys = await importSigningKeys((await bridgeSigningKeys(1)).json)
         const token = await new SignJWT({ sub: 'user' }).setProtectedHeader({ alg: 'ES256', kid: keys.kid }).sign(keys.privateKey)
@@ -213,6 +221,12 @@ describe('importSigningKeys rejections', () => {
         expect(error.message).toBe('SIGNING_KEYS: invalid JSON')
         expect(error.cause).toBeUndefined()
         for (const run of runsOf(active.d!)) expect(error.message).not.toContain(run)
+    })
+
+    it('refuses a __proto__ member, which JSON.parse makes an own key', async () => {
+        const { active } = await bridgeSigningKeys()
+        const error = await rejection(`{"active": ${JSON.stringify(active)}, "__proto__": {"retired": []}}`)
+        expect(error.message).toBe('SIGNING_KEYS: only active and retired are allowed')
     })
 
     it.each(['', '{', 'undefined', '{"active": {}', `{"active": 'x'}`])('refuses %j as invalid JSON', async (json) => {
