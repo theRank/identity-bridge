@@ -580,7 +580,7 @@ describe('verifySubjectToken', () => {
             }
 
             it.each([
-                ['the IdP never answers', false],
+                ['the IdP never answers, the bridge timer ending the wait before jose aborts the fetch', false],
                 ['the fetch ignores its signal, so only the bridge timer can end it', true],
             ])('answers jwks_unavailable after 5 s when %s', async (_, ignoreSignal) => {
                 const { verify, calls } = setup(clerkConfig(), hang, { ignoreSignal })
@@ -611,13 +611,30 @@ describe('verifySubjectToken', () => {
             expect(await failure(verify(await signToken(keys.clerk, clerkClaims())))).toStrictEqual(rejected('unknown_key'))
         })
 
-        it('fetches no more than once per exchange within the default cooldown', async () => {
-            let published = keys.clerk
-            const { verify, calls } = clerk(undefined, () => Response.json(idpJwks(published)))
-            await verify(await signToken(keys.clerk, clerkClaims()))
-            published = keys.other
-            expect(await failure(verify(await signToken(keys.other, clerkClaims())))).toStrictEqual(rejected('unknown_key'))
-            expect(calls).toHaveLength(1)
+        describe('with the default cooldown', () => {
+            // jose times the cooldown with Date.now, not with the deps clock
+            beforeEach(() => {
+                vi.useFakeTimers({ toFake: ['Date'] })
+            })
+
+            afterEach(() => {
+                vi.useRealTimers()
+            })
+
+            it('answers unknown_key without refetching for 30 s after a fetch, then refetches', async () => {
+                const start = Date.now()
+                let published = keys.clerk
+                const { verify, calls } = clerk(undefined, () => Response.json(idpJwks(published)))
+                await verify(await signToken(keys.clerk, clerkClaims()))
+                published = keys.other
+                const rotated = await signToken(keys.other, clerkClaims())
+                vi.setSystemTime(start + 29_999)
+                expect(await failure(verify(rotated))).toStrictEqual(rejected('unknown_key'))
+                expect(calls).toHaveLength(1)
+                vi.setSystemTime(start + 30_000)
+                expect((await verify(rotated)).subject).toBe(CLERK_SUB)
+                expect(calls).toHaveLength(2)
+            })
         })
     })
 

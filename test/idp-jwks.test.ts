@@ -77,12 +77,6 @@ describe('remoteJwks', () => {
         expect(clerk.jwks()).toStrictEqual(idpJwks(clerkKey))
         expect(casdoor.jwks()).toStrictEqual(idpJwks(casdoorKey))
     })
-
-    it('waits 30 s after a fetch before a missing key may fetch again', async () => {
-        const set = remoteJwks(CLERK, fakeFetch(serveEmpty).fetch)
-        await set.reload()
-        expect(set.coolingDown).toBe(true)
-    })
 })
 
 describe('resetJwksCache', () => {
