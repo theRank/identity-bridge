@@ -36,6 +36,11 @@ function rejection(json: string): string {
     return (error as ConfigError).message
 }
 
+// Assigning __proto__ would set the prototype, which JSON.stringify drops, instead of adding the key
+function setOwn(object: Doc, key: string, value: unknown) {
+    Object.defineProperty(object, key, { value, enumerable: true, configurable: true, writable: true })
+}
+
 function objectsIn(value: unknown): object[] {
     if (typeof value !== 'object' || value === null) return []
     return [value, ...Object.values(value).flatMap(objectsIn)]
@@ -336,7 +341,12 @@ describe('parseConfig field rules', () => {
             'issuer: must not have a query or fragment',
         ],
         ['an issuer with a fragment', 'clerk', (doc) => (doc.issuer = 'https://id.acme.example#acme'), 'issuer: must not have a query or fragment'],
-        ['an issuer with a username', 'clerk', (doc) => (doc.issuer = 'https://bridge@id.acme.example'), 'issuer: must not have a username or password'],
+        [
+            'an issuer with a username',
+            'clerk',
+            (doc) => (doc.issuer = 'https://bridge@id.acme.example'),
+            'issuer: must not have a username or password',
+        ],
         [
             'an issuer with only a password',
             'clerk',
@@ -407,6 +417,12 @@ describe('parseConfig field rules', () => {
             'idps.clerk-acme.issuer: must not have a query or fragment',
         ],
         [
+            'an IdP issuer with a fragment',
+            'clerk',
+            (doc) => (doc.idps['clerk-acme'].issuer = 'https://clerk.acme.example#clerk'),
+            'idps.clerk-acme.issuer: must not have a query or fragment',
+        ],
+        [
             'an http IdP issuer',
             'clerk',
             (doc) => (doc.idps['clerk-acme'].issuer = 'http://clerk.acme.example'),
@@ -417,6 +433,12 @@ describe('parseConfig field rules', () => {
             'an http jwksUri',
             'clerk',
             (doc) => (doc.idps['clerk-acme'].jwksUri = 'http://clerk.acme.example/jwks'),
+            'idps.clerk-acme.jwksUri: must be an https URL',
+        ],
+        [
+            'a jwksUri that is not a URL',
+            'clerk',
+            (doc) => (doc.idps['clerk-acme'].jwksUri = 'jwks.json'),
             'idps.clerk-acme.jwksUri: must be an https URL',
         ],
         ['empty algorithms', 'clerk', (doc) => (doc.idps['clerk-acme'].algorithms = []), 'idps.clerk-acme.algorithms: must be a non-empty array'],
@@ -529,6 +551,7 @@ describe('parseConfig field rules', () => {
         ],
         ['missing products', 'clerk', (doc) => delete doc.products, 'products: required'],
         ['empty products', 'clerk', (doc) => (doc.products = {}), 'products: must not be empty'],
+        ['products as an array', 'clerk', (doc) => (doc.products = []), 'products: must be an object'],
         ['a product id with an underscore', 'minimal', (doc) => (doc.products = { my_app: doc.products.app }), `products.my_app: ${ID_RULE}`],
         ['a product that is not an object', 'clerk', (doc) => (doc.products.acme = null), 'products.acme: must be an object'],
         ['a product without idps', 'clerk', (doc) => delete doc.products.acme.idps, 'products.acme.idps: required'],
@@ -540,6 +563,12 @@ describe('parseConfig field rules', () => {
             'empty clientIds',
             'casdoor',
             (doc) => (doc.products.acme.idps[0].clientIds = []),
+            'products.acme.idps[0].clientIds: must be a non-empty array',
+        ],
+        [
+            'clientIds that are not an array',
+            'casdoor',
+            (doc) => (doc.products.acme.idps[0].clientIds = 'acme-web-client'),
             'products.acme.idps[0].clientIds: must be a non-empty array',
         ],
         [
@@ -958,8 +987,29 @@ describe('parseConfig edge cases', () => {
         expect(Object.getPrototypeOf(claims)).toBeNull()
     })
 
-    it('rejects __proto__ as an id', () => {
-        expect(rejection(clerkConfigJson.replace('"idps":{', '"idps":{"__proto__":{},'))).toBe(`idps.__proto__: ${ID_RULE}`)
+    it.each<Case>([
+        ['the document', 'clerk', (doc) => setOwn(doc, '__proto__', {}), '__proto__: unknown key'],
+        ['an IdP', 'clerk', (doc) => setOwn(doc.idps['clerk-acme'], '__proto__', {}), 'idps.clerk-acme.__proto__: unknown key'],
+        [
+            'a claim mapping',
+            'clerk',
+            (doc) => setOwn(doc.idps['clerk-acme'].claims, '__proto__', 'x'),
+            'idps.clerk-acme.claims.__proto__: unknown key',
+        ],
+        ['a product', 'clerk', (doc) => setOwn(doc.products.acme, '__proto__', {}), 'products.acme.__proto__: unknown key'],
+        ['a binding', 'clerk', (doc) => setOwn(doc.products.acme.idps[0], '__proto__', {}), 'products.acme.idps[0].__proto__: unknown key'],
+        ['events', 'clerk', (doc) => setOwn(doc.products.acme.events, '__proto__', {}), 'products.acme.events.__proto__: unknown key'],
+        ['a source', 'clerk', (doc) => setOwn(doc.webhookSources['clerk-acme'], '__proto__', {}), 'webhookSources.clerk-acme.__proto__: unknown key'],
+    ])('rejects __proto__ as a key of %s', (_name, base, edit, message) => {
+        expect(rejection(edited(base, edit))).toBe(message)
+    })
+
+    it.each<Case>([
+        ['an IdP id', 'clerk', (doc) => setOwn(doc.idps, '__proto__', {}), `idps.__proto__: ${ID_RULE}`],
+        ['a product id', 'clerk', (doc) => setOwn(doc.products, '__proto__', { idps: [{ idp: 'clerk-acme' }] }), `products.__proto__: ${ID_RULE}`],
+        ['a source id', 'clerk', (doc) => setOwn(doc.webhookSources, '__proto__', {}), `webhookSources.__proto__: ${ID_RULE}`],
+    ])('rejects __proto__ as %s', (_name, base, edit, message) => {
+        expect(rejection(edited(base, edit))).toBe(message)
     })
 
     it('accepts constructor as a product id and indexes it like any other', () => {
