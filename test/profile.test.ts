@@ -16,7 +16,10 @@ function otherDigits(phone: string, zero: number): string {
     return phone.replace(/[0-9]/g, (digit) => String.fromCharCode(zero + Number(digit)))
 }
 
-const NOT_STRINGS: unknown[] = [null, 42, 0, true, false, {}, [], ['ada@acme.example'], new String('ada@acme.example'), Symbol('x'), 10n]
+// Resolving the flags is the caller's job; a value that slips through unresolved must not count as verified
+const TRUTHY_FLAGS: unknown[] = ['true', 'false', 1, 'yes', {}, [], new Boolean(true)]
+
+const NOT_STRINGS: unknown[] =[null, 42, 0, true, false, {}, [], ['ada@acme.example'], new String('ada@acme.example'), Symbol('x'), 10n]
 
 describe('cleanProfile', () => {
     it('keeps a verified email, a verified E.164 phone, a name and an https picture', () => {
@@ -54,6 +57,10 @@ describe('cleanProfile', () => {
             expect(cleanProfile({ ...FULL, emailVerified: false })).not.toHaveProperty('email')
         })
 
+        it.each(TRUTHY_FLAGS)('drops an email whose verified flag is %j rather than true', (flag) => {
+            expect(cleanProfile({ ...FULL, emailVerified: flag as boolean })).not.toHaveProperty('email')
+        })
+
         it.each(['', 'ada', 'ada.acme.example'])('drops %j, which has no @', (email) => {
             expect(cleanProfile({ ...FULL, email })).not.toHaveProperty('email')
         })
@@ -67,6 +74,10 @@ describe('cleanProfile', () => {
     describe('phone', () => {
         it('drops an unverified phone', () => {
             expect(cleanProfile({ ...FULL, phoneVerified: false })).not.toHaveProperty('phoneNumber')
+        })
+
+        it.each(TRUTHY_FLAGS)('drops a phone whose verified flag is %j rather than true', (flag) => {
+            expect(cleanProfile({ ...FULL, phoneVerified: flag as boolean })).not.toHaveProperty('phoneNumber')
         })
 
         it.each(['+1234567', '+123456789012345', '+8613800138000', '+442071838750'])('keeps %s', (phone) => {
