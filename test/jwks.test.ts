@@ -61,17 +61,14 @@ describe('GET /.well-known/jwks.json', () => {
         }
     })
 
-    it('never publishes the private key', async () => {
-        const { response } = await getJwks()
-        const text = await response.text()
-        expect(text).not.toContain('"d"')
-        expect(text).not.toContain(generated.active.d)
-    })
-
-    it('copies only the public members, whatever else a key object holds', async () => {
+    // importSigningKeys never puts a private member in the key set, so one is planted to show the route drops it
+    it('never publishes the private key or any other member a key object holds', async () => {
         const [active] = keys.jwks.keys
         const leaky = { ...active!, d: generated.active.d, ext: true } as PublicJwk
         const { response } = await getJwks(runtime({ ...keys, jwks: { keys: [leaky] } }))
-        expect(await response.json()).toStrictEqual({ keys: [active] })
+        const text = await response.text()
+        expect(text).not.toContain('"d"')
+        expect(text).not.toContain(generated.active.d)
+        expect(JSON.parse(text)).toStrictEqual({ keys: [active] })
     })
 })
