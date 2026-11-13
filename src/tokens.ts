@@ -16,7 +16,7 @@ export interface TokenEvent {
 }
 
 // nowSec is passed to every time setter, so jose never reads the clock
-export function mintAccessToken(
+export async function mintAccessToken(
     keys: SigningKeys,
     config: Config,
     productId: string,
@@ -24,6 +24,7 @@ export function mintAccessToken(
     nowSec: number,
     jti: string,
 ): Promise<string> {
+    requireIntegerSeconds(nowSec)
     const claims: JWTPayload = { iss: config.issuer, sub: identity.userId, aud: productId, client_id: productId, jti, idp: identity.idpId }
     if (config.region !== undefined) claims.region = config.region
     return new SignJWT({ ...claims, ...profileClaims(identity.profile) })
@@ -34,7 +35,8 @@ export function mintAccessToken(
 }
 
 // A SET carries no exp: products drop repeats by jti instead
-export function mintEventToken(keys: SigningKeys, config: Config, productId: string, event: TokenEvent, nowSec: number): Promise<string> {
+export async function mintEventToken(keys: SigningKeys, config: Config, productId: string, event: TokenEvent, nowSec: number): Promise<string> {
+    requireIntegerSeconds(nowSec)
     const payload = event.type === 'user-deleted' ? {} : profileClaims(event.profile)
     return new SignJWT({
         iss: config.issuer,
@@ -47,6 +49,11 @@ export function mintEventToken(keys: SigningKeys, config: Config, productId: str
         .setProtectedHeader({ alg: 'ES256', typ: 'secevent+jwt', kid: keys.kid })
         .setIssuedAt(nowSec)
         .sign(keys.privateKey)
+}
+
+// jose accepts any finite number, but NumericDate claims from the bridge are whole seconds
+function requireIntegerSeconds(nowSec: number): void {
+    if (!Number.isInteger(nowSec)) throw new TypeError('nowSec must be an integer')
 }
 
 // Members are copied one by one, so nothing else a Profile object holds can become a claim

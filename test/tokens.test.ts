@@ -32,6 +32,26 @@ async function verify(token: string, keys: SigningKeys, options: JWTVerifyOption
     return jwtVerify(token, createLocalJWKSet(keys.jwks), { algorithms: ['ES256'], currentDate: new Date(NOW * 1000), ...options })
 }
 
+// Each would pass jose's own check, which only asks for a finite number, or fail it with jose's message
+const NOT_INTEGERS: [string, unknown][] = [
+    ['a fraction', NOW + 0.5],
+    ['a negative fraction', -0.5],
+    ['NaN', NaN],
+    ['Infinity', Infinity],
+    ['-Infinity', -Infinity],
+    ['a numeric string', String(NOW)],
+    ['null', null],
+    ['undefined', undefined],
+    ['a Number object', new Number(NOW)],
+]
+
+async function rejection(mint: Promise<string>): Promise<unknown> {
+    return mint.then(
+        () => undefined,
+        (caught: unknown) => caught,
+    )
+}
+
 function withoutRegion(): Config {
     const { region, ...doc } = clerkConfig()
     void region
@@ -126,6 +146,15 @@ describe('mintAccessToken', () => {
             code: 'ERR_JWKS_NO_MATCHING_KEY',
         })
     })
+
+    it.each(NOT_INTEGERS)('rejects %s as nowSec with a TypeError', async (_, nowSec) => {
+        const { keys, config } = await setup()
+        const identity = { userId: USER, idpId: 'clerk-acme', profile: {} }
+        const error = await rejection(Promise.resolve().then(() => mintAccessToken(keys, config, 'acme', identity, nowSec as number, JTI)))
+        expect(error).toBeInstanceOf(TypeError)
+        expect((error as TypeError).message).toBe('nowSec must be an integer')
+        expect(() => mintAccessToken(keys, config, 'acme', identity, nowSec as number, JTI).catch(() => undefined)).not.toThrow()
+    })
 })
 
 describe('mintEventToken', () => {
@@ -175,5 +204,14 @@ describe('mintEventToken', () => {
     it('uses nowSec for iat and never the clock', async () => {
         const { payload } = await mint('user-deleted', {})
         expect(payload.iat).toBe(NOW)
+    })
+
+    it.each(NOT_INTEGERS)('rejects %s as nowSec with a TypeError', async (_, nowSec) => {
+        const { keys, config } = await setup()
+        const event = { jti: EVENT_JTI, txn: TXN, userId: USER, type: 'user-created' as const, profile: {} }
+        const error = await rejection(Promise.resolve().then(() => mintEventToken(keys, config, 'acme', event, nowSec as number)))
+        expect(error).toBeInstanceOf(TypeError)
+        expect((error as TypeError).message).toBe('nowSec must be an integer')
+        expect(() => mintEventToken(keys, config, 'acme', event, nowSec as number).catch(() => undefined)).not.toThrow()
     })
 })
