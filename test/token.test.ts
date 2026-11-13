@@ -61,7 +61,6 @@ beforeAll(async () => {
 })
 
 interface Setup {
-    runtime: Runtime
     logs: LogLine[]
     calls: FetchCall[]
     send: (request: Request) => Promise<Response>
@@ -90,7 +89,7 @@ function setup(deployment: Deployment = 'clerk', options: SetupOptions = {}): Se
             throw new Error('not read by this route')
         },
     }
-    return { runtime, logs, calls, send: (request) => handle(request, runtime, deps) }
+    return { logs, calls, send: (request) => handle(request, runtime, deps) }
 }
 
 function clerkToken(overrides: Record<string, unknown> = {}): Promise<string> {
@@ -172,7 +171,7 @@ async function bridgeJwks(send: Setup['send']) {
     return createLocalJWKSet((await (await send(new Request(JWKS_URL))).json()) as JSONWebKeySet)
 }
 
-describe('POST /token', () => {
+describe('/token', () => {
     describe('a valid exchange', () => {
         it('issues a Clerk user an access token that verifies against the bridge JWKS', async () => {
             const { send, logs } = setup()
@@ -259,7 +258,7 @@ describe('POST /token', () => {
                 all(...['scope', 'resource', 'actor_token', 'actor_token_type', 'requested_token_type'].map((name) => set(name, ''))),
             ],
             ['a second, empty audience', add('audience', '')],
-            ['an empty subject_token before the real one', add('subject_token', '')],
+            ['a second, empty subject_token', add('subject_token', '')],
         ])('accepts a request with %s', async (_, edit) => {
             const { send } = setup()
             await expectIssued(await send(post(form(await clerkToken(), edit))))
@@ -396,7 +395,9 @@ describe('POST /token', () => {
             ['form with a second type after a comma', 'application/x-www-form-urlencoded, text/plain'],
         ])('rejects %s as bad_request, before reading the body', async (_, contentType) => {
             const { send, logs, calls } = setup()
-            await expectError(await send(post(form(await clerkToken()), contentType)), 400, 'invalid_request', MALFORMED)
+            const request = post(form(await clerkToken()), contentType)
+            await expectError(await send(request), 400, 'invalid_request', MALFORMED)
+            expect(request.bodyUsed).toBe(false)
             expect(logs).toEqual([line(400, 'bad_request')])
             expect(calls).toHaveLength(0)
         })
