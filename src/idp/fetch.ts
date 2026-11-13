@@ -38,10 +38,11 @@ async function load(fetch: Deps['fetch'], url: string, init: RequestInit): Promi
     try {
         body = JSON.parse(text)
     } catch {
+        // The SyntaxError message quotes the body
         throw new JwksFetchError('JWKS response is not JSON')
     }
     if (typeof body !== 'object' || body === null || Array.isArray(body)) throw new JwksFetchError('JWKS response is not a JSON object')
-    return new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' } })
+    return new Response(text, { status: 200, headers: { 'content-type': 'application/json' } })
 }
 
 function withTimeout<T>(work: Promise<T>, ms: number): Promise<T> {

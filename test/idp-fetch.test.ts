@@ -53,6 +53,13 @@ describe('jwksFetch', () => {
         expect(await response.json()).toStrictEqual(JWKS)
     })
 
+    it('passes the body text on as it was received, as JSON', async () => {
+        const text = '{\n  "keys": [ { "kty": "EC" } ]\n}\n'
+        const response = await load(() => new Response(text, { headers: { 'content-type': 'application/jwk-set+json' } }))
+        expect(response.headers.get('content-type')).toBe('application/json')
+        expect(await response.text()).toBe(text)
+    })
+
     it('reads any JSON object whatever its content type, leaving the JWKS checks to jose', async () => {
         const body = JSON.stringify({ keys: 'not an array' })
         const response = await load(() => new Response(body, { headers: { 'content-type': 'text/plain' } }))
