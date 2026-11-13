@@ -151,11 +151,12 @@ describe('routing', () => {
 })
 
 describe('runtime failure', () => {
-    it('answers /healthz 503 unavailable', async () => {
+    it('answers /healthz 503 unavailable with Cache-Control: no-store', async () => {
         const { deps, logs } = fakeDeps()
         const response = await handle(request('GET', '/healthz'), failure, deps)
         expect(response.status).toBe(503)
         expect(response.headers.get('content-type')).toBe('application/json')
+        expect(response.headers.get('cache-control')).toBe('no-store')
         expect(await response.json()).toEqual({ status: 'unavailable' })
         expect(logs).toEqual([{ route: 'health', status: 503, ms: 0, outcome: 'error', code: 'runtime_unavailable' }])
     })
@@ -212,11 +213,12 @@ describe('unexpected errors', () => {
         throw new Error(`could not parse ${TOKEN_LIKE}`)
     }
 
-    it('answers /healthz 503 unavailable', async () => {
+    it('answers /healthz 503 unavailable with Cache-Control: no-store', async () => {
         const { routes } = fakeRoutes(throwing)
         const { deps, logs } = fakeDeps()
         const response = await dispatch(request('GET', '/healthz'), runtime, deps, routes)
         expect(response.status).toBe(503)
+        expect(response.headers.get('cache-control')).toBe('no-store')
         expect(await response.json()).toEqual({ status: 'unavailable' })
         expect(logs).toEqual([{ route: 'health', status: 503, ms: 0, outcome: 'error', code: 'internal_error' }])
     })

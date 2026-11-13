@@ -70,7 +70,7 @@ function match(path: string, routes: Routes): Match | undefined {
 
 function failureResponse(route: Route, ctx: RouteContext, code: LogCode): Answer {
     ctx.code = code
-    if (route === 'health') return { route, response: json(503, { status: 'unavailable' }), ctx }
+    if (route === 'health') return { route, response: json(503, { status: 'unavailable' }, { 'cache-control': 'no-store' }), ctx }
     if (route === 'token') return { route, response: oauthError(500, 'server_error', code), ctx }
     return { route, response: empty(500), ctx }
 }
