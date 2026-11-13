@@ -7,7 +7,17 @@ import type { Config, LogCode } from '../src/types'
 import { casdoorConfig, clerkConfig } from './helpers/config'
 import { fakeDeps } from './helpers/deps'
 import { fakeFetch, hang, type FetchCall, type Responder } from './helpers/fetch'
-import { base64url, casdoorClaims, clerkClaims, NOW_SEC, signToken, unsignedToken } from './helpers/idp'
+import {
+    base64url,
+    casdoorClaims,
+    clerkClaims,
+    edKeyPair,
+    NOW_SEC,
+    signToken,
+    unsignedToken,
+    type EdKeyPair,
+    type SigningKeyPair,
+} from './helpers/idp'
 import { bridgeSigningKeys, ecKeyPair, idpJwks, rsaKeyPair, type IdpKeyPair } from './helpers/keys'
 
 // Cases edit the documents into any shape
@@ -27,20 +37,22 @@ interface Keys {
     casdoorSecond: IdpKeyPair
     ec: IdpKeyPair
     short: IdpKeyPair
+    ed: EdKeyPair
 }
 
 let keys: Keys
 
 beforeAll(async () => {
-    const [clerk, other, casdoor, casdoorSecond, ec, short] = await Promise.all([
+    const [clerk, other, casdoor, casdoorSecond, ec, short, ed] = await Promise.all([
         rsaKeyPair({ kid: 'ins_2abcDEFghiJKLmnoPQRstuVWXyz' }),
         rsaKeyPair({ kid: 'other' }),
         rsaKeyPair({ kid: 'cert-built-in' }),
         rsaKeyPair({ kid: 'cert-acme' }),
         ecKeyPair({ kid: 'ec' }),
         rsaKeyPair({ kid: 'short', modulusLength: 1024 }),
+        edKeyPair({ kid: 'ed' }),
     ])
-    keys = { clerk, other, casdoor, casdoorSecond, ec, short }
+    keys = { clerk, other, casdoor, casdoorSecond, ec, short, ed }
 })
 
 beforeEach(() => {
@@ -66,8 +78,8 @@ function setup(doc: Doc, respond: Responder, options: { ignoreSignal?: boolean }
     return { config, calls, advance, verify }
 }
 
-function serve(...pairs: IdpKeyPair[]): Responder {
-    return () => Response.json(idpJwks(...pairs))
+function serve(...pairs: SigningKeyPair[]): Responder {
+    return () => Response.json({ keys: pairs.map((pair) => pair.publicJwk) })
 }
 
 function clerk(edit: (doc: Doc) => void = () => {}, respond: Responder = serve(keys.clerk)): Setup {
@@ -176,6 +188,16 @@ describe('verifySubjectToken', () => {
             expect((await verify(await signToken(keys.clerk, clerkClaims(phone)))).profile).toHaveProperty('phoneNumber', '+14155550123')
             const unverified = clerkClaims({ ...phone, phone_number_verified: 'true' })
             expect((await verify(await signToken(keys.clerk, unverified))).profile).not.toHaveProperty('phoneNumber')
+        })
+
+        it('accepts an EdDSA token signed with Ed25519 when the IdP allows EdDSA', async () => {
+            const { verify } = clerk(
+                (doc) => {
+                    doc.idps['clerk-acme'].algorithms = ['EdDSA']
+                },
+                serve(keys.ed),
+            )
+            expect((await verify(await signToken(keys.ed, clerkClaims()))).subject).toBe(CLERK_SUB)
         })
 
         it('accepts an ES256 token when the IdP allows ES256', async () => {
