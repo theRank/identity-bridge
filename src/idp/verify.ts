@@ -65,6 +65,9 @@ function unverifiedIssuer(token: string): string {
 
 async function verifySignature(token: string, idp: IdpConfig, deps: Deps): Promise<JWTPayload> {
     const jwks = remoteJwks(idp, deps.fetch)
+    // jose would raise a TypeError for it after fetching keys, which would read as the IdP being unavailable
+    const now = deps.now()
+    if (!Number.isFinite(now)) throw new Error('deps.now() must return a finite number')
     try {
         const { payload } = await jwtVerify(token, jwks, {
             issuer: idp.issuer,
@@ -72,7 +75,7 @@ async function verifySignature(token: string, idp: IdpConfig, deps: Deps): Promi
             clockTolerance: idp.clockToleranceSeconds,
             maxTokenAge: idp.maxTokenAgeSeconds,
             requiredClaims: ['exp', 'iat'],
-            currentDate: new Date(deps.now()),
+            currentDate: new Date(now),
         })
         return payload
     } catch (error) {

@@ -694,6 +694,17 @@ describe('verifySubjectToken', () => {
             expect(calls).toHaveLength(0)
         })
 
+        it.each([NaN, Infinity, -Infinity])('throws a plain error, before any fetch, when the clock reads %s', async (reading) => {
+            const config = parseConfig(JSON.stringify(clerkConfig()))
+            const { fetch, calls } = fakeFetch(serve(keys.clerk))
+            const { deps } = fakeDeps({ fetch, now: () => reading })
+            const token = await signToken(keys.clerk, clerkClaims())
+            const error = await rejection(verifySubjectToken(token, config.products.acme!, config, deps))
+            expect(error).toBeInstanceOf(Error)
+            expect(error).not.toBeInstanceOf(ExchangeError)
+            expect(calls).toHaveLength(0)
+        })
+
         it('rethrows an error it does not map', async () => {
             const problem = new Error('unexpected')
             vi.spyOn(crypto.subtle, 'importKey').mockRejectedValue(problem)
