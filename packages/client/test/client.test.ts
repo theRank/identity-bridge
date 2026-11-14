@@ -58,6 +58,43 @@ async function bridgeError(pending: Promise<unknown>): Promise<BridgeError> {
     return error as BridgeError
 }
 
+// The IdP's JWKS serves the bridge's first `working` fetches, fails the next `failures`, so the bridge answers 503
+// temporarily_unavailable, and serves again after that
+function idpDown(failures: number, working = 0): Responder {
+    let calls = 0
+    return () => {
+        calls++
+        const failing = calls > working && calls <= working + failures
+        return failing ? new Response(null, { status: 500 }) : Response.json(idpJwks(keys.clerk))
+    }
+}
+
+// With fake timers: once the last answer is in and the client sleeps, the next request goes out exactly `ms` later
+async function nextRequestAfter(ms: number, requests: unknown[], settled: () => boolean): Promise<void> {
+    await until(() => settled() && vi.getTimerCount() === 1)
+    const sent = requests.length
+    await vi.advanceTimersByTimeAsync(ms - 1)
+    await tick()
+    expect(requests).toHaveLength(sent)
+    await vi.advanceTimersByTimeAsync(1)
+    await until(() => requests.length === sent + 1)
+}
+
+// Drives a failing exchange through its two retries; `settled` holds once every request sent has its answer
+async function throughRetries(requests: unknown[], settled: () => boolean = () => true): Promise<void> {
+    await nextRequestAfter(250, requests, settled)
+    await nextRequestAfter(1000, requests, settled)
+}
+
+// Sends through the real bridge, and finds no answer while the outage is on
+function flaky(outage: { on: boolean }, attempts: unknown[]): (real: Bridge) => Transport {
+    return (real) => async (request) => {
+        attempts.push(request)
+        if (outage.on) throw new TypeError('Failed to fetch')
+        return real.transport(request)
+    }
+}
+
 describe('createBridgeClient', () => {
     describe('exchange', () => {
         it('exchanges the IdP token at the bridge for an access token of the product', async () => {
@@ -263,24 +300,6 @@ describe('createBridgeClient', () => {
             vi.useRealTimers()
         })
 
-        // The IdP's JWKS fails the first `failures` times the bridge fetches it, so the bridge answers 503
-        // temporarily_unavailable
-        function idpDown(failures: number): Responder {
-            let calls = 0
-            return () => (++calls <= failures ? new Response(null, { status: 500 }) : Response.json(idpJwks(keys.clerk)))
-        }
-
-        // Once the last answer is in and the client sleeps, the next request goes out exactly `ms` later
-        async function nextRequestAfter(ms: number, requests: unknown[], settled: () => boolean): Promise<void> {
-            await until(() => settled() && vi.getTimerCount() === 1)
-            const sent = requests.length
-            await vi.advanceTimersByTimeAsync(ms - 1)
-            await tick()
-            expect(requests).toHaveLength(sent)
-            await vi.advanceTimersByTimeAsync(1)
-            await until(() => requests.length === sent + 1)
-        }
-
         it('retries a 503 temporarily_unavailable after 250 ms with the same IdP token, then succeeds', async () => {
             const { bridge, client, getIdpToken } = setup({ respond: idpDown(1) })
             const pending = client.getToken()
@@ -346,6 +365,111 @@ describe('createBridgeClient', () => {
             await nextRequestAfter(250, bridge.requests, () => bridge.answers.length === 1)
             expect(new Set(await pending).size).toBe(1)
             expect(bridge.requests).toHaveLength(2)
+        })
+    })
+
+    describe('when a refresh cannot reach the bridge', () => {
+        beforeEach(() => {
+            vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+        })
+
+        afterEach(() => {
+            vi.useRealTimers()
+        })
+
+        // A client whose first token was issued, now inside its refresh window, with the bridge out of reach
+        async function refreshing(advance = 840_000) {
+            const outage = { on: false }
+            const attempts: unknown[] = []
+            const ready = setup({ transport: flaky(outage, attempts) })
+            const first = await ready.client.getToken()
+            ready.bridge.advance(advance)
+            outage.on = true
+            return { ...ready, first, outage, attempts }
+        }
+
+        it('returns the cached token while it has not expired, and tries to refresh again on the next call', async () => {
+            const { client, first, outage, attempts } = await refreshing()
+            const pending = client.getToken()
+            await throughRetries(attempts)
+            expect(await pending).toBe(first)
+            expect(attempts).toHaveLength(4)
+            outage.on = false
+            const second = await client.getToken()
+            expect(second).not.toBe(first)
+            expect(attempts).toHaveLength(5)
+            expect(await client.getToken()).toBe(second)
+        })
+
+        it('gives the cached token to every caller of the failed refresh', async () => {
+            const { client, first, attempts } = await refreshing()
+            const pending = Promise.all(Array.from({ length: 5 }, () => client.getToken()))
+            await throughRetries(attempts)
+            expect(await pending).toEqual(Array(5).fill(first))
+            expect(attempts).toHaveLength(4)
+        })
+
+        it('returns the cached token while the bridge stays temporarily_unavailable', async () => {
+            const { bridge, client } = setup({ respond: idpDown(Infinity, 1) })
+            const first = await client.getToken()
+            // Past the bridge's cache of the IdP's keys, so it fetches them again, and fails
+            vi.setSystemTime(Date.now() + 11 * 60_000)
+            bridge.advance(840_000)
+            const pending = client.getToken()
+            await throughRetries(bridge.requests, () => bridge.answers.length === bridge.requests.length)
+            expect(await pending).toBe(first)
+            expect(bridge.answers.map((answer) => answer.status)).toEqual([200, 503, 503, 503])
+        })
+
+        it('returns the cached token up to the last millisecond of its lifetime', async () => {
+            const { client, first, attempts } = await refreshing(899_999)
+            const pending = client.getToken()
+            await throughRetries(attempts)
+            expect(await pending).toBe(first)
+        })
+
+        it('throws once the cached token has expired', async () => {
+            const { client, attempts } = await refreshing(900_000)
+            const pending = bridgeError(client.getToken())
+            await throughRetries(attempts)
+            expect(await pending).toMatchObject({ status: 0, error: 'network' })
+        })
+
+        it('throws any other failure of the bridge, even while the cached token is valid', async () => {
+            const { bridge, client, getIdpToken } = setup()
+            await client.getToken()
+            bridge.advance(840_000)
+            getIdpToken.mockResolvedValueOnce('not-a-jwt')
+            expect(await bridgeError(client.getToken())).toMatchObject({ status: 400, error: 'invalid_request' })
+        })
+
+        it('passes on a failure of getIdpToken, even one that says network', async () => {
+            const { bridge, client, getIdpToken } = setup()
+            await client.getToken()
+            bridge.advance(840_000)
+            const failure = new BridgeError(0, 'network')
+            getIdpToken.mockRejectedValueOnce(failure)
+            expect(await rejection(client.getToken())).toBe(failure)
+        })
+
+        it('has no token to fall back to after clear()', async () => {
+            const { client, attempts } = await refreshing()
+            client.clear()
+            const pending = bridgeError(client.getToken())
+            await throughRetries(attempts)
+            expect(await pending).toMatchObject({ error: 'network' })
+        })
+
+        it('does not fall back once clear() is called during the failing refresh', async () => {
+            const { client, attempts } = await refreshing()
+            const pending = bridgeError(client.getToken())
+            await until(() => vi.getTimerCount() === 1)
+            client.clear()
+            await vi.advanceTimersByTimeAsync(250)
+            await until(() => attempts.length === 3 && vi.getTimerCount() === 1)
+            await vi.advanceTimersByTimeAsync(1000)
+            expect(await pending).toMatchObject({ error: 'network' })
+            expect(attempts).toHaveLength(4)
         })
     })
 

@@ -51,6 +51,7 @@ const RETRY_DELAYS_MS = [250, 1000]
 interface Issued {
     token: string
     refreshAt: number
+    expiresAt: number
 }
 
 export function createBridgeClient(options: BridgeClientOptions): BridgeClient {
@@ -61,8 +62,19 @@ export function createBridgeClient(options: BridgeClientOptions): BridgeClient {
     let cached: Issued | undefined
     let pending: Promise<string> | undefined
 
-    async function exchange(): Promise<Issued> {
+    // A refresh that cannot reach the bridge, even after its retries, keeps the token it was refreshing while that
+    // token is valid and was neither cleared nor replaced meanwhile. A failure of getIdpToken is passed on as it is.
+    async function refresh(current: Issued | undefined): Promise<Issued> {
         const subjectToken = await options.getIdpToken()
+        try {
+            return await exchange(subjectToken)
+        } catch (error) {
+            if (current !== undefined && cached === current && unreachable(error) && now() < current.expiresAt) return current
+            throw error
+        }
+    }
+
+    async function exchange(subjectToken: string): Promise<Issued> {
         const request = {
             url: `${url}/token`,
             body: formBody([
@@ -89,7 +101,7 @@ export function createBridgeClient(options: BridgeClientOptions): BridgeClient {
         getToken() {
             if (cached !== undefined && now() < cached.refreshAt) return Promise.resolve(cached.token)
             if (pending === undefined) {
-                const current: Promise<string> = exchange().then(
+                const current: Promise<string> = refresh(cached).then(
                     (result) => {
                         // Not cached once clear() has dropped this exchange
                         if (pending === current) {
@@ -136,7 +148,11 @@ function issued(answer: { status: number; body: unknown }, arrivedAt: number, re
     }
     // Half the lifetime at most, or a short token lifetime would make every call exchange
     const margin = Math.min(refreshBeforeSeconds, expiresIn / 2)
-    return { token, refreshAt: arrivedAt + (expiresIn - margin) * 1000 }
+    return { token, refreshAt: arrivedAt + (expiresIn - margin) * 1000, expiresAt: arrivedAt + expiresIn * 1000 }
+}
+
+function unreachable(error: unknown): boolean {
+    return error instanceof BridgeError && (error.error === 'network' || error.error === 'temporarily_unavailable')
 }
 
 function oauthError(body: unknown): string | undefined {
