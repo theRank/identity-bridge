@@ -88,10 +88,17 @@ A mini program must meet these constraints:
 - **Cache.** The bridge token is kept in memory only, never in storage. It is reused while more than
   `min(refreshBeforeSeconds, expires_in / 2)` seconds of its lifetime remain; after that the next call
   exchanges a fresh IdP token. The lifetime is counted from when the answer arrives, by the client's own
-  clock, so a device whose clock is wrong is not affected.
+  wall clock (`now`, `Date.now` by default), so a device clock that is merely set wrong does not matter. A
+  clock that jumps backwards while a token is cached can, however, keep the token in use past its real
+  expiry, and your backend then rejects it as `expired`. Pass `now` to use another clock.
 - **One exchange at a time.** Calls made while an exchange is in flight wait for that exchange.
 - **Retries.** When no answer arrives, or the bridge answers `503 temporarily_unavailable`, the request is
   sent again twice, after 250 ms and then 1 s, with the same IdP token. Other errors are thrown at once.
+- **Keeping a valid token.** When a refresh still finds no answer, or `503 temporarily_unavailable`, after
+  its retries, and the cached token has not expired yet, `getToken()` returns the cached token, to every call
+  waiting on that refresh, instead of throwing; the next call tries to refresh again. Any other failure is
+  thrown, including one of `getIdpToken`, and an expired token is never returned. After `clear()` there is
+  no token to fall back to.
 - **Failures are not cached.** After a failed exchange, the next call starts a new one.
 
 ## API
@@ -107,9 +114,12 @@ A mini program must meet these constraints:
 | `refreshBeforeSeconds` | `number` | How long before expiry to exchange again, capped at half the token's lifetime. Default `60`. A negative value throws a `RangeError`. |
 | `now` | `() => number` | The clock, in milliseconds since the epoch. Default `Date.now`. |
 
+An option given as `undefined` takes its default.
+
 Returns a client with:
 
-- `getToken(): Promise<string>`: the bridge access token, from memory or from a new exchange.
+- `getToken(): Promise<string>`: the bridge access token, from memory or from a new exchange, or the cached
+  token while the bridge cannot be reached, as described above.
 - `clear(): void`: forgets the token, for sign-out. An exchange already in flight still resolves for the
   calls waiting on it, but its token is not kept; the next call starts a new exchange.
 
@@ -150,6 +160,18 @@ Thrown for a failed exchange, and for a failed Casdoor login. It has two propert
 
 The bridge's `error_description` is not exposed: branch on `error`.
 
+The ES module and CommonJS builds each define their own `BridgeError` class, so `instanceof BridgeError` is
+false for an error thrown by the other build, as when one part of an app imports the package and another
+requires it. Check `error.name === 'BridgeError'` instead:
+
+```ts
+import type { BridgeError } from '@therank/identity-bridge-client'
+
+function isBridgeError(error: unknown): error is BridgeError {
+    return error instanceof Error && error.name === 'BridgeError'
+}
+```
+
 | `error` | Status | Meaning |
 |---|---|---|
 | `invalid_request` | 400 | The bridge did not accept the IdP token, for example because it expired or comes from an identity provider the product does not trust, or the request was malformed, as with an empty IdP token. The bridge's logs say why. |
@@ -157,7 +179,7 @@ The bridge's `error_description` is not exposed: branch on `error`.
 | `invalid_target` | 400 | The bridge has no product with this `audience`. |
 | `temporarily_unavailable` | 503 | The bridge could not reach the identity provider, even after two retries. |
 | `server_error` | 500 | The bridge failed. |
-| `network` | 0 | No answer arrived, even after two retries. |
+| `network` | 0 | No answer arrived. The exchange with the bridge first retries twice; `casdoorMiniProgramIdpToken` never retries, since a `wx.login` code can be used only once. |
 | `bad_response` | any | The answer was not one the bridge or Casdoor gives, such as an HTML error page from a proxy. |
 | `casdoor_error` | Casdoor's | From `casdoorMiniProgramIdpToken`: Casdoor answered `{"status": "error"}`. |
 | Casdoor's `error` | Casdoor's | From `casdoorMiniProgramIdpToken`: Casdoor answered with an OAuth error such as `invalid_client`. |
@@ -165,7 +187,10 @@ The bridge's `error_description` is not exposed: branch on `error`.
 ## Module formats
 
 The package ships ES modules in `dist/` and CommonJS in `dist/cjs/`, compiled to ES2017; `import` and
-`require` both resolve. It keeps no module-level state, so loading both builds in one process is harmless.
+`require` both resolve. It keeps no module-level state, so loading both builds in one process shares nothing,
+but each build has its own `BridgeError` class: see [`BridgeError`](#bridgeerror). A root `wechat.d.ts` gives
+TypeScript projects on `moduleResolution: node`, which ignores the package's `exports`, the types of the
+`wechat` subpath.
 
 ## Support
 
