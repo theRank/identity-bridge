@@ -5,13 +5,14 @@ import { request } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createInterface } from 'node:readline'
+import { fileURLToPath } from 'node:url'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { clerkConfigJson } from '../helpers/config'
 import { bridgeSigningKeys } from '../helpers/keys'
 import { FORM } from '../helpers/runtime'
 import { CLERK_SECRET } from '../helpers/webhooks'
 
-const ROOT = new URL('../..', import.meta.url).pathname
+const ROOT = fileURLToPath(new URL('../..', import.meta.url).href)
 const BUNDLE = join(ROOT, 'dist/node/server.mjs')
 const keys = await bridgeSigningKeys()
 const ENV = { BRIDGE_CONFIG: clerkConfigJson, SIGNING_KEYS: keys.json, WEBHOOK_SECRET_CLERK_ACME: CLERK_SECRET }
@@ -66,12 +67,21 @@ async function start(env: Record<string, string>): Promise<Started> {
 }
 
 describe('Node bundle', () => {
-    it('imports only Node built-in modules, with jose bundled in', () => {
+    // Static imports, re-exports, dynamic imports and esbuild's require shim
+    it('loads only Node built-in modules, with jose bundled in', () => {
         const source = readFileSync(BUNDLE, 'utf8')
-        const imports = [...source.matchAll(/^import\b[^'"]*["']([^"']+)["']/gm)].map(([, specifier]) => specifier!)
+        const specifiers = [
+            ...source.matchAll(/^\s*import\b[^'"]*?["']([^"']+)["']/gm),
+            ...source.matchAll(/^\s*export\b[^'"]*?\bfrom\s*["']([^"']+)["']/gm),
+            ...source.matchAll(/\bimport\s*\(\s*["']([^"']+)["']\s*\)/g),
+            ...source.matchAll(/\b__require\s*\(\s*["']([^"']+)["']\s*\)/g),
+        ].map(([, specifier]) => specifier!)
 
-        expect(imports.length).toBeGreaterThan(0)
-        for (const specifier of imports) expect(specifier).toMatch(/^node:/)
+        expect(specifiers.length).toBeGreaterThan(0)
+        for (const specifier of specifiers) expect(specifier).toMatch(/^node:/)
+        // A module loaded by a computed name could not be checked at all
+        expect(source).not.toMatch(/\bimport\s*\((?!\s*["'])/)
+        expect(source).not.toMatch(/\b__require\s*\((?!\s*["'])/)
         expect(readdirSync(dir)).toEqual(['server.mjs'])
     })
 

@@ -7,6 +7,7 @@ import { fakeFetch } from './helpers/fetch'
 import { clerkClaims, signToken } from './helpers/idp'
 import { idpJwks, rsaKeyPair } from './helpers/keys'
 import { expectFailureMode, expectServing, FORM, type Send } from './helpers/runtime'
+import { runsOf, unquotedPrivateKey } from './helpers/secrets'
 import { CLERK_SECRET, resignClerk } from './helpers/webhooks'
 import created from './fixtures/clerk/user-created.json'
 
@@ -134,14 +135,15 @@ describe('Workers entry', () => {
             for (const line of requests) expect(line).toMatchObject({ outcome: 'error', code: 'runtime_unavailable' })
         })
 
-        it('with signing keys that are not JSON, logging no part of the key', async () => {
+        it('with signing keys that are not JSON, logging no part of the key that the parser quoted', async () => {
+            const unquoted = await unquotedPrivateKey()
             const logs = captureLogs()
 
-            await expectFailureMode(viaHandler({ ...bindings, SIGNING_KEYS: bindings.SIGNING_KEYS.slice(0, -2) }))
+            await expectFailureMode(viaHandler({ ...bindings, SIGNING_KEYS: unquoted.json }))
 
             expect(logs().filter((line) => 'event' in line)).toEqual([{ event: 'runtime_load_failed', reason: 'SIGNING_KEYS: invalid JSON' }])
             const text = JSON.stringify(logs())
-            for (let index = 0; index + 6 <= active.d!.length; index++) expect(text).not.toContain(active.d!.slice(index, index + 6))
+            for (const run of runsOf(unquoted.d)) expect(text).not.toContain(run)
         })
     })
 })

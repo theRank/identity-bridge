@@ -3,6 +3,7 @@ import { loadRuntime, webhookSecretName, type RuntimeSource } from '../src/runti
 import type { Runtime, RuntimeFailure } from '../src/types'
 import { casdoorConfig, casdoorConfigJson, clerkConfig, clerkConfigJson } from './helpers/config'
 import { bridgeSigningKeys } from './helpers/keys'
+import { runsOf, unquotedPrivateKey } from './helpers/secrets'
 import { CASDOOR_SECRET, CLERK_SECRET } from './helpers/webhooks'
 
 const keys = await bridgeSigningKeys(1)
@@ -22,11 +23,6 @@ async function failure(from: RuntimeSource): Promise<string> {
     const runtime = await loadRuntime(from)
     expect(runtime).toEqual({ reason: expect.any(String) })
     return (runtime as RuntimeFailure).reason
-}
-
-// Runs this short also occur by chance in fixed English text; longer ones would mean the value was quoted
-function runsOf(value: string, length = 6): string[] {
-    return Array.from({ length: Math.max(value.length - length + 1, 0) }, (_, index) => value.slice(index, index + length))
 }
 
 describe('webhookSecretName', () => {
@@ -140,12 +136,12 @@ describe('loadRuntime', () => {
             expect(await failure(source({ signingKeys: JSON.stringify({ active: publicOnly }) }))).toBe('SIGNING_KEYS.active: private key required')
         })
 
-        it('on signing keys that are not JSON, quoting no part of the key', async () => {
-            const truncated = keys.json.slice(0, -2)
-            const reason = await failure(source({ signingKeys: truncated }))
+        it('on signing keys that are not JSON, quoting no part of the key that the parser quoted', async () => {
+            const unquoted = await unquotedPrivateKey()
+            const reason = await failure(source({ signingKeys: unquoted.json }))
 
             expect(reason).toBe('SIGNING_KEYS: invalid JSON')
-            for (const run of runsOf(keys.active.d!)) expect(reason).not.toContain(run)
+            for (const run of runsOf(unquoted.d)) expect(reason).not.toContain(run)
         })
 
         it.each([

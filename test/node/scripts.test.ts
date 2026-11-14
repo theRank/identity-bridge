@@ -1,12 +1,13 @@
 import { spawn } from 'node:child_process'
 import type { Server } from 'node:http'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
 import { loadRuntime, webhookSecretName } from '../../src/runtimes/load'
 import { createNodeServer } from '../../src/runtimes/node'
 import { listen } from './http'
 
-const ROOT = new URL('../..', import.meta.url).pathname
+const ROOT = fileURLToPath(new URL('../..', import.meta.url).href)
 const servers: Server[] = []
 
 afterEach(() => {
