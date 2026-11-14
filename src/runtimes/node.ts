@@ -133,12 +133,21 @@ function requestUrl(target: string): URL {
     return url
 }
 
+// PORT and HOST, an empty value counting as unset, so that PORT= does not mean a random port
+export function listenAddress(env: NodeServerOptions['env']): { port: number; host: string } {
+    return { port: Number(env.PORT || 8080), host: env.HOST || '0.0.0.0' }
+}
+
 // Stops accepting connections and closes idle ones; each request in flight is answered, and its connection
-// closes with the answer. Resolves once every connection has closed, or when the deadline passes, closing the
-// connections left.
-export function shutdown(server: Server, deadline: Promise<unknown>): Promise<void> {
+// closes with the answer. Resolves true once every connection has closed, or false when the deadline passed
+// first and the connections left were closed, cutting their requests off.
+export function shutdown(server: Server, deadline: Promise<unknown>): Promise<boolean> {
     return new Promise((resolve) => {
-        server.close(() => resolve())
-        void deadline.then(() => server.closeAllConnections())
+        let cut = false
+        server.close(() => resolve(!cut))
+        void deadline.then(() => {
+            cut = true
+            server.closeAllConnections()
+        })
     })
 }

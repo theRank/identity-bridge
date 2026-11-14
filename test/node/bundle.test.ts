@@ -124,17 +124,23 @@ describe('Node bundle', () => {
         expect(code).toBe(0)
     })
 
-    it('stops at once on a second signal, even with a request in flight', async () => {
+    // With the exit code of a process the signal killed, as the handler stays: in a container, PID 1 ignores a
+    // signal it does not handle
+    it.each([
+        ['SIGTERM', 'SIGTERM', 143],
+        ['SIGTERM', 'SIGINT', 130],
+        ['SIGINT', 'SIGINT', 130],
+    ] as const)('exits at once on %s then %s, even with a request in flight, with %i', async (first, second, exitCode) => {
         const { child, origin, line } = await start(ENV)
         const held = await inFlight(origin)
         held.answered.catch(() => {})
 
-        child.kill('SIGTERM')
+        child.kill(first)
         await line((entry) => entry.event === 'stopping')
-        child.kill('SIGINT')
+        child.kill(second)
 
         const [code, signal] = await once(child, 'exit')
-        expect([code, signal]).toEqual([null, 'SIGINT'])
+        expect([code, signal]).toEqual([exitCode, null])
     })
 })
 

@@ -1,7 +1,7 @@
 import { Agent, request, type Server } from 'node:http'
 import { calculateJwkThumbprint } from 'jose'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createNodeServer, shutdown } from '../../src/runtimes/node'
+import { createNodeServer, listenAddress, shutdown } from '../../src/runtimes/node'
 import type { Deps } from '../../src/types'
 import { clerkConfig, clerkConfigJson } from '../helpers/config'
 import { START_MS } from '../helpers/deps'
@@ -403,6 +403,16 @@ describe('Node entry', () => {
     })
 })
 
+describe('listenAddress', () => {
+    it.each<[string, Record<string, string | undefined>, { port: number; host: string }]>([
+        ['defaults to port 8080 on every IPv4 address', {}, { port: 8080, host: '0.0.0.0' }],
+        ['treats empty values as unset', { PORT: '', HOST: '' }, { port: 8080, host: '0.0.0.0' }],
+        ['takes PORT and HOST', { PORT: '9090', HOST: '::' }, { port: 9090, host: '::' }],
+    ])('%s', (_, env, address) => {
+        expect(listenAddress(env)).toEqual(address)
+    })
+})
+
 describe('shutdown', () => {
     it('stops accepting connections and completes a request in flight', async () => {
         const idp = await heldIdp()
@@ -418,7 +428,7 @@ describe('shutdown', () => {
         expect(answer.status).toBe(200)
         expect(JSON.parse(answer.body)).toMatchObject({ token_type: 'Bearer' })
         expect(answer.headers.connection).toBe('close')
-        await stopped
+        expect(await stopped).toBe(true)
     })
 
     it('closes idle connections at once', async () => {
@@ -429,7 +439,7 @@ describe('shutdown', () => {
             request({ host: hostname, port, path: '/healthz', agent }, (res) => res.resume().on('end', resolve)).on('error', reject).end()
         })
 
-        await shutdown(server, never)
+        expect(await shutdown(server, never)).toBe(true)
         agent.destroy()
     })
 
@@ -445,7 +455,7 @@ describe('shutdown', () => {
         pass()
 
         await expect(exchange).rejects.toThrow()
-        await stopped
+        expect(await stopped).toBe(false)
         idp.release()
     })
 })
