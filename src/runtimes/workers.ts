@@ -5,7 +5,8 @@ import { loadRuntime, webhookSecretName } from './load'
 // Declared here rather than generated: each deployment names its own webhook sources, so their secrets cannot be
 // declared in this repository
 export interface Env {
-    BRIDGE_CONFIG?: string | undefined
+    // A string, or the JSON value wrangler gives for a configuration written as an object under vars
+    BRIDGE_CONFIG?: string | object | undefined
     SIGNING_KEYS?: string | undefined
     [secret: `WEBHOOK_SECRET_${string}`]: string | undefined
 }
@@ -33,7 +34,7 @@ function runtimeFor(env: Env): Promise<Runtime | RuntimeFailure> {
 
 async function load(env: Env): Promise<Runtime | RuntimeFailure> {
     const runtime = await loadRuntime({
-        config: env.BRIDGE_CONFIG,
+        config: typeof env.BRIDGE_CONFIG === 'object' ? JSON.stringify(env.BRIDGE_CONFIG) : env.BRIDGE_CONFIG,
         signingKeys: env.SIGNING_KEYS,
         webhookSecret: (sourceId) => env[webhookSecretName(sourceId)],
     })

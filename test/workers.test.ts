@@ -63,6 +63,21 @@ describe('Workers entry', () => {
         await expectServing(viaSelf, kid)
     })
 
+    // As wrangler gives a JSON value under vars
+    it('accepts BRIDGE_CONFIG as a JSON object', async () => {
+        captureLogs()
+
+        await expectServing(viaHandler({ ...bindings, BRIDGE_CONFIG: JSON.parse(bindings.BRIDGE_CONFIG) as object }), kid)
+    })
+
+    it('reports a JSON object configuration by its own path when it is invalid', async () => {
+        const logs = captureLogs()
+        const config = { ...(JSON.parse(bindings.BRIDGE_CONFIG) as object), issuer: 'http://id.acme.example' }
+
+        await expectFailureMode(viaHandler({ ...bindings, BRIDGE_CONFIG: config }))
+        expect(logs().filter((line) => 'event' in line)).toEqual([{ event: 'runtime_load_failed', reason: 'config: issuer: must be an https URL' }])
+    })
+
     it('authenticates a webhook with the secret bound as WEBHOOK_SECRET_<SOURCE>', async () => {
         captureLogs()
         const { fetch, calls } = fakeFetch(() => new Response(null, { status: 202 }))
