@@ -1,0 +1,32 @@
+{
+    "headers": {
+        "Authorization": "Bearer test-casdoor-webhook-secret",
+        "Content-Type": "application/json"
+    },
+    "body": {
+        "id": 0,
+        "owner": "acme",
+        "name": "0941ebaa-e11b-4a6b-8130-70fd1a1a8fed",
+        "createdTime": "2026-11-13T22:38:24Z",
+        "organization": "acme",
+        "clientIp": "192.0.2.10",
+        "user": "frank",
+        "method": "POST",
+        "requestUri": "/api/delete-own-account",
+        "action": "delete-own-account",
+        "language": "en",
+        "object": "password=***",
+        "response": "{status:\"error\", msg:\"Unauthorized operation\"}",
+        "statusCode": 200,
+        "detail": "",
+        "isTriggered": false,
+        "prevHash": "",
+        "hash": "",
+        "extendedUser": {
+            "owner": "acme",
+            "name": "frank",
+            "id": "c92ba709-4772-441b-b4fa-339b0d3d35d5",
+            "isAdmin": false
+        }
+    }
+}

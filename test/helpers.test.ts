@@ -155,7 +155,7 @@ describe('fakeDeps', () => {
         for (const id of ids) expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
     })
 
-    it('captures log lines', () => {
+    it('records log lines', () => {
         const { deps, logs } = fakeDeps()
         deps.log({ route: 'health', status: 200, ms: 1, outcome: 'ok' })
         expect(logs).toEqual([{ route: 'health', status: 200, ms: 1, outcome: 'ok' }])

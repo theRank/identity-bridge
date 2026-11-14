@@ -1,0 +1,9 @@
+{
+    "headers": {
+        "Content-Type": "application/json",
+        "Svix-Id": "msg_2pXkC6vB9nM2lK5jH8gF1dS4aQw",
+        "Svix-Signature": "v1,AULwN1ayarO56xo64ys36knX5M3UA3E0UVGucBAk/zA=",
+        "Svix-Timestamp": "1794608386"
+    },
+    "body": "{\"data\":{\"deleted\":true,\"id\":\"user_2pXk7QmZbLr9TfWc4NvHs8YdJe1\",\"object\":\"user\"},\"event_attributes\":{\"http_request\":{\"client_ip\":\"192.0.2.10\",\"user_agent\":\"node\"}},\"instance_id\":\"ins_2abcDEFghiJKLmnoPQRstuVWXyz\",\"object\":\"event\",\"timestamp\":1794608386048,\"type\":\"user.deleted\"}"
+}
