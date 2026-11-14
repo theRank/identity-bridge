@@ -17,7 +17,14 @@ beforeAll(async () => {
 
 afterEach(() => {
     vi.unstubAllGlobals()
+    vi.restoreAllMocks()
 })
+
+function deferred() {
+    let release: () => void = () => {}
+    const promise = new Promise<void>((resolve) => (release = resolve))
+    return { promise, release }
+}
 
 interface Setup {
     bridge: Bridge
@@ -183,14 +190,34 @@ describe('createBridgeClient', () => {
             expect(await client.getToken()).not.toBe(first)
         })
 
-        it('keeps the token in memory only', async () => {
-            const storage = { setItem: vi.fn(), getItem: vi.fn() }
-            vi.stubGlobal('localStorage', storage)
-            vi.stubGlobal('sessionStorage', storage)
-            const { client } = setup()
+        it('keeps the token in memory only: it touches no storage and logs nothing', async () => {
+            const touched: string[] = []
+            // Records any read or write of a storage global, document.cookie included
+            const watched = (name: string) =>
+                new Proxy(
+                    {},
+                    {
+                        get(_, key) {
+                            touched.push(`${name}.${String(key)}`)
+                            return () => {}
+                        },
+                        set(_, key) {
+                            touched.push(`${name}.${String(key)} =`)
+                            return true
+                        },
+                    },
+                )
+            for (const name of ['localStorage', 'sessionStorage', 'indexedDB', 'caches', 'document']) vi.stubGlobal(name, watched(name))
+            const logged = (['log', 'info', 'warn', 'error', 'debug'] as const).map((method) => vi.spyOn(console, method))
+            const { bridge, client } = setup()
             await client.getToken()
-            expect(storage.setItem).not.toHaveBeenCalled()
-            expect(storage.getItem).not.toHaveBeenCalled()
+            bridge.advance(840_000)
+            await client.getToken()
+            client.clear()
+            await client.getToken()
+            expect(bridge.requests).toHaveLength(3)
+            expect(touched).toEqual([])
+            for (const spy of logged) expect(spy).not.toHaveBeenCalled()
         })
     })
 
@@ -521,6 +548,62 @@ describe('createBridgeClient', () => {
             expect(await before).not.toBe(after)
             expect(await client.getToken()).toBe(after)
             expect(bridge.requests).toHaveLength(2)
+        })
+
+        it('does not let a cleared exchange that fails drop the exchange started after clear()', async () => {
+            const gates = [deferred(), deferred()]
+            const { bridge, client, getIdpToken } = setup({
+                transport: (real) => async (request) => {
+                    const gate = gates[real.requests.length]!
+                    const answer = await real.transport(request)
+                    await gate.promise
+                    return answer
+                },
+            })
+            getIdpToken.mockResolvedValueOnce('not-a-jwt')
+            const before = bridgeError(client.getToken())
+            await until(() => bridge.answers.length === 1)
+            client.clear()
+            const after = client.getToken()
+            await until(() => bridge.answers.length === 2)
+            gates[0]!.release()
+            expect(await before).toMatchObject({ status: 400, error: 'invalid_request' })
+            // Made while the exchange started after clear() is still in flight: it joins that exchange
+            const third = client.getToken()
+            gates[1]!.release()
+            expect(await third).toBe(await after)
+            expect(bridge.requests).toHaveLength(2)
+            expect(await client.getToken()).toBe(await after)
+        })
+
+        describe('during a retry', () => {
+            beforeEach(() => {
+                vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+            })
+
+            afterEach(() => {
+                vi.useRealTimers()
+            })
+
+            it('starts a new exchange at once, and the sleeping one resolves for its callers without being cached', async () => {
+                let calls = 0
+                const { bridge, client } = setup({
+                    transport: (real) => async (request) => {
+                        if (++calls === 1) throw new TypeError('Failed to fetch')
+                        return real.transport(request)
+                    },
+                })
+                const before = client.getToken()
+                await until(() => vi.getTimerCount() === 1)
+                client.clear()
+                const after = await client.getToken()
+                await vi.advanceTimersByTimeAsync(250)
+                const old = await before
+                expect(decodeJwt(old).aud).toBe('acme')
+                expect(old).not.toBe(after)
+                expect(await client.getToken()).toBe(after)
+                expect(calls).toBe(3)
+            })
         })
     })
 
