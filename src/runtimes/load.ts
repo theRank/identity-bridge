@@ -13,7 +13,7 @@ export interface RuntimeSource {
 class LoadFailure extends Error {}
 
 // Source ids are lowercase letters, digits and -, so no two ids share a name
-export function webhookSecretName(sourceId: string): string {
+export function webhookSecretName(sourceId: string): `WEBHOOK_SECRET_${string}` {
     return `WEBHOOK_SECRET_${sourceId.toUpperCase().replaceAll('-', '_')}`
 }
 
