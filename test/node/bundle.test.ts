@@ -75,6 +75,19 @@ describe('Node bundle', () => {
         expect(readdirSync(dir)).toEqual(['server.mjs'])
     })
 
+    // jose is MIT licensed and travels inside the bundle, so its licence must travel with it
+    it("opens with the bridge's licence notice and the full licence of jose", () => {
+        const source = readFileSync(BUNDLE, 'utf8')
+        const joseLicence = readFileSync(join(ROOT, 'node_modules/jose/LICENSE.md'), 'utf8')
+        // Up to the end of the comment that holds jose's licence
+        const banner = source.slice(0, source.indexOf('*/', source.indexOf(joseLicence.trim())) + 2)
+
+        expect(source.startsWith('/*!\n * identity-bridge')).toBe(true)
+        expect(banner).toContain('Licensed under the Apache License, Version 2.0')
+        expect(banner).toContain(joseLicence.trim())
+        expect(banner).toMatch(/^Copyright \(c\) \d{4} Filip Skokan$/m)
+    })
+
     it('starts alone in an empty directory with plain node and answers /healthz', async () => {
         const { origin, lines } = await start(ENV)
 

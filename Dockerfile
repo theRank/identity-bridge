@@ -12,10 +12,12 @@ COPY packages/server/package.json packages/server/
 # No install script is needed: esbuild ships its binary as a platform package
 RUN --mount=type=cache,target=/root/.npm npm ci --ignore-scripts --no-audit --no-fund
 COPY tsconfig.json ./
+COPY scripts/build-node.ts scripts/
 COPY src ./src
 RUN npm run build:node
 
-# Node and one file: the bundle has jose built in, so there is nothing to install, and no source
+# Node and the bundle, which has jose built in and its licence in its banner, so there is nothing to install and
+# no source; LICENSE is the bridge's own
 FROM node:24-slim@sha256:dc26ae92c9fb15cf6b1d63e20f0944b2efe0f115b20e00be48fb23fceb061c54
 ARG VERSION=dev
 LABEL org.opencontainers.image.source="https://github.com/theRank/identity-bridge" \
@@ -23,6 +25,7 @@ LABEL org.opencontainers.image.source="https://github.com/theRank/identity-bridg
       org.opencontainers.image.licenses="Apache-2.0"
 WORKDIR /app
 COPY --from=build /app/dist/node/server.mjs ./
+COPY LICENSE ./
 USER node
 ENV PORT=8080
 EXPOSE 8080
