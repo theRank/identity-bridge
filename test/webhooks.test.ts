@@ -417,7 +417,7 @@ describe('/webhooks/{source}', () => {
             expect(payload.events).toStrictEqual({
                 'urn:identity-bridge:event:user-created': {
                     email: 'gus@globex.example',
-                    name: 'gus (capture)',
+                    name: 'Gus Example',
                     picture: 'https://cdn.casbin.org/img/casbin.svg',
                 },
             })
@@ -614,7 +614,7 @@ describe('/webhooks/{source}', () => {
         })
 
         describe('timeouts', () => {
-            // Captured before the timers are faked, to wait in real time for the deliveries to start
+            // Kept from before the timers are faked, to wait in real time for the deliveries to start
             const realSetTimeout = globalThis.setTimeout
 
             beforeEach(() => {
@@ -729,7 +729,7 @@ describe('/webhooks/{source}', () => {
                 'Bridge',
                 'b2d6a1c4-5e7f-4a8b-9c0d',
                 'gus@globex.example',
-                'gus (capture)',
+                'Gus Example',
                 '7219e2b2-93de-4e9d-9dd2-dc9b73b5f62b',
                 ALICE,
                 ALICE_UID,

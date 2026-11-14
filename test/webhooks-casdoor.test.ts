@@ -127,7 +127,7 @@ describe('Casdoor webhooks', () => {
                         idpEventId: 'new-user:4677bed3-d384-471f-b767-9f95d82f5e0c',
                         type: 'user-created',
                         subject: '7219e2b2-93de-4e9d-9dd2-dc9b73b5f62b',
-                        profile: { email: 'gus@globex.example', name: 'gus (capture)', picture: PICTURE },
+                        profile: { email: 'gus@globex.example', name: 'Gus Example', picture: PICTURE },
                     },
                 ])
             })
