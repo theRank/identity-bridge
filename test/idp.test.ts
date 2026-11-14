@@ -581,7 +581,7 @@ describe('verifySubjectToken', () => {
         })
 
         describe('timeouts', () => {
-            // Captured before the timers are faked, to wait in real time for the fetch to start
+            // Kept from before the timers are faked, to wait in real time for the fetch to start
             const realSetTimeout = globalThis.setTimeout
 
             beforeEach(() => {

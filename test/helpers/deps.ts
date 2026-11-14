@@ -2,7 +2,7 @@ import type { Deps, LogLine } from '../../src/types'
 
 export const START_MS = 1_760_000_000_000
 
-// Deps with a clock that moves only through `advance`, sequential v4-shaped UUIDs and captured log lines.
+// Deps with a clock that moves only through `advance`, sequential v4-shaped UUIDs and recorded log lines.
 // The default fetch rejects, so a test that reaches the network without meaning to fails.
 export function fakeDeps(overrides: Partial<Deps> = {}) {
     const logs: LogLine[] = []
