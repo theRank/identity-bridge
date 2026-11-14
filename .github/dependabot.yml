@@ -7,6 +7,10 @@ updates:
     groups:
       dependencies:
         patterns: [ '*' ]
+    # Node's types follow the Node line the bundle targets and the image runs, not the newest
+    ignore:
+      - dependency-name: '@types/node'
+        update-types: [ 'version-update:semver-major' ]
 
   - package-ecosystem: github-actions
     directory: /
@@ -15,3 +19,13 @@ updates:
     groups:
       actions:
         patterns: [ '*' ]
+
+  # Weekly, as the base image's updates are mostly security fixes
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+    # The image follows Node's 24 LTS line, which the bundle targets; a new line is moved to by hand
+    ignore:
+      - dependency-name: node
+        update-types: [ 'version-update:semver-major' ]
