@@ -15,17 +15,33 @@ export interface Verifier {
     verifyAccessToken(token: string): Promise<BridgeUser>
     // Reads the Authorization: Bearer header
     verifyRequest(request: Request): Promise<BridgeUser>
+    // The body of an event delivery: the event token itself
+    verifyEvent(body: string): Promise<BridgeEvent>
 }
 
-// Times are seconds since the epoch, as in the token
-export interface BridgeUser {
-    userId: string
+export interface BridgeProfile {
     email?: string
     phoneNumber?: string
     name?: string
     picture?: string
+}
+
+// Times are seconds since the epoch, as in the token
+export interface BridgeUser extends BridgeProfile {
+    userId: string
     region?: string
     expiresAt: number
+}
+
+export type BridgeEventType = 'user-created' | 'user-updated' | 'user-deleted'
+
+export interface BridgeEvent {
+    // The same for every delivery of one event: process each jti once
+    jti: string
+    type: BridgeEventType
+    userId: string
+    profile: BridgeProfile
+    issuedAt: number
 }
 
 export type BridgeTokenErrorReason =
@@ -56,6 +72,12 @@ const JWKS_TIMEOUT_MS = 5000
 const MAX_CLOCK_TOLERANCE_SECONDS = 60
 const USER_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const BEARER = /^Bearer +(\S+)$/i
+// A Map, so a member such as __proto__ never finds an Object.prototype member
+const EVENT_TYPES = new Map<string, BridgeEventType>([
+    ['urn:identity-bridge:event:user-created', 'user-created'],
+    ['urn:identity-bridge:event:user-updated', 'user-updated'],
+    ['urn:identity-bridge:event:user-deleted', 'user-deleted'],
+])
 
 // Never quotes the response
 class JwksFetchError extends Error {
@@ -87,15 +109,10 @@ export function createVerifier(options: VerifierOptions): Verifier {
         }
     }
 
+    // typ is normalized by jose, so application/at+jwt and application/secevent+jwt are accepted too. Both kinds
+    // are signed with the same keys, and an event has no exp: the typ check keeps one from passing as the other.
     async function verifyAccessToken(token: string): Promise<BridgeUser> {
-        // typ is normalized by jose, so application/at+jwt is accepted too
-        const payload = await verify(token, 'at+jwt', ['exp', 'iat', 'sub'])
-        try {
-            return bridgeUser(payload)
-        } catch (error) {
-            if (error instanceof InvalidClaims) throw new BridgeTokenError('invalid_claims')
-            throw error
-        }
+        return checked(bridgeUser, await verify(token, 'at+jwt', ['exp', 'iat', 'sub']))
     }
 
     return {
@@ -106,23 +123,52 @@ export function createVerifier(options: VerifierOptions): Verifier {
             if (match === null) return Promise.reject(new BridgeTokenError('missing'))
             return verifyAccessToken(match[1]!)
         },
+
+        async verifyEvent(body) {
+            return checked(bridgeEvent, await verify(body, 'secevent+jwt', ['iat', 'jti', 'sub']))
+        },
+    }
+}
+
+function checked<T>(read: (payload: JWTPayload) => T, payload: JWTPayload): T {
+    try {
+        return read(payload)
+    } catch (error) {
+        if (error instanceof InvalidClaims) throw new BridgeTokenError('invalid_claims')
+        throw error
     }
 }
 
 // The idp claim is left out on purpose: products must not branch on the identity provider
 function bridgeUser(payload: JWTPayload): BridgeUser {
-    const user: BridgeUser = { userId: userId(payload.sub), expiresAt: payload.exp! }
-    const email = optionalString(payload.email)
-    const phoneNumber = optionalString(payload.phone_number)
-    const name = optionalString(payload.name)
-    const picture = optionalString(payload.picture)
+    const user: BridgeUser = { userId: userId(payload.sub), ...profile(payload), expiresAt: payload.exp! }
     const region = optionalString(payload.region)
-    if (email !== undefined) user.email = email
-    if (phoneNumber !== undefined) user.phoneNumber = phoneNumber
-    if (name !== undefined) user.name = name
-    if (picture !== undefined) user.picture = picture
     if (region !== undefined) user.region = region
     return user
+}
+
+// Exactly one event, of a known type, whose payload is an object; a deletion carries no profile
+function bridgeEvent(payload: JWTPayload): BridgeEvent {
+    const { jti, events } = payload
+    if (typeof jti !== 'string' || jti === '' || !isRecord(events)) throw new InvalidClaims()
+    const names = Object.keys(events)
+    const type = names.length === 1 ? EVENT_TYPES.get(names[0]!) : undefined
+    const event = names.length === 1 ? events[names[0]!] : undefined
+    if (type === undefined || !isRecord(event)) throw new InvalidClaims()
+    return { jti, type, userId: userId(payload.sub), profile: type === 'user-deleted' ? {} : profile(event), issuedAt: payload.iat! }
+}
+
+function profile(claims: Record<string, unknown>): BridgeProfile {
+    const result: BridgeProfile = {}
+    const email = optionalString(claims.email)
+    const phoneNumber = optionalString(claims.phone_number)
+    const name = optionalString(claims.name)
+    const picture = optionalString(claims.picture)
+    if (email !== undefined) result.email = email
+    if (phoneNumber !== undefined) result.phoneNumber = phoneNumber
+    if (name !== undefined) result.name = name
+    if (picture !== undefined) result.picture = picture
+    return result
 }
 
 function userId(sub: unknown): string {
@@ -133,6 +179,10 @@ function userId(sub: unknown): string {
 function optionalString(value: unknown): string | undefined {
     if (value !== undefined && typeof value !== 'string') throw new InvalidClaims()
     return value
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 // Rows in order: several reasons share an error class and differ only in claim or reason
