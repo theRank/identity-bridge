@@ -22,7 +22,10 @@ export const clerk: WebhookAdapter = {
         const signatures = request.headers.get('svix-signature')
         if (!id || !timestamp || !signatures || !TIMESTAMP.test(timestamp)) return false
         if (Math.abs(Math.floor(nowMs / 1000) - Number(timestamp)) > TOLERANCE_SECONDS) return false
-        const expected = encode(await sign(secret, `${id}.${timestamp}.${rawBody}`))
+        const key = signingKey(secret)
+        // An empty key is a deployment error that some HMAC implementations would accept, letting anyone sign
+        if (key.byteLength === 0) return false
+        const expected = encode(await sign(key, `${id}.${timestamp}.${rawBody}`))
         return signatures.split(' ').some((entry) => entry.startsWith('v1,') && constantTimeEqual(encode(entry.slice(3)), expected))
     },
 
@@ -72,9 +75,12 @@ function verifiedPrimary(user: JsonObject, list: string, primaryKey: string): Js
 }
 
 // A secret that is not base64 is a deployment error: atob throws and the request fails as an internal error
-async function sign(secret: string, content: string): Promise<string> {
+function signingKey(secret: string): Uint8Array<ArrayBuffer> {
     const encoded = secret.startsWith(SECRET_PREFIX) ? secret.slice(SECRET_PREFIX.length) : secret
-    const keyBytes = Uint8Array.from(atob(encoded), (char) => char.charCodeAt(0))
+    return Uint8Array.from(atob(encoded), (char) => char.charCodeAt(0))
+}
+
+async function sign(keyBytes: Uint8Array<ArrayBuffer>, content: string): Promise<string> {
     const key = await crypto.subtle.importKey('raw', keyBytes, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
     const mac = new Uint8Array(await crypto.subtle.sign('HMAC', key, encode(content)))
     let binary = ''

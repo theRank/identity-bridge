@@ -310,6 +310,13 @@ describe('/webhooks/{source}', () => {
             expect(logs).toEqual([line('casdoor', 401, { code: 'bad_webhook_auth' }), line('casdoor', 401, { code: 'bad_webhook_auth' })])
         })
 
+        it.each(['', 'whsec_'])('answers 401 bad_webhook_auth for the Clerk secret %j, which decodes to an empty key', async (secret) => {
+            const { send, logs, calls } = setup('clerk', { webhookSecret: () => secret })
+            await expectEmpty(await send(clerkRequest(clerkCreated)), 401)
+            expect(logs).toEqual([line('clerk', 401, { code: 'bad_webhook_auth' })])
+            expect(calls).toHaveLength(0)
+        })
+
         it('fails as an internal error when the Clerk secret is not base64', async () => {
             const { send, logs } = setup('clerk', { webhookSecret: () => 'whsec_not base64!' })
             await expectEmpty(await send(clerkRequest(clerkCreated)), 500)

@@ -151,6 +151,11 @@ describe('Clerk webhooks', () => {
         it('takes the secret with or without its whsec_ prefix, as the Svix libraries do', async () => {
             expect(await authenticate(created, { secret: CLERK_SECRET.slice('whsec_'.length) })).toBe(true)
         })
+
+        // A runtime whose HMAC accepted an empty key would let anyone sign
+        it.each(['', 'whsec_'])('never accepts anything for the secret %j, which decodes to an empty key', async (secret) => {
+            expect(await authenticate(created, { secret })).toBe(false)
+        })
     })
 
     describe('parse', () => {
