@@ -5,8 +5,8 @@ backend, the bridge access tokens your clients send and the user lifecycle event
 Clients get the tokens with
 [`@therank/identity-bridge-client`](https://www.npmjs.com/package/@therank/identity-bridge-client).
 
-Web APIs only, with [jose](https://github.com/panva/jose) as its one dependency. Runs on Node.js 22 or newer,
-Cloudflare Workers, Deno and Bun.
+Web APIs only, with [jose](https://github.com/panva/jose) as its one dependency. Runs on Node.js 22.12 or newer,
+Cloudflare Workers, Deno and Bun. The package is an ES module only; see [Module format](#module-format).
 
 ## Install
 
@@ -67,9 +67,10 @@ async function events(request: Request): Promise<Response> {
 }
 ```
 
-Answer `202` once the event is stored. The bridge treats any other answer as a failed delivery, and a
-delivery can be repeated, so the same event can arrive more than once, always with the same `jti`: process
-each `jti` once. An event can also arrive after the user's first request with an access token.
+Answer `202` once the event is stored. The bridge counts any `2xx` answer as delivered, and any other answer,
+a redirect included, as a failed delivery, which it sends again later. A delivery can also be repeated after
+it succeeded, so the same event can arrive more than once, always with the same `jti`: process each `jti`
+once. An event can also arrive after the user's first request with an access token.
 
 ## API
 
@@ -77,10 +78,15 @@ each `jti` once. An event can also arrive after the user's first request with an
 
 | Option | Type | Description |
 |---|---|---|
-| `issuer` | `string` | Required. The bridge's issuer URL, without a trailing slash. The keys are fetched from `${issuer}/.well-known/jwks.json`. |
-| `audience` | `string` | Required. Your product's id in the bridge configuration. |
-| `clockToleranceSeconds` | `number` | Leeway for `exp` and `nbf`, from `0` to `60`. Default `60`. Any other value throws a `RangeError`. |
+| `issuer` | `string` | Required, not empty. The bridge's issuer URL, without a trailing slash. The keys are fetched from `${issuer}/.well-known/jwks.json`. |
+| `audience` | `string` | Required, not empty. Your product's id in the bridge configuration. |
+| `clockToleranceSeconds` | `number` | Leeway for `exp` and `nbf`, from `0` to `60`. Default `60`. |
 | `fetch` | `typeof fetch` | Used to fetch the keys. Default: the global `fetch`. |
+
+Invalid options throw from `createVerifier`: a `TypeError` when `issuer` or `audience` is not a non-empty
+string, or when `clockToleranceSeconds` is not a number, such as the string `'30'` read from an environment
+variable; a `RangeError` when `clockToleranceSeconds` is outside `0` to `60`. So a missing setting fails at
+startup instead of letting other products' tokens through.
 
 The keys are cached for 10 minutes; a token whose key is not among them makes the verifier fetch the keys
 again, at most once every 30 seconds. A fetch that has not completed after 5 seconds fails.
@@ -123,8 +129,13 @@ keeps an event, which never expires, from being accepted as an access token.
 
 ### `BridgeTokenError`
 
-Every verification failure throws a `BridgeTokenError` whose `reason` says why. It has no `cause`, and its
-message holds the reason alone, never the token or its claims, so it is safe to log.
+Every verification failure rejects with a `BridgeTokenError` whose `reason` says why. It has no `cause`, and
+its message holds the reason alone, never the token or its claims, so it is safe to log.
+
+Only two other kinds of error can occur. Invalid options throw from `createVerifier`, above. And a runtime
+that lacks a Web API the verifier needs, such as `AbortSignal.timeout`, can make `verifyAccessToken`,
+`verifyRequest` or `verifyEvent` reject with the runtime's own error, passed on unchanged: it is a defect of
+the runtime, not a verdict on the token, and it holds nothing from the token. The examples above rethrow it.
 
 | `reason` | Meaning |
 |---|---|
@@ -140,10 +151,22 @@ message holds the reason alone, never the token or its claims, so it is safe to 
 | `invalid_claims` | A required claim is missing or invalid, the token is not valid yet, or the event is not exactly one known event. |
 | `jwks_unavailable` | The bridge's keys could not be fetched or used. Try again later. |
 
+## Module format
+
+The package is an ES module only; `import` it. From CommonJS:
+
+- **Node.js**: `require('@therank/identity-bridge-server')` works on Node.js 22.12 or newer, through Node's
+  support for `require()` of ES modules.
+- **TypeScript compiled to CommonJS**: set `module` and `moduleResolution` to `nodenext` and write `import`
+  statements; TypeScript 5.8 or newer turns them into `require()` calls. With `module` set to `node16`,
+  TypeScript refuses to load an ES module from CommonJS. When a bundler builds your code, `moduleResolution`
+  `bundler` works too.
+
 ## Support
 
-Node.js 22 or newer, Cloudflare Workers, Deno and Bun. jose 6 needs Node.js 20 or newer, and Node.js 20
-reached its end of life in April 2026.
+Node.js 22.12 or newer, Cloudflare Workers, Deno and Bun. jose 6 needs Node.js 20 or newer, Node.js 20 reached
+its end of life in April 2026, and 22.12 is the first Node.js 22 that loads ES modules through `require()`
+without a flag.
 
 ## License
 
