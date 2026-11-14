@@ -533,6 +533,27 @@ describe('/webhooks/{source}', () => {
             await expectBody(await send(clerkRequest(clerkCreated)), 502, { delivered: [], failed: [{ product: 'acme', error }] })
         })
 
+        it.each([
+            [202, 200, { delivered: ['acme'], failed: [] }],
+            [500, 502, { delivered: [], failed: [{ product: 'acme', error: 'status 500' }] }],
+        ])('cancels the streamed body of a %i answer without reading it', async (answered, status, body) => {
+            let cancelled = false
+            const { send } = setup('clerk', {
+                respond: () => {
+                    // A body that never ends: reading it would stall the delivery until its timeout
+                    const stream = new ReadableStream<Uint8Array>({
+                        pull: () => new Promise<void>(() => {}),
+                        cancel: () => {
+                            cancelled = true
+                        },
+                    })
+                    return new Response(stream, { status: answered, headers: { 'content-type': 'application/json' } })
+                },
+            })
+            await expectBody(await send(clerkRequest(clerkCreated)), status, body)
+            expect(cancelled).toBe(true)
+        })
+
         it('never follows a redirect', async () => {
             const { send, calls } = setup('clerk', {
                 respond: () => new Response(null, { status: 302, headers: { location: 'https://evil.example/collect' } }),
