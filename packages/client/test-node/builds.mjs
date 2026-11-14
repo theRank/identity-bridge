@@ -1,6 +1,6 @@
 // Plain Node checks of the built package: its ES module and CommonJS builds, side by side, and the root wechat.js
 import assert from 'node:assert/strict'
-import { readdirSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import * as esm from '@therank/identity-bridge-client'
 import * as esmWechat from '@therank/identity-bridge-client/wechat'
@@ -47,5 +47,11 @@ const module = { exports: {} }
 new Function('module', 'exports', 'require', readFileSync(wechatJs, 'utf8'))(module, module.exports, createRequire(wechatJs))
 assert.equal(module.exports.wxRequestTransport, cjsWechat.wxRequestTransport)
 assert.equal(module.exports.casdoorMiniProgramIdpToken, cjsWechat.casdoorMiniProgramIdpToken)
+
+// Its types, for TypeScript on moduleResolution node, which also resolves the subpath by file path
+assert.ok(json('package.json').files.includes('wechat.d.ts'))
+const reexported = /^export \* from '\.\/(dist\/cjs\/wechat)\.js'$/m.exec(readFileSync(file('wechat.d.ts'), 'utf8'))
+assert.ok(reexported, 'wechat.d.ts re-exports the CommonJS declarations')
+assert.ok(existsSync(file(`${reexported[1]}.d.ts`)))
 
 console.log('client builds: ok')

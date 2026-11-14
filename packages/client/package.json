@@ -22,7 +22,8 @@
     },
     "files": [
         "dist",
-        "wechat.js"
+        "wechat.js",
+        "wechat.d.ts"
     ],
     "scripts": {
         "build": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\" && tsc -p . && tsc -p tsconfig.cjs.json && node -e \"require('node:fs').writeFileSync('dist/cjs/package.json', JSON.stringify({ type: 'commonjs' }) + '\\n')\"",
