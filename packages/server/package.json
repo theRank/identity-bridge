@@ -17,7 +17,8 @@
         "dist"
     ],
     "scripts": {
-        "build": "tsc -p ."
+        "build": "tsc -p .",
+        "test:node": "node test-node/verify.mjs"
     },
     "dependencies": {
         "jose": "6.2.17"
