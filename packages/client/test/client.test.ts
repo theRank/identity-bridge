@@ -1,7 +1,9 @@
 import { decodeJwt, decodeProtectedHeader } from 'jose'
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { Responder } from '../../../test/helpers/fetch'
+import { idpJwks } from '../../../test/helpers/keys'
 import { BridgeError, createBridgeClient, type Transport } from '../src/index'
-import { BRIDGE_URL, bridge, FORM, generateKeys, rejection, until, type Bridge, type BridgeOptions, type Keys } from './bridge'
+import { BRIDGE_URL, bridge, FORM, generateKeys, rejection, tick, until, type Bridge, type BridgeOptions, type Keys } from './bridge'
 
 const TOKEN_EXCHANGE = 'urn:ietf:params:oauth:grant-type:token-exchange'
 const JWT_TYPE = 'urn:ietf:params:oauth:token-type:jwt'
@@ -249,6 +251,101 @@ describe('createBridgeClient', () => {
             expect(() => createBridgeClient({ ...options, refreshBeforeSeconds: -1 })).toThrow(RangeError)
             expect(() => createBridgeClient({ ...options, refreshBeforeSeconds: Number.NaN })).toThrow(RangeError)
             expect(() => createBridgeClient({ ...options, refreshBeforeSeconds: 0 })).not.toThrow()
+        })
+    })
+
+    describe('retries', () => {
+        beforeEach(() => {
+            vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+        })
+
+        afterEach(() => {
+            vi.useRealTimers()
+        })
+
+        // The IdP's JWKS fails the first `failures` times the bridge fetches it, so the bridge answers 503
+        // temporarily_unavailable
+        function idpDown(failures: number): Responder {
+            let calls = 0
+            return () => (++calls <= failures ? new Response(null, { status: 500 }) : Response.json(idpJwks(keys.clerk)))
+        }
+
+        // Once the last answer is in and the client sleeps, the next request goes out exactly `ms` later
+        async function nextRequestAfter(ms: number, requests: unknown[], settled: () => boolean): Promise<void> {
+            await until(() => settled() && vi.getTimerCount() === 1)
+            const sent = requests.length
+            await vi.advanceTimersByTimeAsync(ms - 1)
+            await tick()
+            expect(requests).toHaveLength(sent)
+            await vi.advanceTimersByTimeAsync(1)
+            await until(() => requests.length === sent + 1)
+        }
+
+        it('retries a 503 temporarily_unavailable after 250 ms with the same IdP token, then succeeds', async () => {
+            const { bridge, client, getIdpToken } = setup({ respond: idpDown(1) })
+            const pending = client.getToken()
+            await nextRequestAfter(250, bridge.requests, () => bridge.answers.length === 1)
+            const token = await pending
+            expect(bridge.answers.map((answer) => answer.status)).toEqual([503, 200])
+            expect(bridge.answers[0]!.body).toMatchObject({ error: 'temporarily_unavailable' })
+            expect(decodeJwt(token).aud).toBe('acme')
+            expect(getIdpToken).toHaveBeenCalledTimes(1)
+            expect(bridge.requests[1]).toStrictEqual(bridge.requests[0])
+        })
+
+        it('retries twice, after 250 ms and then 1 s, and then throws the 503 as BridgeError', async () => {
+            const { bridge, client, getIdpToken } = setup({ respond: idpDown(Infinity) })
+            const pending = rejection(client.getToken())
+            await nextRequestAfter(250, bridge.requests, () => bridge.answers.length === 1)
+            await nextRequestAfter(1000, bridge.requests, () => bridge.answers.length === 2)
+            const error = await pending
+            expect(error).toBeInstanceOf(BridgeError)
+            expect(error).toMatchObject({ status: 503, error: 'temporarily_unavailable' })
+            expect(bridge.requests).toHaveLength(3)
+            expect(new Set(bridge.requests.map((request) => request.body)).size).toBe(1)
+            expect(getIdpToken).toHaveBeenCalledTimes(1)
+            expect(vi.getTimerCount()).toBe(0)
+        })
+
+        it('retries a rejected transport the same way, then throws BridgeError network with status 0', async () => {
+            const reason = new Error('request failed: subject_token=secret-marker')
+            const transport = vi.fn(async () => {
+                throw reason
+            })
+            const { client, getIdpToken } = setup({ transport: () => transport })
+            const pending = rejection(client.getToken())
+            await nextRequestAfter(250, transport.mock.calls, () => true)
+            await nextRequestAfter(1000, transport.mock.calls, () => true)
+            const error = await pending
+            expect(error).toBeInstanceOf(BridgeError)
+            expect(error).toMatchObject({ status: 0, error: 'network' })
+            expect(error).not.toHaveProperty('cause')
+            expect(String((error as Error).message)).not.toContain('secret-marker')
+            expect(transport).toHaveBeenCalledTimes(3)
+            expect(getIdpToken).toHaveBeenCalledTimes(1)
+        })
+
+        it('succeeds when the transport recovers on a retry', async () => {
+            let calls = 0
+            const { bridge, client } = setup({
+                transport: (real) => async (request) => {
+                    if (++calls === 1) throw new TypeError('Failed to fetch')
+                    return real.transport(request)
+                },
+            })
+            const pending = client.getToken()
+            await until(() => vi.getTimerCount() === 1)
+            await vi.advanceTimersByTimeAsync(250)
+            expect(decodeJwt(await pending).aud).toBe('acme')
+            expect(bridge.requests).toHaveLength(1)
+        })
+
+        it('shares the retried exchange between concurrent callers', async () => {
+            const { bridge, client } = setup({ respond: idpDown(1) })
+            const pending = Promise.all(Array.from({ length: 10 }, () => client.getToken()))
+            await nextRequestAfter(250, bridge.requests, () => bridge.answers.length === 1)
+            expect(new Set(await pending).size).toBe(1)
+            expect(bridge.requests).toHaveLength(2)
         })
     })
 

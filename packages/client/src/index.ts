@@ -35,16 +35,18 @@ export class BridgeError extends Error {
     }
 }
 
-// The client compiles without the DOM lib; this is the part of fetch it uses
+// The client compiles without the DOM lib; these are the parts of fetch and setTimeout it uses
 interface FetchResponse {
     status: number
     text(): Promise<string>
 }
 declare function fetch(url: string, init: { method: 'POST'; headers: Record<string, string>; body: string }): Promise<FetchResponse>
+declare function setTimeout(callback: () => void, ms: number): unknown
 
 const TOKEN_EXCHANGE = 'urn:ietf:params:oauth:grant-type:token-exchange'
 const JWT_TOKEN_TYPE = 'urn:ietf:params:oauth:token-type:jwt'
 const FORM = 'application/x-www-form-urlencoded'
+const RETRY_DELAYS_MS = [250, 1000]
 
 interface Issued {
     token: string
@@ -70,9 +72,17 @@ export function createBridgeClient(options: BridgeClientOptions): BridgeClient {
                 ['audience', audience],
             ]),
         }
-        const answer = await send(transport, request)
-        if (answer === undefined) throw new BridgeError(0, 'network')
-        return issued(answer, now(), refreshBeforeSeconds)
+        // Retries reuse the IdP token: getting another could prompt the user, or spend a single-use code
+        for (let attempt = 0; ; attempt++) {
+            const answer = await send(transport, request)
+            const retry = answer === undefined || (answer.status === 503 && oauthError(answer.body) === 'temporarily_unavailable')
+            if (retry && attempt < RETRY_DELAYS_MS.length) {
+                await sleep(RETRY_DELAYS_MS[attempt]!)
+                continue
+            }
+            if (answer === undefined) throw new BridgeError(0, 'network')
+            return issued(answer, now(), refreshBeforeSeconds)
+        }
     }
 
     return {
@@ -132,6 +142,12 @@ function issued(answer: { status: number; body: unknown }, arrivedAt: number, re
 function oauthError(body: unknown): string | undefined {
     const error = isRecord(body) ? body.error : undefined
     return typeof error === 'string' && error !== '' ? error : undefined
+}
+
+function sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => {
+        setTimeout(resolve, ms)
+    })
 }
 
 // A string body would otherwise go out as text/plain, which the bridge refuses
