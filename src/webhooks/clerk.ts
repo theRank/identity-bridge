@@ -44,7 +44,7 @@ export const clerk: WebhookAdapter = {
         // Deleted users carry only their id and external_id
         const lifecycle: LifecycleEvent = { idpEventId, type: mapped, subject, profile: mapped === 'user-deleted' ? {} : profile(data) }
         // The configuration allows only external_id as a Clerk uidField. Absent or null means no override.
-        if (source.uidField !== undefined && Object.hasOwn(data, 'external_id')) lifecycle.uid = data.external_id
+        if (source.uidField !== undefined && Object.hasOwn(data, 'external_id')) lifecycle.uid = own(data, 'external_id')
         return [lifecycle]
     },
 }
