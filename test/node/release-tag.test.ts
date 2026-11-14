@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterAll, describe, expect, it } from 'vitest'
-import { compare, isLatest, parseTag } from '../../scripts/release-tag'
+import { compare, distTag, isLatest, parseTag } from '../../scripts/release-tag'
 
 const SCRIPT = fileURLToPath(new URL('../../scripts/release-tag.ts', import.meta.url).href)
 const dir = mkdtempSync(join(tmpdir(), 'identity-bridge-tags-'))
@@ -103,17 +103,34 @@ describe('isLatest', () => {
     })
 })
 
+// npm's dist-tag follows the image's latest. One that is a valid semver range, such as 1.4, npm refuses.
+describe('distTag', () => {
+    it.each<[string, string, string[], string]>([
+        ['the highest release', 'v1.5.0', ['v1.4.2', 'v1.4.3', 'v1.5.0'], 'latest'],
+        ['a patch to an older line', 'v1.4.3', ['v1.4.2', 'v1.5.0', 'v1.4.3'], 'release-1.4'],
+        ['a patch to an older major', 'v0.9.1', ['v0.9.0', 'v1.0.0', 'v0.9.1'], 'release-0.9'],
+        ['a prerelease', 'v1.6.0-rc.1', ['v1.5.0', 'v1.6.0-rc.1'], 'next'],
+        ['a prerelease of an older line', 'v1.4.4-rc.1', ['v1.5.0', 'v1.4.4-rc.1'], 'next'],
+        ['the first tag ever', 'v0.1.0', ['v0.1.0'], 'latest'],
+        ['the first tag ever, before the API lists it', 'v0.1.0', [], 'latest'],
+        ['a re-run of the highest release', 'v1.5.0', ['v1.4.3', 'v1.5.0'], 'latest'],
+        ['a patch to the latest line', 'v1.5.1', ['v1.4.3', 'v1.5.0', 'v1.5.1'], 'latest'],
+    ])('gives %s, %s among %j, the dist-tag %s', (_, tag, tags, expected) => {
+        expect(distTag(version(tag), tags)).toBe(expected)
+    })
+})
+
 describe('the script', () => {
     it('prints the version and whether it is a prerelease', async () => {
         expect(await run('v1.2.3-rc.1')).toEqual({ code: 0, stdout: 'version=1.2.3-rc.1\nprerelease=true\n', stderr: '' })
     })
 
-    it('says whether the version is the latest, given the existing tags one per line', async () => {
+    it('says whether the version is the latest, and its npm dist-tag, given the existing tags one per line', async () => {
         const tags = join(dir, 'tags')
         writeFileSync(tags, 'v1.2.0\nv1.3.0\nv1.2.4\n')
 
-        expect((await run('v1.3.0', tags)).stdout).toBe('version=1.3.0\nprerelease=false\nlatest=true\n')
-        expect((await run('v1.2.4', tags)).stdout).toBe('version=1.2.4\nprerelease=false\nlatest=false\n')
+        expect((await run('v1.3.0', tags)).stdout).toBe('version=1.3.0\nprerelease=false\nlatest=true\ndist_tag=latest\n')
+        expect((await run('v1.2.4', tags)).stdout).toBe('version=1.2.4\nprerelease=false\nlatest=false\ndist_tag=release-1.2\n')
     })
 
     it('exits 1 on a tag that is not a version, saying why', async () => {

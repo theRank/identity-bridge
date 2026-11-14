@@ -2,9 +2,10 @@
 //
 //     node scripts/release-tag.ts <tag> [<file of the existing tags, one per line>]
 //
-// Prints version=, prerelease= and, given the existing tags, latest= lines, as $GITHUB_OUTPUT takes them. A tag is
-// v and a semver version without build metadata, which a Docker tag cannot hold; anything else exits 1. latest is
-// true only for the highest version that is not a prerelease, by semver precedence.
+// Prints version=, prerelease= and, given the existing tags, latest= and dist_tag= lines, as $GITHUB_OUTPUT takes
+// them. A tag is v and a semver version without build metadata, which a Docker tag cannot hold; anything else exits
+// 1. latest is true only for the highest version that is not a prerelease, by semver precedence, and dist_tag is
+// the npm dist-tag that follows the same rule.
 
 import { readFileSync } from 'node:fs'
 
@@ -51,6 +52,15 @@ export function isLatest(version: Version, tags: string[]): boolean {
     })
 }
 
+// latest for the highest release, as for the image; release-X.Y for a patch to an older line, the prefix because
+// npm refuses a dist-tag that is a valid semver range, such as 1.4; next for a prerelease
+export function distTag(version: Version, tags: string[]): string {
+    if (version.prerelease.length > 0) return 'next'
+    if (isLatest(version, tags)) return 'latest'
+    const [major, minor] = version.core
+    return `release-${major}.${minor}`
+}
+
 function compareIdentifiers(a: string, b: string): number {
     const numeric = [NUMERIC.test(a), NUMERIC.test(b)]
     if (numeric[0] && numeric[1]) return sign(BigInt(a) - BigInt(b))
@@ -72,7 +82,7 @@ if (import.meta.main) {
     const lines = [`version=${version.text}`, `prerelease=${version.prerelease.length > 0}`]
     if (tagsFile !== undefined) {
         const tags = readFileSync(tagsFile, 'utf8').split('\n').map((line) => line.trim())
-        lines.push(`latest=${isLatest(version, tags)}`)
+        lines.push(`latest=${isLatest(version, tags)}`, `dist_tag=${distTag(version, tags)}`)
     }
     process.stdout.write(`${lines.join('\n')}\n`)
 }
