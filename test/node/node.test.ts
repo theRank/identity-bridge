@@ -33,12 +33,29 @@ afterEach(() => {
 
 async function serve(env: Record<string, string | undefined>, deps: Partial<Deps> = {}) {
     const logs: string[] = []
-    const { server, ready } = createNodeServer({ env, deps: { now: () => START_MS, ...deps }, log: (text) => logs.push(text) })
+    const waiting: [count: number, resolve: () => void][] = []
+    const log = (text: string) => {
+        logs.push(text)
+        for (const [count, resolve] of waiting) if (logs.length >= count) resolve()
+    }
+    const { server, ready } = createNodeServer({ env, deps: { now: () => START_MS, ...deps }, log })
     servers.push(server)
     await ready
     const origin = await listen(server)
     const lines = () => logs.map((text) => JSON.parse(text) as Record<string, unknown>)
-    return { origin, server, logs, lines }
+    // For lines written after the client has gone, when no answer marks the end of the request
+    const logged = (count: number) => new Promise<void>((resolve) => (logs.length >= count ? resolve() : waiting.push([count, resolve])))
+    return { origin, server, logs, lines, logged }
+}
+
+// Sends the headers and the start of a body, then leaves
+function leaveMidBody(origin: string, path: string, headers: Record<string, string | number>): Promise<void> {
+    const { hostname, port } = new URL(origin)
+    return new Promise<void>((resolve) => {
+        const req = request({ host: hostname, port, method: 'POST', path, headers: { ...headers, 'content-length': 100 } })
+        req.on('error', () => resolve())
+        req.write('{"partial":', () => setImmediate(() => req.destroy()))
+    })
 }
 
 function viaFetch(origin: string): Send {
@@ -280,16 +297,52 @@ describe('Node entry', () => {
         expect(logs.join('\n')).not.toMatch(/clock|secret/)
     })
 
-    it('keeps serving after a client leaves partway through a body', async () => {
-        const { origin } = await serve(ENV)
-        await new Promise<void>((resolve) => {
-            const { hostname, port } = new URL(origin)
-            const req = request({ host: hostname, port, method: 'POST', path: '/token', headers: { ...FORM, 'content-length': 100 } })
-            req.on('error', () => resolve())
-            req.write('grant_type=', () => setImmediate(() => req.destroy()))
+    describe('logs a request whose connection ended before it was read as client_closed', () => {
+        const CLOSED = { status: 499, outcome: 'rejected', code: 'client_closed' }
+
+        it('when a client leaves partway through a /token body, and keeps serving', async () => {
+            const { origin, lines, logged } = await serve(ENV)
+            await leaveMidBody(origin, '/token', FORM)
+            await logged(1)
+
+            expect(lines()).toEqual([{ route: 'token', ms: 0, ...CLOSED }])
+            expect((await fetch(`${origin}/healthz`)).status).toBe(200)
         })
 
-        expect((await fetch(`${origin}/healthz`)).status).toBe(200)
+        it('when a client leaves partway through a webhook body, keeping what was known', async () => {
+            const { origin, lines, logged } = await serve(ENV)
+            await leaveMidBody(origin, '/webhooks/clerk-acme', { 'content-type': 'application/json' })
+            await logged(1)
+
+            expect(lines()).toEqual([{ route: 'webhook', source: 'clerk-acme', idp: 'clerk-acme', ms: 0, ...CLOSED }])
+        })
+
+        // Lowered on the instance, which Node reads at each check, at most a second apart
+        it('when the request timeout cuts a slow body off', async () => {
+            const { origin, server, lines, logged } = await serve(ENV)
+            server.headersTimeout = 100
+            server.requestTimeout = 200
+            const answer = await ask(origin, { method: 'POST', path: '/token', headers: { ...FORM, 'content-length': 100 }, body: ['grant_type='], end: false })
+            await logged(1)
+
+            expect(answer.status).toBe(408)
+            expect(lines()).toEqual([{ route: 'token', ms: 0, ...CLOSED }])
+        })
+
+        it('but not when the client leaves after its request was read', async () => {
+            const idp = await heldIdp()
+            const { origin, lines, logged } = await serve(ENV, { fetch: idp.fetch })
+            const { hostname, port } = new URL(origin)
+            const req = request({ host: hostname, port, method: 'POST', path: '/token', headers: FORM })
+            req.on('error', () => {})
+            req.end(exchangeBody(idp.token))
+            await idp.inFlight
+            req.destroy()
+            idp.release()
+            await logged(1)
+
+            expect(lines()).toEqual([expect.objectContaining({ route: 'token', status: 200, outcome: 'ok' })])
+        })
     })
 
     it('keeps a connection alive across requests whose bodies were read', async () => {

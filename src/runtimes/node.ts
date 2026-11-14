@@ -2,7 +2,7 @@ import { createServer, ServerResponse, type IncomingMessage, type Server } from 
 import type { Socket } from 'node:net'
 import { Readable } from 'node:stream'
 import { handle } from '../app'
-import type { Deps, Runtime, RuntimeFailure } from '../types'
+import type { Deps, LogLine, Runtime, RuntimeFailure } from '../types'
 import { loadRuntime, webhookSecretName } from './load'
 
 // The router reads only the path, so the origin is fixed rather than taken from Host, which the client controls
@@ -72,17 +72,29 @@ async function load(env: NodeServerOptions['env'], log: (text: string) => void):
 
 async function serve(req: IncomingMessage, res: ServerResponse, server: Server, runtime: Promise<Runtime | RuntimeFailure>, deps: Deps): Promise<void> {
     const start = deps.now()
+    // The core logs once per request; the line is held, so it can say the connection ended early
+    let line: LogLine | undefined
+    const requestDeps: Deps = {
+        ...deps,
+        log: (entry) => {
+            line = entry
+        },
+    }
     let response: Response
     let body: Uint8Array
     try {
-        response = await handle(toRequest(req), await runtime, deps)
+        response = await handle(toRequest(req), await runtime, requestDeps)
         body = new Uint8Array(await response.arrayBuffer())
     } catch {
         // Never logged: the error may quote the request
-        deps.log({ route: 'other', status: 500, ms: deps.now() - start, outcome: 'error', code: 'internal_error' })
+        line = { route: 'other', status: 500, ms: deps.now() - start, outcome: 'error', code: 'internal_error' }
         response = new Response(null, { status: 500 })
         body = new Uint8Array()
     }
+    // The client went away, or Node's request timeout fired, before the request was read: whatever the core made
+    // of the missing bytes, no one receives its answer
+    if (line && !req.complete && res.destroyed) line = { ...line, status: 499, outcome: 'rejected', code: 'client_closed' }
+    if (line) deps.log(line)
     res.statusCode = response.status
     for (const [name, value] of response.headers) res.appendHeader(name, value)
     // A body left unread is not drained, so a client cannot keep sending past the limit; and once shutting
