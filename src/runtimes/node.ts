@@ -1,4 +1,5 @@
-import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
+import { createServer, ServerResponse, type IncomingMessage, type Server } from 'node:http'
+import type { Socket } from 'node:net'
 import { Readable } from 'node:stream'
 import { handle } from '../app'
 import type { Deps, Runtime, RuntimeFailure } from '../types'
@@ -7,9 +8,14 @@ import { loadRuntime, webhookSecretName } from './load'
 // The router reads only the path, so the origin is fixed rather than taken from Host, which the client controls
 const BASE = 'http://bridge.invalid'
 
+// Fetch refuses to build a Request with these methods. Under a method no route allows, the router answers them as
+// it answers any other wrong method: 405 with Allow on a known path, 404 elsewhere.
+const REFUSED_METHODS = ['CONNECT', 'TRACE', 'TRACK']
+const UNSUPPORTED_METHOD = 'X-UNSUPPORTED'
+
 const TIMEOUTS = {
     headersTimeout: 10_000,
-    // Covers a webhook fan-out, whose deliveries time out after 5 s
+    // Bounds only receiving the request, not producing the answer
     requestTimeout: 30_000,
     // Above the idle timeouts of common proxies, so the proxy closes an idle connection first
     keepAliveTimeout: 65_000,
@@ -43,6 +49,14 @@ export function createNodeServer(options: NodeServerOptions): NodeServer {
     const runtime = load(options.env, log)
     // A failure writing an answer drops that connection rather than the process
     const server = createServer(TIMEOUTS, (req, res) => void serve(req, res, server, runtime, deps).catch(() => res.destroy()))
+    // Node hands a CONNECT request over as a bare socket, which it would otherwise destroy unanswered
+    server.on('connect', (req: IncomingMessage, socket: Socket) => {
+        const res = new ServerResponse(req)
+        res.assignSocket(socket)
+        res.shouldKeepAlive = false
+        res.on('finish', () => socket.end())
+        void serve(req, res, server, runtime, deps).catch(() => socket.destroy())
+    })
     return { server, ready: runtime.then(() => {}) }
 }
 
@@ -79,11 +93,12 @@ async function serve(req: IncomingMessage, res: ServerResponse, server: Server, 
 
 // The core's readBody enforces its byte limit on the stream as it reads, so the body is never buffered here
 function toRequest(req: IncomingMessage): Request {
-    const method = req.method ?? 'GET'
+    const refused = REFUSED_METHODS.includes((req.method ?? '').toUpperCase())
+    const method = refused ? UNSUPPORTED_METHOD : (req.method ?? 'GET')
     const headers = new Headers()
     for (let index = 0; index + 1 < req.rawHeaders.length; index += 2) headers.append(req.rawHeaders[index]!, req.rawHeaders[index + 1]!)
     const init: RequestInit & { duplex?: 'half' } = { method, headers }
-    if (method !== 'GET' && method !== 'HEAD') {
+    if (method !== 'GET' && method !== 'HEAD' && !refused) {
         // The same Web stream, though Node's types and the Workers' describe it differently
         init.body = Readable.toWeb(req) as unknown as ReadableStream
         init.duplex = 'half'
@@ -92,12 +107,17 @@ function toRequest(req: IncomingMessage): Request {
 }
 
 // An origin-form target keeps its path as sent, so //a/b stays a path; an absolute-form one, which names a host
-// of the client's choosing, keeps only its path and query
+// of the client's choosing, keeps only its path and query. A target URL cannot parse gets the path /, which no
+// route serves.
 function requestUrl(target: string): URL {
-    const { pathname, search } = target.startsWith('/') ? new URL(`${BASE}${target}`) : new URL(target, BASE)
     const url = new URL(BASE)
-    url.pathname = pathname
-    url.search = search
+    try {
+        const { pathname, search } = target.startsWith('/') ? new URL(`${BASE}${target}`) : new URL(target, BASE)
+        url.pathname = pathname
+        url.search = search
+    } catch {
+        url.pathname = '/'
+    }
     return url
 }
 

@@ -1,5 +1,5 @@
 import { Agent, request, type IncomingHttpHeaders, type Server } from 'node:http'
-import type { AddressInfo } from 'node:net'
+import { connect, type AddressInfo } from 'node:net'
 
 export interface Answer {
     status: number
@@ -42,4 +42,19 @@ export function ask(origin: string, options: Ask): Promise<Answer> {
         for (const part of options.body ?? []) req.write(part)
         if (options.end !== false) req.end()
     }).finally(() => agent.destroy())
+}
+
+// Writes the bytes as given over a plain socket and reads everything the server sends until it closes, for
+// requests that node:http's client handles specially, such as CONNECT
+export function exchange(origin: string, text: string): Promise<string> {
+    const { hostname, port } = new URL(origin)
+    return new Promise((resolve, reject) => {
+        const socket = connect(Number(port), hostname)
+        let received = ''
+        socket.setEncoding('utf8')
+        socket.on('data', (chunk: string) => (received += chunk))
+        socket.on('error', reject)
+        socket.on('close', () => resolve(received))
+        socket.write(text)
+    })
 }

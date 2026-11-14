@@ -11,7 +11,7 @@ import { bridgeSigningKeys, idpJwks, rsaKeyPair } from '../helpers/keys'
 import { expectFailureMode, expectServing, FORM, type Send } from '../helpers/runtime'
 import { CLERK_NOW_MS, CLERK_SECRET, svixSignature } from '../helpers/webhooks'
 import created from '../fixtures/clerk/user-created.json'
-import { ask, listen } from './http'
+import { ask, exchange, listen } from './http'
 
 const JWKS_URI = 'https://clerk.acme.example/.well-known/jwks.json'
 const EVENTS_URL = 'https://api.acme.example/identity/events'
@@ -227,15 +227,57 @@ describe('Node entry', () => {
         expect(calls.map((call) => call.url)).toEqual([EVENTS_URL])
     })
 
-    // Fetch refuses to build a Request for TRACE, so the adapter itself fails
-    it('answers an empty 500 when the adapter fails, logging internal_error and no error text', async () => {
-        const { origin, logs, lines } = await serve(ENV)
-        const answer = await ask(origin, { method: 'TRACE', path: '/healthz' })
+    // Fetch refuses to build a Request with these methods
+    describe('answers a method Fetch refuses as the router does', () => {
+        it.each([
+            ['/healthz', 405, 'GET', 'health'],
+            ['/token', 405, 'POST, OPTIONS', 'token'],
+            ['/nope', 404, undefined, 'other'],
+        ])('TRACE %s', async (path, status, allow, route) => {
+            const { origin, lines } = await serve(ENV)
+            const answer = await ask(origin, { method: 'TRACE', path })
+
+            expect(answer.status).toBe(status)
+            expect(answer.headers.allow).toBe(allow)
+            expect(answer.body).toBe('')
+            expect(lines()).toEqual([expect.objectContaining({ route, status })])
+        })
+
+        // Node hands a CONNECT request over as a bare socket
+        it.each([
+            ['/token', 'HTTP/1.1 405', 'allow: POST, OPTIONS', 'token'],
+            ['evil.example:443', 'HTTP/1.1 404', undefined, 'other'],
+        ])('CONNECT %s', async (target, statusLine, allow, route) => {
+            const { origin, lines } = await serve(ENV)
+            const answer = await exchange(origin, `CONNECT ${target} HTTP/1.1\r\nHost: evil.example\r\n\r\n`)
+
+            expect(answer.startsWith(statusLine)).toBe(true)
+            if (allow) expect(answer.toLowerCase()).toContain(allow.toLowerCase())
+            expect(lines()).toEqual([expect.objectContaining({ route })])
+        })
+    })
+
+    it.each(['http://[/healthz', 'http://%zz/healthz'])('answers an unparsable target %s with 404', async (path) => {
+        const { origin, lines } = await serve(ENV)
+
+        expect((await ask(origin, { path })).status).toBe(404)
+        expect(lines()).toEqual([expect.objectContaining({ route: 'other', status: 404 })])
+    })
+
+    // Its second reading is inside the core, so the exception escapes handle
+    it('answers an empty 500 when an exception escapes the core, logging internal_error and no error text', async () => {
+        let readings = 0
+        const now = () => {
+            if (++readings === 2) throw new Error('clock failure at /secret/path')
+            return START_MS
+        }
+        const { origin, logs, lines } = await serve(ENV, { now })
+        const answer = await ask(origin, { path: '/healthz' })
 
         expect(answer.status).toBe(500)
         expect(answer.body).toBe('')
         expect(lines()).toEqual([{ route: 'other', status: 500, ms: 0, outcome: 'error', code: 'internal_error' }])
-        expect(logs.join('\n')).not.toMatch(/TRACE|unsupported/i)
+        expect(logs.join('\n')).not.toMatch(/clock|secret/)
     })
 
     it('keeps serving after a client leaves partway through a body', async () => {
