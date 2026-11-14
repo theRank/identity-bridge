@@ -9,6 +9,9 @@
         "directory": "packages/server"
     },
     "type": "module",
+    "engines": {
+        "node": ">=22.12"
+    },
     "main": "./dist/index.js",
     "exports": {
         ".": "./dist/index.js"
@@ -17,10 +20,12 @@
         "dist"
     ],
     "scripts": {
-        "build": "tsc -p ."
+        "build": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\" && tsc -p .",
+        "prepack": "npm run build",
+        "test:node": "node test-node/verify.mjs"
     },
     "dependencies": {
-        "jose": "6.2.17"
+        "jose": "^6.2.17"
     },
     "publishConfig": {
         "access": "public"

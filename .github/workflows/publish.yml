@@ -1,0 +1,120 @@
+name: Publish
+
+# Publishes @therank/identity-bridge-client and @therank/identity-bridge-server to npm when a v* tag is pushed,
+# both at the tag's version, a prerelease under the dist-tag next; the version change is not committed. Started by
+# hand (workflow_dispatch), it always stops at a dry run under a placeholder version, so the workflow can be
+# exercised without a tag.
+#
+# Two jobs, so install scripts and test code never run where an OIDC token can be minted: check installs, typechecks,
+# tests and builds with read-only permissions; publish installs without scripts, builds the packages and publishes.
+# npm authenticates the publish through trusted publishing (OIDC, hence id-token: write), configured on npmjs.com for
+# each package with this repository, this workflow file and the npm environment, where protection rules can be
+# added. npm can configure it only for a package that already exists, so the first version of each package is
+# published by hand. Provenance is added automatically once the repository is public.
+
+on:
+  push:
+    tags: [ 'v*' ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: check
+    if: github.repository == 'theRank/identity-bridge'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      WRANGLER_SEND_METRICS: 'false'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Test packages under Node
+        run: npm run test:node --workspaces --if-present
+
+  publish:
+    name: publish
+    needs: check
+    if: github.repository == 'theRank/identity-bridge'
+    runs-on: ubuntu-latest
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      DRY_RUN: ${{ github.event_name == 'workflow_dispatch' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # No npm cache here: this job only trusts what npm ci downloads and verifies itself
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      - name: Install without scripts
+        run: npm ci --ignore-scripts
+
+      # The packages only: the root build runs wrangler, which needs install scripts
+      - name: Build the packages
+        run: npm run build --workspaces
+
+      - name: Check npm supports trusted publishing
+        run: |
+          required=11.5.1
+          current=$(npm --version)
+          if [ "$(printf '%s\n%s\n' "$required" "$current" | sort -V | head -n 1)" != "$required" ]; then
+            echo "::error::npm $current is older than $required, the first npm with trusted publishing"
+            exit 1
+          fi
+
+      - name: Version
+        id: version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          if [ "$DRY_RUN" = true ]; then version=0.0.0-dry-run; else version="${TAG#v}"; fi
+          npm version "$version" --workspaces --no-git-tag-version --allow-same-version --ignore-scripts
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      # The packages were built above, so no lifecycle script runs here. npm refuses a prerelease without a
+      # dist-tag, so one is published under next, and the dry run's placeholder under dry-run.
+      - name: Publish
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          if [ "$DRY_RUN" = true ]; then
+            npm publish --workspaces --ignore-scripts --dry-run --tag dry-run
+          elif [[ "$VERSION" == *-* ]]; then
+            npm publish --workspaces --ignore-scripts --tag next
+          else
+            npm publish --workspaces --ignore-scripts
+          fi

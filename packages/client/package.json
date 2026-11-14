@@ -9,15 +9,26 @@
         "directory": "packages/client"
     },
     "type": "module",
-    "main": "./dist/index.js",
+    "main": "./dist/cjs/index.js",
     "exports": {
-        ".": "./dist/index.js"
+        ".": {
+            "import": "./dist/index.js",
+            "require": "./dist/cjs/index.js"
+        },
+        "./wechat": {
+            "import": "./dist/wechat.js",
+            "require": "./dist/cjs/wechat.js"
+        }
     },
     "files": [
-        "dist"
+        "dist",
+        "wechat.js",
+        "wechat.d.ts"
     ],
     "scripts": {
-        "build": "tsc -p ."
+        "build": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\" && tsc -p . && tsc -p tsconfig.cjs.json && node -e \"require('node:fs').writeFileSync('dist/cjs/package.json', JSON.stringify({ type: 'commonjs' }) + '\\n')\"",
+        "prepack": "npm run build",
+        "test:node": "node test-node/builds.mjs"
     },
     "publishConfig": {
         "access": "public"
