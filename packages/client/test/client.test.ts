@@ -627,6 +627,20 @@ describe('createBridgeClient', () => {
             expect(new TextDecoder().decode(await sent[0]!.arrayBuffer())).toMatch(/^grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Atoken-exchange&subject_token=/)
         })
 
+        it('is used for a transport given as undefined, as every optional option takes undefined', async () => {
+            const real = bridge(keys)
+            vi.stubGlobal('fetch', async (input: string, init: RequestInit) => real.send(new Request(input, init)))
+            const client = createBridgeClient({
+                url: BRIDGE_URL.clerk,
+                audience: 'acme',
+                getIdpToken: real.idpToken,
+                transport: undefined,
+                refreshBeforeSeconds: undefined,
+                now: undefined,
+            })
+            expect(decodeJwt(await client.getToken()).aud).toBe('acme')
+        })
+
         it('reads a body that is not JSON as a bad response', async () => {
             vi.stubGlobal('fetch', async () => new Response('<html>Bad gateway</html>', { status: 502, headers: { 'content-type': 'text/html' } }))
             const client = createBridgeClient({ url: BRIDGE_URL.clerk, audience: 'acme', getIdpToken: async () => 'token' })

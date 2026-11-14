@@ -1,33 +1,46 @@
 import { formBody, isRecord } from './form.js'
 
-// POSTs body as application/x-www-form-urlencoded to url and gives back the status and the parsed JSON answer
+/**
+ * Sends a request: POSTs `body`, an `application/x-www-form-urlencoded` string, to `url`, and resolves with the HTTP
+ * status and the parsed JSON answer, whatever the status. Rejects only when no answer arrives.
+ */
 export type Transport = (request: { url: string; body: string }) => Promise<{ status: number; body: unknown }>
 
 export interface BridgeClientOptions {
-    // The bridge issuer, without a trailing slash
+    /** The bridge's issuer URL, without a trailing slash. Tokens are exchanged at `${url}/token`. */
     url: string
-    // The product id
+    /** The product's id in the bridge configuration. */
     audience: string
-    // A fresh identity provider token on every call
+    /** Returns a fresh identity provider token on every call. */
     getIdpToken(): Promise<string>
-    transport?: Transport
-    refreshBeforeSeconds?: number
-    // Milliseconds since the epoch
-    now?(): number
+    /** How requests are sent. Default: the global `fetch`. */
+    transport?: Transport | undefined
+    /** How long before expiry to exchange again, capped at half the token's lifetime. Default 60. */
+    refreshBeforeSeconds?: number | undefined
+    /** The clock, in milliseconds since the epoch. Default `Date.now`. */
+    now?: (() => number) | undefined
 }
 
 export interface BridgeClient {
+    /** The bridge access token: from memory while it is fresh, else from a new exchange. */
     getToken(): Promise<string>
+    /** Forgets the token, for sign-out. An exchange in flight still resolves for its callers but is not kept. */
     clear(): void
 }
 
-// `error` is the OAuth error of the answer, or `network` or `bad_response`. The error_description is left out on
-// purpose: callers branch on `error`, and the description is for people.
+/**
+ * A failed exchange, or a failed Casdoor login. `status` is the HTTP status, or 0 when no answer arrived; `error` is
+ * the OAuth error of the answer, or `network`, `bad_response` or `casdoor_error`.
+ *
+ * The ES module and CommonJS builds each define this class, so check `error.name === 'BridgeError'` rather than
+ * `instanceof` when both may be loaded.
+ */
 export class BridgeError extends Error {
     override name = 'BridgeError'
     readonly status: number
     readonly error: string
 
+    // The error_description is left out on purpose: callers branch on `error`, and the description is for people
     constructor(status: number, error: string) {
         super(`identity-bridge: ${error} (status ${status})`)
         this.status = status
@@ -54,6 +67,10 @@ interface Issued {
     expiresAt: number
 }
 
+/**
+ * A client that exchanges identity provider tokens for bridge access tokens, keeps the token in memory, and
+ * exchanges again shortly before it expires.
+ */
 export function createBridgeClient(options: BridgeClientOptions): BridgeClient {
     const { url, audience, refreshBeforeSeconds = 60 } = options
     if (!(refreshBeforeSeconds >= 0)) throw new RangeError('refreshBeforeSeconds must be 0 or more')

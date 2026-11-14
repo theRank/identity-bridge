@@ -22,18 +22,23 @@ interface Wx {
 declare const wx: Wx
 
 export interface CasdoorMiniProgramOptions {
-    // The Casdoor instance, without a trailing slash
+    /** The Casdoor server, without a trailing slash. */
     casdoorUrl: string
-    // The client id of the Casdoor application the mini program signs in to
+    /** The client id of the Casdoor application the mini program signs in to. */
     clientId: string
-    transport?: Transport
+    /** How the request to Casdoor is sent. Default: `wxRequestTransport`. */
+    transport?: Transport | undefined
 }
 
 const FORM = 'application/x-www-form-urlencoded'
 
-// wx.request calls success whatever the status, and fail only when no answer arrived
+/**
+ * A `Transport` over `wx.request`, for WeChat mini programs, which have no `fetch`. Rejects with an `Error` holding
+ * `wx.request`'s `errMsg` when no answer arrives.
+ */
 export const wxRequestTransport: Transport = ({ url, body }) =>
     new Promise((resolve, reject) => {
+        // wx.request calls success whatever the status, and fail only when no answer arrived
         wx.request({
             url,
             method: 'POST',
@@ -45,7 +50,11 @@ export const wxRequestTransport: Transport = ({ url, body }) =>
         })
     })
 
-// A getIdpToken for createBridgeClient: a wx.login code exchanged at Casdoor, which holds the WeChat app secret
+/**
+ * A `getIdpToken` for `createBridgeClient` in a WeChat mini program that signs in through Casdoor. Each call gets a
+ * new `wx.login` code and exchanges it at Casdoor, which holds the WeChat app secret, for a Casdoor access token.
+ * Casdoor's errors throw `BridgeError`; a failed `wx.login` rejects with an `Error`.
+ */
 export function casdoorMiniProgramIdpToken(options: CasdoorMiniProgramOptions): () => Promise<string> {
     const { casdoorUrl, clientId } = options
     const transport = options.transport ?? wxRequestTransport

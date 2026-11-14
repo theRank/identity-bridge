@@ -1,12 +1,14 @@
 // Plain Node check of the built package: a token minted here with jose, verified against a JWKS served through the
 // verifier's fetch option
 import assert from 'node:assert/strict'
-import { readdirSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { exportJWK, generateKeyPair, SignJWT } from 'jose'
 import { BridgeTokenError, createVerifier } from '@therank/identity-bridge-server'
 
 // Exactly what the build emits: it empties dist/ first, so nothing stale is packed
 assert.deepEqual(readdirSync(new URL('../dist', import.meta.url)).sort(), ['index.d.ts', 'index.js'])
+// The API's documentation reaches the declarations
+assert.match(readFileSync(new URL('../dist/index.d.ts', import.meta.url), 'utf8'), /\/\*\*[^]*?\*\/\s*export declare function createVerifier/)
 
 const issuer = 'https://id.acme.example'
 const kid = 'test-key'

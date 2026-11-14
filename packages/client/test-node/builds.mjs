@@ -23,6 +23,10 @@ const emitted = ['form', 'index', 'wechat'].flatMap((name) => [`${name}.js`, `${
 const expected = ['cjs', 'cjs/package.json', ...emitted, ...emitted.map((path) => `cjs/${path}`)]
 assert.deepEqual(readdirSync(file('dist'), { recursive: true }).map(String).sort(), expected.sort())
 
+// The API's documentation reaches the declarations
+for (const path of ['dist/index.d.ts', 'dist/cjs/index.d.ts']) assert.match(readFileSync(file(path), 'utf8'), /\/\*\*[^]*?\*\/\s*export declare function createBridgeClient/)
+for (const path of ['dist/wechat.d.ts', 'dist/cjs/wechat.d.ts']) assert.match(readFileSync(file(path), 'utf8'), /\/\*\*[^]*?\*\/\s*export declare function casdoorMiniProgramIdpToken/)
+
 const options = { url: 'https://id.acme.example', audience: 'acme', getIdpToken: async () => 'idp-token' }
 for (const build of [esm, cjs]) {
     const issued = async () => ({ status: 200, body: { access_token: 'bridge-token', expires_in: 900 } })

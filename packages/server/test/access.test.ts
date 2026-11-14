@@ -52,7 +52,7 @@ describe('createVerifier', () => {
         expect(() => createVerifier({ issuer: ISSUER, audience: 'acme', clockToleranceSeconds: clockToleranceSeconds as unknown as number })).toThrow(TypeError)
     })
 
-    it.each([0, 30, 60])('accepts clockToleranceSeconds %s', (clockToleranceSeconds) => {
+    it.each([0, 30, 60, undefined])('accepts clockToleranceSeconds %s', (clockToleranceSeconds) => {
         expect(() => createVerifier({ issuer: ISSUER, audience: 'acme', clockToleranceSeconds })).not.toThrow()
     })
 
@@ -273,7 +273,7 @@ describe('verifyAccessToken', () => {
         it('fetches the JWKS with the global fetch when no fetch is given', async () => {
             const real = bridge(keys)
             vi.stubGlobal('fetch', real.fetch)
-            const verifier = createVerifier({ issuer: ISSUER, audience: 'acme' })
+            const verifier = createVerifier({ issuer: ISSUER, audience: 'acme', fetch: undefined })
             const token = await real.accessToken()
             expect(await verifier.verifyAccessToken(token)).toMatchObject({ userId: decodeJwt(token).sub })
             expect(real.fetched).toEqual([JWKS_URL])

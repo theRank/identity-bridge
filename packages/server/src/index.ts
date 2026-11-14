@@ -1,46 +1,56 @@
 import { createRemoteJWKSet, customFetch, errors, jwtVerify, type FetchImplementation, type JWTPayload } from 'jose'
 
 export interface VerifierOptions {
-    // The bridge issuer, without a trailing slash
+    /** The bridge's issuer URL, without a trailing slash. The keys are fetched from `${issuer}/.well-known/jwks.json`. */
     issuer: string
-    // The product's own id
+    /** Your product's id in the bridge configuration. */
     audience: string
-    // 0 to 60, default 60
-    clockToleranceSeconds?: number
-    // For the JWKS; the global fetch by default
-    fetch?: typeof fetch
+    /** Leeway for `exp` and `nbf`, from 0 to 60. Default 60. */
+    clockToleranceSeconds?: number | undefined
+    /** Used to fetch the keys. Default: the global `fetch`. */
+    fetch?: typeof fetch | undefined
 }
 
 export interface Verifier {
+    /** Verifies a bridge access token. */
     verifyAccessToken(token: string): Promise<BridgeUser>
-    // Reads the Authorization: Bearer header
+    /** Verifies the bearer token of the request's `Authorization` header. */
     verifyRequest(request: Request): Promise<BridgeUser>
-    // The body of an event delivery: the event token itself
+    /** Verifies the body of an event delivery, which is the event token itself. */
     verifyEvent(body: string): Promise<BridgeEvent>
 }
 
+/** Email and phone number are present only when the identity provider verified them. */
 export interface BridgeProfile {
     email?: string
+    /** E.164. */
     phoneNumber?: string
     name?: string
+    /** An avatar URL. */
     picture?: string
 }
 
-// Times are seconds since the epoch, as in the token
+/** The user of a verified access token. */
 export interface BridgeUser extends BridgeProfile {
+    /** The user's id in the bridge, a lowercase UUID, the same whichever identity provider they sign in with. */
     userId: string
+    /** The bridge deployment's region label, when it has one. */
     region?: string
+    /** When the token expires, in seconds since the epoch. */
     expiresAt: number
 }
 
 export type BridgeEventType = 'user-created' | 'user-updated' | 'user-deleted'
 
+/** A verified user lifecycle event. */
 export interface BridgeEvent {
-    // The same for every delivery of one event: process each jti once
+    /** The event's id, the same on every delivery of the event: process each `jti` once. */
     jti: string
     type: BridgeEventType
     userId: string
+    /** The user's current profile; empty for `user-deleted`. */
     profile: BridgeProfile
+    /** When the bridge signed the event, in seconds since the epoch. */
     issuedAt: number
 }
 
@@ -57,11 +67,15 @@ export type BridgeTokenErrorReason =
     | 'invalid_claims'
     | 'jwks_unavailable'
 
-// Carries no cause and its message only the reason: jose's errors hold the decoded claims, email and phone included
+/**
+ * A verification failure, with its `reason`. It has no `cause`, and its message holds the reason alone, never the
+ * token or its claims, so it is safe to log.
+ */
 export class BridgeTokenError extends Error {
     override name = 'BridgeTokenError'
     readonly reason: BridgeTokenErrorReason
 
+    // No cause, as jose's errors hold the decoded claims, email and phone included
     constructor(reason: BridgeTokenErrorReason) {
         super(`bridge token rejected: ${reason}`)
         this.reason = reason
@@ -86,6 +100,11 @@ class JwksFetchError extends Error {
 
 class InvalidClaims extends Error {}
 
+/**
+ * A verifier of bridge access tokens and event tokens for one product. Create one and reuse it, so the bridge's
+ * keys stay cached. Throws a `TypeError` or `RangeError` for invalid options. Every verification failure rejects
+ * with a `BridgeTokenError`; a runtime missing a required Web API can reject with its own error.
+ */
 export function createVerifier(options: VerifierOptions): Verifier {
     const { issuer, audience, clockToleranceSeconds = MAX_CLOCK_TOLERANCE_SECONDS } = options
     // jose skips the aud check when audience is undefined, as from an unset environment variable, which would accept

@@ -159,9 +159,9 @@ describe('casdoorMiniProgramIdpToken', () => {
         expect(await casdoorMiniProgramIdpToken({ casdoorUrl: CASDOOR_URL, clientId: MINI_PROGRAM_CLIENT, transport })()).toBe('documented-token')
     })
 
-    it('posts through wx.request by default', async () => {
+    it('posts through wx.request by default, also for a transport given as undefined', async () => {
         const wx = stubWx({ request: (options) => options.success({ statusCode: 200, data: casdoorTokenBody('casdoor-access-token') }) })
-        const getIdpToken = casdoorMiniProgramIdpToken({ casdoorUrl: CASDOOR_URL, clientId: MINI_PROGRAM_CLIENT })
+        const getIdpToken = casdoorMiniProgramIdpToken({ casdoorUrl: CASDOOR_URL, clientId: MINI_PROGRAM_CLIENT, transport: undefined })
         expect(await getIdpToken()).toBe('casdoor-access-token')
         expect(wx.request.mock.calls[0]![0]).toMatchObject({
             url: CASDOOR_TOKEN_URL,
