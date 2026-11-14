@@ -118,9 +118,9 @@ export function createVerifier(options: VerifierOptions): Verifier {
     return {
         verifyAccessToken,
 
-        verifyRequest(request) {
+        async verifyRequest(request) {
             const match = BEARER.exec(request.headers.get('authorization') ?? '')
-            if (match === null) return Promise.reject(new BridgeTokenError('missing'))
+            if (match === null) throw new BridgeTokenError('missing')
             return verifyAccessToken(match[1]!)
         },
 
