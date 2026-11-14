@@ -20,6 +20,8 @@ beforeEach(() => {
 
 afterEach(() => {
     vi.useRealTimers()
+    vi.unstubAllGlobals()
+    vi.restoreAllMocks()
 })
 
 interface Setup {
@@ -264,6 +266,28 @@ describe('verifyAccessToken', () => {
             const error = await pending
             expect(error).toBeInstanceOf(BridgeTokenError)
             expect((error as BridgeTokenError).reason).toBe('jwks_unavailable')
+        })
+    })
+
+    describe('the runtime', () => {
+        it('fetches the JWKS with the global fetch when no fetch is given', async () => {
+            const real = bridge(keys)
+            vi.stubGlobal('fetch', real.fetch)
+            const verifier = createVerifier({ issuer: ISSUER, audience: 'acme' })
+            const token = await real.accessToken()
+            expect(await verifier.verifyAccessToken(token)).toMatchObject({ userId: decodeJwt(token).sub })
+            expect(real.fetched).toEqual([JWKS_URL])
+        })
+
+        it('rethrows unchanged an error a runtime missing a Web API raises before any key is loaded', async () => {
+            const { real, verifier } = setup()
+            const token = await real.accessToken()
+            const defect = new TypeError('AbortSignal.timeout is not a function')
+            vi.spyOn(AbortSignal, 'timeout').mockImplementation(() => {
+                throw defect
+            })
+            expect(await rejection(verifier.verifyAccessToken(token))).toBe(defect)
+            expect(real.fetched).toEqual([])
         })
     })
 
