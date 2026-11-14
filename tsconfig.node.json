@@ -1,0 +1,10 @@
+{
+    "extends": "./tsconfig.json",
+    "compilerOptions": {
+        // The core is typed against the Web APIs of the Workers runtime, which Node 24 also provides; the
+        // Node entry adds Node's own modules
+        "types": ["./worker-configuration.d.ts", "node"]
+    },
+    "include": ["src"],
+    "exclude": ["src/runtimes/workers.ts"]
+}
