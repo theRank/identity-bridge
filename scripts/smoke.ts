@@ -11,6 +11,8 @@ const JWT = 'urn:ietf:params:oauth:token-type:jwt'
 // Product ids are lowercase, so this audience can never be configured
 const UNKNOWN_AUDIENCE = 'Smoke-Test-Unknown-Product'
 const TIMEOUT_MS = 10_000
+// The members of a private or secret JWK (RFC 7518 section 6): a JWKS holding one has published a signing key
+const PRIVATE_MEMBERS = ['d', 'p', 'q', 'dp', 'dq', 'qi', 'oth', 'k']
 
 const [base, product] = process.argv.slice(2)
 if (!base || !product) {
@@ -70,10 +72,16 @@ const checks: [name: string, check: () => Promise<void>][] = [
         },
     ],
     [
-        'GET /.well-known/jwks.json has an ES256 key with a kid',
+        'GET /.well-known/jwks.json has an ES256 key with a kid, and no private key',
         async () => {
-            const keys = field(await expectStatus(await get('/.well-known/jwks.json'), 200), 'keys')
-            const usable = Array.isArray(keys) && keys.some((key) => field(key, 'alg') === 'ES256' && typeof field(key, 'kid') === 'string' && field(key, 'kid') !== '')
+            // The answer is never quoted, in case it holds a private key
+            const response = await get('/.well-known/jwks.json')
+            const keys = field(await body(response), 'keys')
+            if (response.status !== 200) throw new Mismatch(`got ${response.status}`)
+            if (!Array.isArray(keys)) throw new Mismatch('got no keys array')
+            const held = PRIVATE_MEMBERS.filter((member) => keys.some((key) => field(key, member) !== undefined))
+            if (held.length > 0) throw new Mismatch(`a key has the private members ${held.join(', ')}`)
+            const usable = keys.some((key) => field(key, 'alg') === 'ES256' && typeof field(key, 'kid') === 'string' && field(key, 'kid') !== '')
             if (!usable) throw new Mismatch(`got keys ${JSON.stringify(keys)}`)
         },
     ],

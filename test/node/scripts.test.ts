@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process'
-import type { Server } from 'node:http'
+import { createServer, type Server } from 'node:http'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -54,6 +54,24 @@ async function bridge(env: Record<string, string | undefined>): Promise<string> 
     return listen(server)
 }
 
+type Jwks = { keys: Record<string, unknown>[] }
+
+// In front of a bridge, passing every answer through but the JWKS, which it edits
+async function tampered(origin: string, edit: (jwks: Jwks) => Jwks): Promise<string> {
+    const server = createServer(async (req, res) => {
+        let body = ''
+        for await (const chunk of req) body += String(chunk)
+        const headers = { 'content-type': req.headers['content-type'] ?? 'text/plain' }
+        const answer = await fetch(`${origin}${req.url}`, { method: req.method!, headers, ...(req.method === 'POST' && { body }) })
+        let text = await answer.text()
+        if (req.url === '/.well-known/jwks.json') text = JSON.stringify(edit(JSON.parse(text) as Jwks))
+        res.writeHead(answer.status, { 'content-type': 'application/json' })
+        res.end(text)
+    })
+    servers.push(server)
+    return listen(server)
+}
+
 function hostsIn(value: unknown): string[] {
     if (typeof value === 'string') return /^https?:\/\//.test(value) ? [new URL(value).hostname] : []
     if (typeof value !== 'object' || value === null) return []
@@ -102,6 +120,24 @@ describe('smoke script', () => {
         const origin = await bridge(await devEnv())
 
         expect((await run('smoke.ts', `${origin}/`, 'acme')).code).toBe(0)
+    })
+
+    // A JWKS that carries one has published a signing key
+    it.each<[string, (jwks: Jwks) => Jwks, string]>([
+        ['the EC private key d', ({ keys }) => ({ keys: keys.map((key) => ({ ...key, d: 'c2VjcmV0LXByaXZhdGUta2V5' })) }), 'd'],
+        [
+            'RSA private members on a second key',
+            ({ keys }) => ({ keys: [...keys, { kty: 'RSA', kid: 'other', n: 'AQAB', e: 'AQAB', p: 'cHJpbWUtcA', q: 'cHJpbWUtcQ' }] }),
+            'p, q',
+        ],
+        ['a symmetric key k', ({ keys }) => ({ keys: [...keys, { kty: 'oct', kid: 'hmac', k: 'c3ltbWV0cmlj' }] }), 'k'],
+    ])('fails when a JWKS key holds %s, naming the members and quoting none of them', async (_, edit, members) => {
+        const origin = await tampered(await bridge(await devEnv()), edit)
+        const { code, stdout } = await run('smoke.ts', origin, 'acme')
+
+        expect(code).toBe(1)
+        expect(stdout.match(/^FAIL .*$/gm)).toEqual([expect.stringMatching(new RegExp(`^FAIL GET /\\.well-known/jwks\\.json.*private.*${members}`))])
+        expect(stdout).not.toMatch(/c2VjcmV0|cHJpbWU|c3ltbWV0cmlj/)
     })
 
     it('fails against a bridge in failure mode, naming each mismatch', async () => {
