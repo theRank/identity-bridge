@@ -41,12 +41,31 @@ async function reason(pending: Promise<unknown>): Promise<BridgeTokenErrorReason
 }
 
 describe('createVerifier', () => {
-    it.each([61, -1, Number.NaN, 3600])('rejects clockToleranceSeconds %s, as bridge tokens allow at most 60 s', (clockToleranceSeconds) => {
+    it.each([61, -1, Number.NaN, 3600, Infinity])('rejects clockToleranceSeconds %s, as bridge tokens allow at most 60 s', (clockToleranceSeconds) => {
         expect(() => createVerifier({ issuer: ISSUER, audience: 'acme', clockToleranceSeconds })).toThrow(RangeError)
+    })
+
+    // What a value read from the environment without parsing looks like
+    it.each(['30', null, true])('rejects clockToleranceSeconds %j that is not a number', (clockToleranceSeconds) => {
+        expect(() => createVerifier({ issuer: ISSUER, audience: 'acme', clockToleranceSeconds: clockToleranceSeconds as unknown as number })).toThrow(TypeError)
     })
 
     it.each([0, 30, 60])('accepts clockToleranceSeconds %s', (clockToleranceSeconds) => {
         expect(() => createVerifier({ issuer: ISSUER, audience: 'acme', clockToleranceSeconds })).not.toThrow()
+    })
+
+    // An unset environment variable gives undefined; jose would then skip the aud check and accept every product's
+    // tokens
+    it.each([undefined, '', 42, null, ['acme']])('rejects the audience %j', (audience) => {
+        expect(() => createVerifier({ issuer: ISSUER, audience: audience as unknown as string })).toThrow(TypeError)
+    })
+
+    it.each([undefined, '', 42, null])('rejects the issuer %j', (issuer) => {
+        expect(() => createVerifier({ issuer: issuer as unknown as string, audience: 'acme' })).toThrow(TypeError)
+    })
+
+    it('rejects missing options', () => {
+        expect(() => createVerifier(undefined as unknown as Parameters<typeof createVerifier>[0])).toThrow(TypeError)
     })
 })
 

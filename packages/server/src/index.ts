@@ -88,6 +88,11 @@ class InvalidClaims extends Error {}
 
 export function createVerifier(options: VerifierOptions): Verifier {
     const { issuer, audience, clockToleranceSeconds = MAX_CLOCK_TOLERANCE_SECONDS } = options
+    // jose skips the aud check when audience is undefined, as from an unset environment variable, which would accept
+    // every product's tokens
+    if (typeof issuer !== 'string' || issuer === '') throw new TypeError('issuer must be a non-empty string')
+    if (typeof audience !== 'string' || audience === '') throw new TypeError('audience must be a non-empty string')
+    if (typeof clockToleranceSeconds !== 'number') throw new TypeError('clockToleranceSeconds must be a number')
     if (!(clockToleranceSeconds >= 0 && clockToleranceSeconds <= MAX_CLOCK_TOLERANCE_SECONDS)) {
         throw new RangeError(`clockToleranceSeconds must be between 0 and ${MAX_CLOCK_TOLERANCE_SECONDS}`)
     }
