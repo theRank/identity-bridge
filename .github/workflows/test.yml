@@ -93,9 +93,10 @@ jobs:
       - name: Smoke test
         run: node scripts/smoke.ts http://127.0.0.1:8080 acme
 
+      # Docker's default grace period, 10 s, matches the one the bundle gives requests in flight
       - name: Stop
         run: |
-          docker stop --time 10 identity-bridge
+          docker stop identity-bridge
           code=$(docker inspect --format '{{.State.ExitCode}}' identity-bridge)
           if [ "$code" != 0 ]; then
             echo "::error::the container exited with $code"
