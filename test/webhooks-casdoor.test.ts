@@ -374,8 +374,8 @@ describe('Casdoor webhooks', () => {
         })
 
         it('refuses a source of another type', () => {
-            const clerkSource = { id: 'clerk-acme', type: 'clerk', idp: 'clerk-acme', products: ['acme'] } as const
-            expect(() => parse(deleteByAdmin, { ...clerkSource, products: [...clerkSource.products] })).toThrow(TypeError)
+            const clerkSource: WebhookSourceConfig = { id: 'clerk-acme', type: 'clerk', idp: 'clerk-acme', products: ['acme'] }
+            expect(() => parse(deleteByAdmin, clerkSource)).toThrow(TypeError)
         })
     })
 })

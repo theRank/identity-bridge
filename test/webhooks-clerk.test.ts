@@ -272,7 +272,7 @@ describe('Clerk webhooks', () => {
             })
 
             it('gives a message that quotes nothing from the payload', async () => {
-                const delivery = await resignClerk({ headers: created.headers, body: `{"secret-marker":${'x'}` })
+                const delivery = await resignClerk({ headers: created.headers, body: '{"secret-marker":x' })
                 const deletedWithout = await resignClerk(deleted, { event: (event) => delete event.data.id })
                 for (const run of [() => parse(delivery), () => parse(deletedWithout)]) {
                     const message = (badPayload(run) as Error).message
