@@ -237,6 +237,15 @@ describe('Casdoor webhooks', () => {
             })
 
             it.each([
+                ['a sign-up', 'another organization', newUserSignup, (record: Doc) => (record.organization = 'globex')],
+                ['a sign-up', 'a failed outcome', newUserSignup, (record: Doc) => (record.response = '{status:"error", msg:"x"}')],
+                ['an OAuth sign-up', 'another organization', newUserOauthSignup, (record: Doc) => (record.organization = 'globex')],
+                ['an OAuth sign-up', 'a failed outcome', newUserOauthSignup, (record: Doc) => (record.response = '{status:"error", msg:"x"}')],
+            ])('ignores the new-user of %s with %s', (_flow, _filter, fixture, edit) => {
+                expect(parseEdited(fixture, { record: edit })).toStrictEqual([])
+            })
+
+            it.each([
                 ['another organization', (record: Doc) => (record.organization = 'globex')],
                 ['the organization in another case', (record: Doc) => (record.organization = 'Acme')],
                 ['a failed request', (record: Doc) => (record.response = '{status:"error", msg:"Unauthorized operation"}')],

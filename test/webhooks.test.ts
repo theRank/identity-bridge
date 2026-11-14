@@ -460,6 +460,16 @@ describe('/webhooks/{source}', () => {
             expect(logs).toEqual([line('casdoor', 200, { code: 'ignored', delivered: 0, failed: 0 })])
             expect(calls).toHaveLength(0)
         })
+
+        it.each([
+            ['of another organization', (record: Doc) => (record.organization = 'globex')],
+            ['with a failed outcome', (record: Doc) => (record.response = '{status:"error", msg:"x"}')],
+        ])('answers a new-user record %s 200 with empty lists, logged as ignored', async (_, edit) => {
+            const { send, logs, calls } = setup('casdoor')
+            await expectBody(await send(casdoorRequest(editCasdoor(newUserOauthSignup, { record: edit }))), 200, NONE)
+            expect(logs).toEqual([line('casdoor', 200, { code: 'ignored', delivered: 0, failed: 0 })])
+            expect(calls).toHaveLength(0)
+        })
     })
 
     describe('fan-out', () => {
