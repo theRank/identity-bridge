@@ -1,0 +1,195 @@
+name: Release
+
+# Releases the service when a v* tag is pushed: the container image for linux/amd64 and linux/arm64 on GitHub
+# Container Registry, tagged X.Y.Z, then the GitHub release for the tag, with the single-file Node bundle server.mjs
+# and its SHA-256 sum attached, so a release is never announced before its image exists. A version with a - is a
+# prerelease. Only the highest version that is not a prerelease, among all v* tags, gets the image tags X.Y and
+# latest and is marked as the latest release, so a patch to an older line moves neither. Started by hand
+# (workflow_dispatch), it checks, builds the image and the bundle under a placeholder version, and publishes nothing.
+#
+# Three jobs, so install scripts and test code never run where anything can be published: check installs,
+# typechecks, tests and builds with read-only permissions; image builds the Dockerfile, whose build stage installs
+# without scripts, and pushes it; release installs without scripts, bundles and creates the release. image and
+# release run in the release environment, where protection rules can be added. The tag is checked by
+# scripts/release-tag.ts, as in the publish workflow.
+
+on:
+  push:
+    tags: [ 'v*' ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One release at a time, so latest is decided and pushed in tag order; a run in progress is never cancelled. Dry
+# runs queue apart, so they never hold a release up.
+concurrency:
+  group: release-${{ github.event_name }}
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: check
+    if: github.repository == 'theRank/identity-bridge'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      WRANGLER_SEND_METRICS: 'false'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Test packages under Node
+        run: npm run test:node --workspaces --if-present
+
+  image:
+    name: image
+    needs: check
+    if: github.repository == 'theRank/identity-bridge'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: release
+    permissions:
+      contents: read
+      packages: write
+    env:
+      DRY_RUN: ${{ github.event_name == 'workflow_dispatch' }}
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+      latest: ${{ steps.version.outputs.latest }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # Only to run scripts/release-tag.ts, which needs nothing installed
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      # The existing v* tags, through the API, decide whether this version is the latest
+      - name: Version
+        id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if [ "$DRY_RUN" = true ]; then
+            node scripts/release-tag.ts v0.0.0-dry-run /dev/null > "$RUNNER_TEMP/version"
+          else
+            gh api "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/v" --paginate --jq '.[].ref | ltrimstr("refs/tags/")' \
+              > "$RUNNER_TEMP/tags"
+            node scripts/release-tag.ts "$TAG" "$RUNNER_TEMP/tags" > "$RUNNER_TEMP/version"
+          fi
+          cat "$RUNNER_TEMP/version"
+          cat "$RUNNER_TEMP/version" >> "$GITHUB_OUTPUT"
+
+      # GHCR names must be lowercase, and the owner's name may not be
+      - name: Tags
+        id: tags
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          LATEST: ${{ steps.version.outputs.latest }}
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/identity-bridge"
+          tags="$image:$VERSION"
+          if [ "$LATEST" = true ]; then tags="$tags,$image:${VERSION%.*},$image:latest"; fi
+          echo "tags=$tags" >> "$GITHUB_OUTPUT"
+          echo "$tags"
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GitHub Container Registry
+        if: env.DRY_RUN != 'true'
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      # The checkout as the context, so .dockerignore decides what the build sees
+      - name: Build and push
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          build-args: |
+            VERSION=${{ steps.version.outputs.version }}
+            REVISION=${{ github.sha }}
+          tags: ${{ steps.tags.outputs.tags }}
+          push: ${{ env.DRY_RUN != 'true' }}
+
+  release:
+    name: release
+    needs: image
+    if: github.repository == 'theRank/identity-bridge'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: release
+    permissions:
+      contents: write
+    env:
+      DRY_RUN: ${{ github.event_name == 'workflow_dispatch' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # No npm cache here: this job only trusts what npm ci downloads and verifies itself
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Install without scripts
+        run: npm ci --ignore-scripts
+
+      - name: Bundle
+        run: npm run build:node
+
+      - name: Checksum
+        working-directory: dist/node
+        run: |
+          sha256sum server.mjs > server.mjs.sha256
+          cat server.mjs.sha256
+
+      - name: Create the release
+        if: env.DRY_RUN != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          PRERELEASE: ${{ needs.image.outputs.prerelease }}
+          LATEST: ${{ needs.image.outputs.latest }}
+        run: |
+          flags=(--latest=false)
+          if [ "$LATEST" = true ]; then flags=(--latest); fi
+          if [ "$PRERELEASE" = true ]; then flags+=(--prerelease); fi
+          gh release create "$TAG" dist/node/server.mjs dist/node/server.mjs.sha256 \
+            --repo "$GITHUB_REPOSITORY" --verify-tag --title "$TAG" --generate-notes "${flags[@]}"

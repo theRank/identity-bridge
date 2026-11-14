@@ -1,9 +1,11 @@
 name: Test
 
-# Runs on PRs and main: typecheck, tests inside the Workers runtime, a dry-run bundle with the SDK package
-# builds, then the packages' plain-Node checks against what was built. The typecheck is a separate step
-# because wrangler bundles with esbuild, which strips types without checking them. Nothing here deploys or
-# publishes; deployments pick a commit and run wrangler themselves.
+# Runs on PRs and main: typecheck, tests inside the Workers runtime and in plain Node, a dry-run Workers
+# bundle, the single-file Node bundle and the SDK package builds, then the packages' plain-Node checks against
+# what was built. The image job builds the container image, runs it with throwaway values as a deployment
+# would and smoke tests it. The typecheck is a separate step because wrangler and esbuild strip types without
+# checking them. Nothing here deploys or publishes; deployments pick a commit or a release and run it
+# themselves.
 
 on:
   pull_request:
@@ -17,6 +19,7 @@ jobs:
   test:
     name: test
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     env:
       WRANGLER_SEND_METRICS: 'false'
     steps:
@@ -45,3 +48,135 @@ jobs:
 
       - name: Test packages under Node
         run: npm run test:node --workspaces --if-present
+
+  image:
+    name: image
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CONTAINER: identity-bridge
+      IMAGE: identity-bridge:test
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # Only to run the scripts, which need nothing installed
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Build image
+        run: docker build --build-arg REVISION="$GITHUB_SHA" --tag "$IMAGE" .
+
+      # A configuration on .example hosts and a key generated for this run, through the environment only
+      - name: Start the image
+        run: |
+          node scripts/dev-env.ts > "$RUNNER_TEMP/dev.env"
+          docker run --detach --name "$CONTAINER" --env-file "$RUNNER_TEMP/dev.env" \
+            --publish 127.0.0.1:8080:8080 "$IMAGE"
+
+      # A container that exited will never become healthy, so that fails at once
+      - name: Wait for the health check
+        run: |
+          for _ in $(seq 30); do
+            state=$(docker inspect --format '{{.State.Status}} {{.State.Health.Status}}' "$CONTAINER")
+            case $state in
+              'running healthy') exit 0 ;;
+              running\ *) sleep 1 ;;
+              *) echo "::error::the container is $state"; exit 1 ;;
+            esac
+          done
+          echo "::error::the container is still $state after 30 s"
+          exit 1
+
+      - name: Check the user and the files
+        run: |
+          if [ "$(docker exec "$CONTAINER" id -u)" = 0 ]; then
+            echo "::error::the container runs as root"
+            exit 1
+          fi
+          files=$(docker exec "$CONTAINER" ls /app | tr '\n' ' ')
+          if [ "$files" != 'LICENSE server.mjs ' ]; then
+            echo "::error::the image holds $files"
+            exit 1
+          fi
+
+      - name: Smoke test
+        run: node scripts/smoke.ts http://127.0.0.1:8080 acme
+
+      # A request held in flight by Expect: 100-continue, its body unsent, must still be answered once the stop has
+      # begun, and the stop must end with exit code 0 inside Docker's default 10 s grace period, which the bundle's
+      # own 8 s deadline stays under
+      - name: Stop with a request in flight
+        run: |
+          body='grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Atoken-exchange'
+          exec 3<>/dev/tcp/127.0.0.1/8080
+          printf 'POST /token HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/x-www-form-urlencoded\r\nContent-Length: %s\r\nExpect: 100-continue\r\n\r\n' "${#body}" >&3
+          read -r -t 5 continued <&3 || true
+          if [[ "$continued" != 'HTTP/1.1 100 Continue'* ]]; then
+            echo "::error::the request was not taken in: $continued"
+            exit 1
+          fi
+          started=$(date +%s)
+          docker stop "$CONTAINER" > /dev/null &
+          stopping=
+          for _ in $(seq 50); do
+            if docker logs "$CONTAINER" 2>/dev/null | grep -q '"event":"stopping"'; then stopping=1; break; fi
+            sleep 0.1
+          done
+          if [ -z "$stopping" ]; then
+            echo "::error::the container did not begin to stop"
+            exit 1
+          fi
+          printf '%s' "$body" >&3
+          answer=
+          while IFS= read -r -t 5 line <&3; do answer+="$line"; done
+          wait
+          seconds=$(( $(date +%s) - started ))
+          code=$(docker inspect --format '{{.State.ExitCode}}' "$CONTAINER")
+          if [[ "$answer" != *'HTTP/1.1 400 '* ]]; then
+            echo "::error::the request in flight got no answer: $answer"
+            exit 1
+          fi
+          if [ "$code" != 0 ] || [ "$seconds" -ge 10 ]; then
+            echo "::error::the container exited with $code after $seconds s"
+            exit 1
+          fi
+
+      # As PID 1 a signal without a handler is ignored, so the bundle keeps its handler: a second signal during a
+      # stop exits at once with 128 + 15
+      - name: Second signal
+        run: |
+          docker start "$CONTAINER" > /dev/null
+          for _ in $(seq 30); do
+            if [ "$(docker inspect --format '{{.State.Health.Status}}' "$CONTAINER")" = healthy ]; then break; fi
+            sleep 1
+          done
+          exec 3<>/dev/tcp/127.0.0.1/8080
+          printf 'POST /token HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/x-www-form-urlencoded\r\nContent-Length: 10\r\nExpect: 100-continue\r\n\r\n' >&3
+          read -r -t 5 continued <&3 || true
+          started=$(date +%s)
+          docker kill --signal SIGTERM "$CONTAINER" > /dev/null
+          stopping=
+          for _ in $(seq 50); do
+            if [ "$(docker logs "$CONTAINER" 2>/dev/null | grep -c '"event":"stopping"')" = 2 ]; then stopping=1; break; fi
+            sleep 0.1
+          done
+          if [ -z "$stopping" ]; then
+            echo "::error::the container did not begin to stop"
+            exit 1
+          fi
+          docker kill --signal SIGTERM "$CONTAINER" > /dev/null
+          code=$(docker wait "$CONTAINER")
+          seconds=$(( $(date +%s) - started ))
+          if [[ "$continued" != 'HTTP/1.1 100 Continue'* ]] || [ "$code" != 143 ] || [ "$seconds" -ge 5 ]; then
+            echo "::error::the container exited with $code after $seconds s, the request ${continued:-not taken in}"
+            exit 1
+          fi
+
+      - name: Container logs
+        if: always()
+        run: docker logs "$CONTAINER" || true

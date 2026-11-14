@@ -1,9 +1,10 @@
 name: Publish
 
 # Publishes @therank/identity-bridge-client and @therank/identity-bridge-server to npm when a v* tag is pushed,
-# both at the tag's version, a prerelease under the dist-tag next; the version change is not committed. Started by
-# hand (workflow_dispatch), it always stops at a dry run under a placeholder version, so the workflow can be
-# exercised without a tag.
+# both at the tag's version; the version change is not committed. The dist-tag follows the release workflow's rule
+# for the image's latest: latest only for the highest version that is not a prerelease, among all v* tags,
+# release-X.Y for a patch to an older line, and next for a prerelease. Started by hand (workflow_dispatch), it
+# always stops at a dry run under a placeholder version, so the workflow can be exercised without a tag.
 #
 # Two jobs, so install scripts and test code never run where an OIDC token can be minted: check installs, typechecks,
 # tests and builds with read-only permissions; publish installs without scripts, builds the packages and publishes.
@@ -25,6 +26,7 @@ jobs:
     name: check
     if: github.repository == 'theRank/identity-bridge'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: read
     env:
@@ -61,6 +63,7 @@ jobs:
     needs: check
     if: github.repository == 'theRank/identity-bridge'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     environment: npm
     permissions:
       contents: read
@@ -96,25 +99,37 @@ jobs:
             exit 1
           fi
 
+      # The same strict check of the tag as the release workflow's, refusing build metadata, and the same lookup of
+      # the v* tags through the API, which contents: read allows, to choose the dist-tag
       - name: Version
         id: version
         env:
+          GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
         run: |
-          if [ "$DRY_RUN" = true ]; then version=0.0.0-dry-run; else version="${TAG#v}"; fi
+          if [ "$DRY_RUN" = true ]; then
+            version=0.0.0-dry-run
+            dist_tag=dry-run
+          else
+            gh api "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/v" --paginate --jq '.[].ref | ltrimstr("refs/tags/")' \
+              > "$RUNNER_TEMP/tags"
+            node scripts/release-tag.ts "$TAG" "$RUNNER_TEMP/tags" > "$RUNNER_TEMP/version"
+            cat "$RUNNER_TEMP/version"
+            version=$(sed -n 's/^version=//p' "$RUNNER_TEMP/version")
+            dist_tag=$(sed -n 's/^dist_tag=//p' "$RUNNER_TEMP/version")
+          fi
           npm version "$version" --workspaces --no-git-tag-version --allow-same-version --ignore-scripts
           echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "dist_tag=$dist_tag" >> "$GITHUB_OUTPUT"
 
-      # The packages were built above, so no lifecycle script runs here. npm refuses a prerelease without a
-      # dist-tag, so one is published under next, and the dry run's placeholder under dry-run.
+      # The packages were built above, so no lifecycle script runs here. The dist-tag is always given: without one,
+      # npm would move latest to any version it publishes.
       - name: Publish
         env:
-          VERSION: ${{ steps.version.outputs.version }}
+          DIST_TAG: ${{ steps.version.outputs.dist_tag }}
         run: |
           if [ "$DRY_RUN" = true ]; then
-            npm publish --workspaces --ignore-scripts --dry-run --tag dry-run
-          elif [[ "$VERSION" == *-* ]]; then
-            npm publish --workspaces --ignore-scripts --tag next
+            npm publish --workspaces --ignore-scripts --dry-run --tag "$DIST_TAG"
           else
-            npm publish --workspaces --ignore-scripts
+            npm publish --workspaces --ignore-scripts --tag "$DIST_TAG"
           fi

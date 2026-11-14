@@ -114,6 +114,7 @@ export type LogCode =
     | 'delivery_failed'
     | 'runtime_unavailable'
     | 'internal_error'
+    | 'client_closed'
 
 export type OAuthErrorCode =
     | 'invalid_request'
