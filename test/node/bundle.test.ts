@@ -111,33 +111,51 @@ describe('Node bundle', () => {
         expect(code).toBe(0)
     })
 
-    // Expect: 100-continue holds the request open, its body unsent, until the server has the request in hand
     it('answers a request in flight before exiting on SIGTERM', async () => {
         const { child, origin, line } = await start(ENV)
-        const body = 'grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Atoken-exchange'
-        const { hostname, port } = new URL(origin)
-        const req = request({
-            host: hostname,
-            port,
-            method: 'POST',
-            path: '/token',
-            headers: { ...FORM, 'content-length': body.length, expect: '100-continue' },
-        })
-        const answered = new Promise<{ status: number; connection: string | undefined }>((resolve, reject) => {
-            req.on('error', reject)
-            req.on('response', (res) => {
-                res.resume()
-                res.on('end', () => resolve({ status: res.statusCode!, connection: res.headers.connection }))
-            })
-        })
-        await once(req, 'continue')
+        const held = await inFlight(origin)
 
         child.kill('SIGTERM')
         await line((entry) => entry.event === 'stopping')
-        req.end(body)
+        held.finish()
 
-        expect(await answered).toEqual({ status: 400, connection: 'close' })
+        expect(await held.answered).toEqual({ status: 400, connection: 'close' })
         const [code] = await once(child, 'exit')
         expect(code).toBe(0)
     })
+
+    it('stops at once on a second signal, even with a request in flight', async () => {
+        const { child, origin, line } = await start(ENV)
+        const held = await inFlight(origin)
+        held.answered.catch(() => {})
+
+        child.kill('SIGTERM')
+        await line((entry) => entry.event === 'stopping')
+        child.kill('SIGINT')
+
+        const [code, signal] = await once(child, 'exit')
+        expect([code, signal]).toEqual([null, 'SIGINT'])
+    })
 })
+
+// Expect: 100-continue holds the request open, its body unsent, until the server has it in hand
+async function inFlight(origin: string) {
+    const body = 'grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Atoken-exchange'
+    const { hostname, port } = new URL(origin)
+    const req = request({
+        host: hostname,
+        port,
+        method: 'POST',
+        path: '/token',
+        headers: { ...FORM, 'content-length': body.length, expect: '100-continue' },
+    })
+    const answered = new Promise<{ status: number; connection: string | undefined }>((resolve, reject) => {
+        req.on('error', reject)
+        req.on('response', (res) => {
+            res.resume()
+            res.on('end', () => resolve({ status: res.statusCode!, connection: res.headers.connection }))
+        })
+    })
+    await once(req, 'continue')
+    return { answered, finish: () => req.end(body) }
+}

@@ -19,6 +19,7 @@ function stop(signal: NodeJS.Signals): void {
     process.off('SIGTERM', stop)
     process.off('SIGINT', stop)
     const stopped = shutdown(server, sleep(GRACE_MS, undefined, { ref: false }))
+    // Only once the listener has closed, so the line means new connections are refused
     log(JSON.stringify({ event: 'stopping', signal }))
     // Exits once stdout has taken every line, which on a pipe is written asynchronously
     void stopped.then(() => process.stdout.write('', () => process.exit(0)))
