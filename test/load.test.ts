@@ -155,6 +155,19 @@ describe('loadRuntime', () => {
             expect(await failure(source({ webhookSecret: () => secret }))).toBe('missing webhook secret for source casdoor-acme')
         })
 
+        // A secret mounted from a file often ends in a newline, which would fail every authentication instead
+        it.each([
+            ['a trailing newline', `${CASDOOR_SECRET}\n`],
+            ['a trailing CRLF', `${CASDOOR_SECRET}\r\n`],
+            ['leading spaces', `  ${CASDOOR_SECRET}`],
+            ['a trailing tab', `${CASDOOR_SECRET}\t`],
+            ['nothing but whitespace', ' \n'],
+        ])('on a webhook secret with %s, quoting none of it', async (_, secret) => {
+            const reason = await failure(source({ webhookSecret: () => secret }))
+
+            expect(reason).toBe('webhook secret for source casdoor-acme has surrounding whitespace')
+        })
+
         it('names the first missing secret', async () => {
             const doc = clerkConfig()
             const config = JSON.stringify({ ...doc, webhookSources: { ...doc.webhookSources, 'clerk-acme-2': doc.webhookSources['clerk-acme'] } })

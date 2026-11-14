@@ -122,6 +122,7 @@ describe('Node entry', () => {
             ['with a broken key', { ...ENV, SIGNING_KEYS: JSON.stringify({ active: { ...keys.active, d: undefined } }) }, 'SIGNING_KEYS.active: private key required'],
             ['without the secret of a webhook source', without('WEBHOOK_SECRET_CLERK_ACME'), 'missing webhook secret for source clerk-acme'],
             ['with an empty webhook secret', { ...ENV, WEBHOOK_SECRET_CLERK_ACME: '' }, 'missing webhook secret for source clerk-acme'],
+            ['with a webhook secret ending in a newline', { ...ENV, WEBHOOK_SECRET_CLERK_ACME: `${CLERK_SECRET}\n` }, 'webhook secret for source clerk-acme has surrounding whitespace'],
         ])('%s, logging why once, before any request', async (_, env, reason) => {
             const { origin, lines } = await serve(env)
             expect(lines()).toEqual([{ event: 'runtime_load_failed', reason }])

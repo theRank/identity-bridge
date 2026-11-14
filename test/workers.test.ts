@@ -7,7 +7,7 @@ import { fakeFetch } from './helpers/fetch'
 import { clerkClaims, signToken } from './helpers/idp'
 import { idpJwks, rsaKeyPair } from './helpers/keys'
 import { expectFailureMode, expectServing, FORM, type Send } from './helpers/runtime'
-import { resignClerk } from './helpers/webhooks'
+import { CLERK_SECRET, resignClerk } from './helpers/webhooks'
 import created from './fixtures/clerk/user-created.json'
 
 const BASE = 'https://id.acme.example'
@@ -106,6 +106,7 @@ describe('Workers entry', () => {
             ['without signing keys', () => without('SIGNING_KEYS'), 'missing SIGNING_KEYS'],
             ['with a broken key', () => ({ ...bindings, SIGNING_KEYS: JSON.stringify({ active: { ...active, d: undefined } }) }), 'SIGNING_KEYS.active: private key required'],
             ['without the secret of a webhook source', () => without('WEBHOOK_SECRET_CLERK_ACME'), 'missing webhook secret for source clerk-acme'],
+            ['with a webhook secret ending in a newline', () => ({ ...bindings, WEBHOOK_SECRET_CLERK_ACME: `${CLERK_SECRET}\n` }), 'webhook secret for source clerk-acme has surrounding whitespace'],
         ])('%s, logging why once', async (_, variant, reason) => {
             const logs = captureLogs()
 
