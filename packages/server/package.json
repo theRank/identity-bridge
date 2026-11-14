@@ -18,6 +18,7 @@
     ],
     "scripts": {
         "build": "tsc -p .",
+        "prepack": "npm run build",
         "test:node": "node test-node/verify.mjs"
     },
     "dependencies": {
