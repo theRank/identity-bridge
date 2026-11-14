@@ -102,8 +102,9 @@ describe('Casdoor webhooks', () => {
         })
 
         it('never accepts anything for an empty secret', async () => {
-            expect(await authenticate({ authorization: 'Bearer ' }, '')).toBe(false)
-            expect(await authenticate({ authorization: 'Bearer' }, '')).toBe(false)
+            const delivery = casdoorDelivery(newUserSignup)
+            const request = deliveryRequest('casdoor-acme', delivery, { authorization: 'Bearer x' })
+            expect(await casdoor.authenticate(request, delivery.body, '', 0)).toBe(false)
         })
     })
 

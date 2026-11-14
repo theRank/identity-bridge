@@ -487,21 +487,18 @@ describe('/webhooks/{source}', () => {
     })
 
     describe('fan-out', () => {
-        it('delivers to every product concurrently', async () => {
-            let started = 0
-            let release!: () => void
-            const all = new Promise<void>((resolve) => {
-                release = resolve
-            })
-            const { send } = setup('casdoor', {
+        it('starts every delivery before any is answered', async () => {
+            // Each delivery waits for its own answer, given only once every delivery has started
+            const answers: (() => void)[] = []
+            const { send, calls } = setup('casdoor', {
                 edit: twoProducts('casdoor'),
-                respond: async () => {
-                    if (++started === 2) release()
-                    await all
-                    return new Response(null, { status: 202 })
-                },
+                respond: () => new Promise<Response>((resolve) => answers.push(() => resolve(new Response(null, { status: 202 })))),
             })
-            await expectBody(await send(casdoorRequest(newUserSignup)), 200, { delivered: ['acme', 'globex'], failed: [] })
+            const pending = send(casdoorRequest(newUserSignup))
+            await vi.waitFor(() => expect(answers).toHaveLength(2))
+            expect(calls.map((call) => call.url)).toEqual([SOURCES.casdoor.events, GLOBEX_EVENTS])
+            for (const answer of answers) answer()
+            await expectBody(await pending, 200, { delivered: ['acme', 'globex'], failed: [] })
         })
 
         it('gives a redelivery the same jti, and another event another one', async () => {
