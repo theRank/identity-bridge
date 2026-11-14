@@ -16,7 +16,7 @@
     ],
     "scripts": {
         "test": "vitest run",
-        "typecheck": "wrangler types && tsc --noEmit -p . && tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p test && tsc --noEmit -p test/node && tsc --noEmit -p packages/client && tsc --noEmit -p packages/client/test && tsc --noEmit -p packages/server && tsc --noEmit -p packages/server/test",
+        "typecheck": "wrangler types && tsc --noEmit -p . && tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p test && tsc --noEmit -p test/node && tsc --noEmit -p scripts && tsc --noEmit -p packages/client && tsc --noEmit -p packages/client/test && tsc --noEmit -p packages/server && tsc --noEmit -p packages/server/test",
         "build": "wrangler deploy --dry-run --outdir dist && npm run build:node && npm run build --workspaces --if-present",
         "build:node": "esbuild src/runtimes/node-main.ts --bundle --platform=node --format=esm --target=node24 --outfile=dist/node/server.mjs",
         "dev": "wrangler dev"

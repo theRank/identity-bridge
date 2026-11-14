@@ -1,0 +1,12 @@
+{
+    "extends": "../tsconfig.json",
+    "compilerOptions": {
+        "module": "nodenext",
+        "moduleResolution": "nodenext",
+        "types": ["node"],
+        // Node runs these files by stripping their types
+        "erasableSyntaxOnly": true
+    },
+    "include": ["."],
+    "exclude": []
+}
