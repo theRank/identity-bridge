@@ -25,6 +25,7 @@ jobs:
     name: check
     if: github.repository == 'theRank/identity-bridge'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: read
     env:
@@ -61,6 +62,7 @@ jobs:
     needs: check
     if: github.repository == 'theRank/identity-bridge'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     environment: npm
     permissions:
       contents: read
@@ -96,12 +98,18 @@ jobs:
             exit 1
           fi
 
+      # The same strict check of the tag as the release workflow's, refusing build metadata
       - name: Version
         id: version
         env:
           TAG: ${{ github.ref_name }}
         run: |
-          if [ "$DRY_RUN" = true ]; then version=0.0.0-dry-run; else version="${TAG#v}"; fi
+          if [ "$DRY_RUN" = true ]; then
+            version=0.0.0-dry-run
+          else
+            node scripts/release-tag.ts "$TAG" > "$RUNNER_TEMP/version"
+            version=$(sed -n 's/^version=//p' "$RUNNER_TEMP/version")
+          fi
           npm version "$version" --workspaces --no-git-tag-version --allow-same-version --ignore-scripts
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
