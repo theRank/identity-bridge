@@ -1,0 +1,32 @@
+{
+    "headers": {
+        "Authorization": "Bearer test-casdoor-webhook-secret",
+        "Content-Type": "application/json"
+    },
+    "body": {
+        "id": 0,
+        "owner": "acme",
+        "name": "9aea18ac-7504-4338-9183-afed962319c6",
+        "createdTime": "2026-11-13T22:38:26Z",
+        "organization": "acme",
+        "clientIp": "192.0.2.10",
+        "user": "acme-admin",
+        "method": "POST",
+        "requestUri": "/api/delete-user",
+        "action": "delete-user",
+        "language": "en",
+        "object": "{\"owner\":\"acme\",\"name\":\"ivan\",\"id\":\"998150fb-4c86-4eda-bcbe-111946b7ea28\",\"properties\":\"not-a-map\"}",
+        "response": "{status:\"error\", msg:\"json: cannot unmarshal string into Go struct field User.properties of type map[string]string\"}",
+        "statusCode": 200,
+        "detail": "",
+        "isTriggered": false,
+        "prevHash": "",
+        "hash": "",
+        "extendedUser": {
+            "owner": "acme",
+            "name": "acme-admin",
+            "id": "a4d62447-e463-419e-9ec7-963cdb979adc",
+            "isAdmin": true
+        }
+    }
+}

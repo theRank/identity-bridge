@@ -1,0 +1,32 @@
+{
+    "headers": {
+        "Authorization": "Bearer test-casdoor-webhook-secret",
+        "Content-Type": "application/json"
+    },
+    "body": {
+        "id": 0,
+        "owner": "acme",
+        "name": "89f3dfae-084b-4f66-b7a9-a18011957965",
+        "createdTime": "2026-11-13T22:38:07Z",
+        "organization": "acme",
+        "clientIp": "192.0.2.10",
+        "user": "nina",
+        "method": "POST",
+        "requestUri": "/api/signup",
+        "action": "signup",
+        "language": "en",
+        "object": "{\"application\":\"app-acme\",\"organization\":\"acme\",\"username\":\"nina\",\"name\":\"Nina Signup\",\"password\":\"***\",\"email\":\"nina@acme.example\",\"agreement\":true}",
+        "response": "{status:\"ok\", msg:\"\"}",
+        "statusCode": 200,
+        "detail": "",
+        "isTriggered": false,
+        "prevHash": "",
+        "hash": "",
+        "extendedUser": {
+            "owner": "acme",
+            "name": "nina",
+            "id": "33d91987-4b7e-4c23-8097-01a93c1873aa",
+            "isAdmin": false
+        }
+    }
+}

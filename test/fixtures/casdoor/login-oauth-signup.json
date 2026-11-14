@@ -1,0 +1,32 @@
+{
+    "headers": {
+        "Authorization": "Bearer test-casdoor-webhook-secret",
+        "Content-Type": "application/json"
+    },
+    "body": {
+        "id": 0,
+        "owner": "acme",
+        "name": "4677bed3-d384-471f-b767-9f95d82f5e0c",
+        "createdTime": "2026-11-13T22:38:09Z",
+        "organization": "acme",
+        "clientIp": "192.0.2.10",
+        "user": "gus",
+        "method": "POST",
+        "requestUri": "/api/login",
+        "action": "login",
+        "language": "en",
+        "object": "{\"application\":\"app-acme\",\"organization\":\"acme\",\"provider\":\"provider_globex_oidc\",\"state\":\"app-acme\",\"redirectUri\":\"https://casdoor.example/callback\",\"method\":\"signup\",\"type\":\"login\"}",
+        "response": "{status:\"ok\", msg:\"\"}",
+        "statusCode": 200,
+        "detail": "",
+        "isTriggered": false,
+        "prevHash": "",
+        "hash": "",
+        "extendedUser": {
+            "owner": "acme",
+            "name": "gus",
+            "id": "7219e2b2-93de-4e9d-9dd2-dc9b73b5f62b",
+            "isAdmin": false
+        }
+    }
+}
