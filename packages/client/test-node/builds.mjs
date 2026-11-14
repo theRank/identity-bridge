@@ -1,6 +1,6 @@
 // Plain Node checks of the built package: its ES module and CommonJS builds, side by side, and the root wechat.js
 import assert from 'node:assert/strict'
-import { existsSync, readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import * as esm from '@therank/identity-bridge-client'
 import * as esmWechat from '@therank/identity-bridge-client/wechat'
@@ -18,7 +18,10 @@ assert.match(require.resolve('@therank/identity-bridge-client/wechat'), /\/dist\
 assert.equal(json('package.json').main, './dist/cjs/index.js')
 // Node reads dist/cjs as CommonJS whatever the package's type
 assert.deepEqual(json('dist/cjs/package.json'), { type: 'commonjs' })
-for (const path of ['dist/index.d.ts', 'dist/wechat.d.ts', 'dist/cjs/index.d.ts', 'dist/cjs/wechat.d.ts']) assert.ok(existsSync(file(path)), path)
+// Exactly what the build emits: it empties dist/ first, so nothing stale is packed
+const emitted = ['form', 'index', 'wechat'].flatMap((name) => [`${name}.js`, `${name}.d.ts`])
+const expected = ['cjs', 'cjs/package.json', ...emitted, ...emitted.map((path) => `cjs/${path}`)]
+assert.deepEqual(readdirSync(file('dist'), { recursive: true }).map(String).sort(), expected.sort())
 
 const options = { url: 'https://id.acme.example', audience: 'acme', getIdpToken: async () => 'idp-token' }
 for (const build of [esm, cjs]) {

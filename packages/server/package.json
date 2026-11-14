@@ -20,7 +20,7 @@
         "dist"
     ],
     "scripts": {
-        "build": "tsc -p .",
+        "build": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\" && tsc -p .",
         "prepack": "npm run build",
         "test:node": "node test-node/verify.mjs"
     },
