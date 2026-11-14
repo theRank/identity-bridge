@@ -449,6 +449,13 @@ describe('/webhooks/{source}', () => {
             expect(calls).toHaveLength(0)
         })
 
+        it('answers a record with an empty name 200 with empty lists, logged as bad_payload', async () => {
+            const { send, logs, calls } = setup('casdoor')
+            await expectBody(await send(casdoorRequest(editCasdoor(newUserSignup, { record: (record) => (record.name = '') }))), 200, NONE)
+            expect(logs).toEqual([line('casdoor', 200, { code: 'bad_payload', delivered: 0, failed: 0 })])
+            expect(calls).toHaveLength(0)
+        })
+
         it.each([
             ['signup', signup],
             ['the login of an OAuth sign-up', loginOauthSignup],

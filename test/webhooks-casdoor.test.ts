@@ -302,6 +302,15 @@ describe('Casdoor webhooks', () => {
                 expect(badPayload(() => parseEdited(newUserSignup, { record: (record) => (record[member] = 0) }))).toBeInstanceOf(BadPayloadError)
             })
 
+            // An empty name would give every such record one event id
+            it.each([
+                ['a new-user record', newUserSignup],
+                ['an admin deletion', deleteByAdmin],
+                ['a signup record, before it would be ignored', signup],
+            ])('rejects an empty name on %s', (_, fixture) => {
+                expect(badPayload(() => parseEdited(fixture, { record: (record) => (record.name = '') }))).toBeInstanceOf(BadPayloadError)
+            })
+
             it('rejects a record of another organization without a string action, as unprocessable before filtered', () => {
                 const edit = (record: Doc) => {
                     record.organization = 'globex'

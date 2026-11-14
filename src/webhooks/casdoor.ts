@@ -23,7 +23,8 @@ export const casdoor: WebhookAdapter = {
         const action = own(record, 'action')
         const organization = own(record, 'organization')
         const response = own(record, 'response')
-        if (typeof name !== 'string' || typeof action !== 'string' || typeof organization !== 'string' || typeof response !== 'string') {
+        // An empty name would give every such record one event id
+        if (typeof name !== 'string' || name === '' || typeof action !== 'string' || typeof organization !== 'string' || typeof response !== 'string') {
             throw new BadPayloadError('record lacks name, action, organization or response')
         }
         // statusCode does not reflect the outcome: 200 on API records, 0 on new-user copies
