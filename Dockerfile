@@ -15,7 +15,7 @@ ARG NPM_CONFIG_REGISTRY=
 # No install script is needed: esbuild ships its binary as a platform package
 RUN --mount=type=cache,target=/root/.npm npm ci --ignore-scripts --no-audit --no-fund
 COPY tsconfig.json ./
-COPY scripts/build-node.ts scripts/
+COPY scripts/build-node.ts scripts/licence.ts scripts/
 COPY src ./src
 RUN npm run build:node
 

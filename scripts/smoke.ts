@@ -1,7 +1,11 @@
 // Checks a running bridge from outside, as a deployer does after every deploy. It needs no secret and no IdP token:
 // each check is an answer any healthy deployment gives. Exits 1 on any mismatch.
 //
-//     node scripts/smoke.ts <base-url> <product-id>
+//     node scripts/smoke.ts <base-url> <product-id> [--header 'name: value']...
+//
+// Each --header goes with every request, such as the access cookie an ESA debug domain needs. Header values are never
+// printed, since they can be credentials. A header given twice is sent once with both values, a cookie's joined with
+// "; " and any other's with ", ", so several cookies go in one --header, 'cookie: a=1; b=2', or in one each.
 //
 // Self-contained, with fetch only: Node runs this file by stripping its types, which needs import specifiers with a
 // .ts extension, and src/ is not written that way.
@@ -14,24 +18,48 @@ const TIMEOUT_MS = 10_000
 // The members of a private or secret JWK (RFC 7518 section 6): a JWKS holding one has published a signing key
 const PRIVATE_MEMBERS = ['d', 'p', 'q', 'dp', 'dq', 'qi', 'oth', 'k']
 
-const [base, product] = process.argv.slice(2)
-if (!base || !product) {
-    process.stderr.write('usage: node scripts/smoke.ts <base-url> <product-id>\n')
+function usage(problem?: string): never {
+    process.stderr.write(`${problem ? `${problem}\n` : ''}usage: node scripts/smoke.ts <base-url> <product-id> [--header 'name: value']...\n`)
     process.exit(2)
 }
+
+const extra = new Headers()
+
+// Headers refuses a name that is not a token and a value holding a line break. Its message is not passed on, since
+// it could quote the value.
+function addHeader(text: string | undefined): boolean {
+    const colon = text?.indexOf(':') ?? -1
+    if (text === undefined || colon < 0) return false
+    try {
+        extra.append(text.slice(0, colon).trim(), text.slice(colon + 1))
+        return true
+    } catch {
+        return false
+    }
+}
+
+const args: string[] = []
+for (let index = 2; index < process.argv.length; index++) {
+    if (process.argv[index] !== '--header') args.push(process.argv[index]!)
+    else if (!addHeader(process.argv[++index])) usage("a --header must be given as 'name: value'")
+}
+const [base, product] = args
+if (!base || !product) usage()
 const root = base.replace(/\/+$/, '')
 
 class Mismatch extends Error {}
 
 function get(path: string): Promise<Response> {
-    return fetch(`${root}${path}`, { signal: AbortSignal.timeout(TIMEOUT_MS) })
+    return fetch(`${root}${path}`, { headers: extra, signal: AbortSignal.timeout(TIMEOUT_MS) })
 }
 
 function exchange(params: Record<string, string>): Promise<Response> {
     const body = new URLSearchParams({ grant_type: TOKEN_EXCHANGE, subject_token: 'not-a-jwt', subject_token_type: JWT, audience: product!, ...params })
+    const headers = new Headers(extra)
+    headers.set('content-type', 'application/x-www-form-urlencoded')
     return fetch(`${root}/token`, {
         method: 'POST',
-        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        headers,
         body,
         signal: AbortSignal.timeout(TIMEOUT_MS),
     })
