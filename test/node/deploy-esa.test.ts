@@ -220,6 +220,7 @@ interface Call {
     form: Record<string, string>
     upload?: FormData
     signal: AbortSignal | undefined
+    redirect: string
 }
 
 type Respond = (call: Call, nth: number) => Response | undefined
@@ -280,12 +281,15 @@ function fakeEsa(respond: Respond = () => undefined, held: Record<string, { Type
             form: Object.fromEntries(new URLSearchParams(body)),
             ...(upload && { upload }),
             signal: init.signal ?? undefined,
+            redirect: request.redirect,
         }
         calls.push(call)
         // As fetch does, rejecting with the reason of a signal that has aborted
         init.signal?.throwIfAborted()
         const answer = respond(call, nth) ?? usual[action]?.(call, nth)
         if (answer === undefined) throw new Error(`no answer for ${action}`)
+        // And as it does for a redirect it was told not to follow
+        if (request.redirect === 'error' && answer.status >= 300 && answer.status < 400) throw new TypeError('fetch failed')
         return answer
     }
     return { fetch, calls, variables }
@@ -448,6 +452,7 @@ describe('deploy-esa', () => {
         expect(ran.slept).toHaveLength(1)
         expectNoValue(ran)
         expect(esa.calls.map((call) => ran.limits.get(call.signal!))).toEqual(esa.calls.map((call) => (call.action === 'OSS' ? 120_000 : 30_000)))
+        expect(esa.calls.map((call) => call.redirect)).toEqual(esa.calls.map(() => 'error'))
     })
 
     it('deploys to a routine that exists without creating it, and prints its default domain', async () => {
@@ -765,6 +770,20 @@ describe('deploy-esa', () => {
 
         expect(ran.code).toBe(1)
         expect(ran.stderr).toBe('error: GetRoutine: no answer from esa.cn-hangzhou.aliyuncs.com within 30 s\n')
+    })
+
+    // Following one would send the signed request, or the upload form's signature and token, wherever it points
+    it.each<[string, string]>([
+        ['GetRoutine', 'error: GetRoutine: no answer from esa.cn-hangzhou.aliyuncs.com\n'],
+        ['OSS', 'error: OSS upload: no answer\n'],
+    ])('follows no redirect from %s', async (action, message) => {
+        const moved = () => new Response(null, { status: 307, headers: { location: 'http://elsewhere.example/' } })
+        const esa = fakeEsa(answering(action, moved))
+        const ran = await deploy(esa)
+
+        expect(ran.code).toBe(1)
+        expect(ran.stderr).toBe(message)
+        expect(esa.calls.at(-1)!.action).toBe(action)
     })
 
     it('stops when the upload does not finish in time, before deploying', async () => {

@@ -420,7 +420,8 @@ async function createVersion(api: Api, io: Io, name: string, env: string, bundle
     form.append('file', new Blob([zip(ENTRY, bundle)]), 'code.zip')
     let response: Response
     try {
-        response = await io.fetch(url, { method: 'POST', body: form, signal: io.timeout(UPLOAD_TIMEOUT_MS) })
+        // A redirect followed would send the form's signature and token wherever it points
+        response = await io.fetch(url, { method: 'POST', body: form, redirect: 'error', signal: io.timeout(UPLOAD_TIMEOUT_MS) })
     } catch (error) {
         throw new Unanswered(`OSS upload: no answer${timedOut(error) ? ` within ${UPLOAD_TIMEOUT_MS / 1000} s` : ''}`)
     }
@@ -486,11 +487,13 @@ function client(host: string, credentials: Credentials, io: Io): Api {
         headers.authorization = authorization({ method, host, query, headers, body }, credentials)
         const search = canonicalQuery(query)
         const url = `https://${host}/${search === '' ? '' : `?${search}`}`
-        // The error is never quoted: its message or cause could name anything about the request
+        // The error is never quoted: its message or cause could name anything about the request. A redirect is not
+        // followed, since that would resend the signed request wherever it points.
         let response: Response
         let raw: string
         try {
-            response = await io.fetch(url, { method, headers, ...(form !== undefined && { body }), signal: io.timeout(API_TIMEOUT_MS) })
+            const init: RequestInit = { method, headers, redirect: 'error', signal: io.timeout(API_TIMEOUT_MS) }
+            response = await io.fetch(url, form === undefined ? init : { ...init, body })
         } catch (error) {
             throw new Unanswered(`${action}: no answer from ${host}${timedOut(error) ? ` within ${API_TIMEOUT_MS / 1000} s` : ''}`)
         }
