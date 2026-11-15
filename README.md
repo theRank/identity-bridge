@@ -34,13 +34,15 @@ configuration and deployment.
 - **Bounded revocation.** The bridge cannot see that an IdP banned a user or ended a session. It refuses IdP
   tokens older than `maxTokenAgeSeconds`, so every exchange needs a fresh IdP token, which the IdP issues only
   to a user it still accepts. A user cut off at the IdP keeps access for at most
-  `maxTokenAgeSeconds + tokenTtlSeconds + clockToleranceSeconds`: 31 minutes with the defaults.
+  `maxTokenAgeSeconds + clockToleranceSeconds + tokenTtlSeconds`, plus the verifier's own leeway on `exp`, up to
+  60 seconds with the server SDK: about 32 minutes with the defaults.
 - **Stable user ids.** A user's id is the UUIDv5 of the IdP's issuer and subject under a fixed namespace, or an
   id set by an administrator in the IdP. The token and the webhook paths give the same id for the same person,
   and the override keeps ids across a migration to another IdP.
 - **One format.** Access tokens follow RFC 9068, signed with ES256 only, and carry the user id and, when the IdP
   verified them, the email and phone number, whatever the IdP.
-- **No oracle, no leaks.** Every rejected IdP token gets the same error; the precise reason goes to a log code.
+- **Uniform errors, no personal data in logs.** Every rejected IdP token gets the same error; the precise reason
+  goes to a log code.
   Logs never hold tokens, emails, phone numbers or payloads.
 
 The bridge does not provide sign-in screens, sessions, refresh tokens, a user directory, roles or permissions,
@@ -76,12 +78,12 @@ inside mainland China runs two: one trusting Clerk, one trusting Casdoor.
 | Runtime | Where | Notes |
 |---|---|---|
 | [Cloudflare Workers](docs/deploy-workers.md) | Outside mainland China | The Free plan allows 100,000 requests a day and 10 ms of CPU time per request ([limits](https://developers.cloudflare.com/workers/platform/limits/#account-plan-limits)) |
-| [Alibaba Cloud ESA](docs/deploy-esa.md) | Mainland China, on an ICP-filed domain | No cold start observed. A request may make 10 fetches on the free plan, 100 on Advanced, so a webhook source relays to at most that many products; 16 KB of variables on the free plan ([billing](https://help.aliyun.com/en/edge-security-acceleration/esa/user-guide/functions-and-pages-billing)) |
-| [Alibaba Cloud Function Compute](docs/deploy-fc.md) | Mainland China, on an ICP-filed domain | The Node bundle as a code package. No fan-out limit. Observed: cold starts after idle minutes, unless an instance is kept. 4 KB of variables ([environment variables](https://www.alibabacloud.com/help/en/functioncompute/environment-variables)) |
+| [Alibaba Cloud ESA](docs/deploy-esa.md) | Mainland China, on an ICP-filed domain | No cold start observed. A request may make 10 fetches on the free plan, 100 on Advanced, so a webhook source relays to at most that many products; 16 KiB (16,384 characters of names and values) of variables on the free plan ([billing](https://help.aliyun.com/en/edge-security-acceleration/esa/user-guide/functions-and-pages-billing)) |
+| [Alibaba Cloud Function Compute](docs/deploy-fc.md) | Mainland China, on an ICP-filed domain | The Node bundle as a code package. No fan-out limit. Observed: cold starts after idle minutes, unless an instance is kept. Variables documented as 4 KB in total ([environment variables](https://www.alibabacloud.com/help/en/functioncompute/environment-variables)); 32 KiB accepted in 2026-11 |
 | [Node](docs/deploy-node.md) | Any host | The Node bundle or the container image, on a host you run |
 
 In mainland China, choose ESA when every webhook source relays to at most 10 products, or 100 on Advanced, and
-cold starts or cost matter; Function Compute otherwise; and the container when you already run the host of a
+cold starts matter; Function Compute otherwise; and the container when you already run the host of a
 self-hosted Casdoor, beside it.
 
 ## Releases

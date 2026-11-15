@@ -88,9 +88,10 @@ grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Atoken-exchange&subject_tok
 
 The age check bounds revocation. The bridge cannot see that an IdP banned a user or ended a session, but it
 refuses IdP tokens older than `maxTokenAgeSeconds`, so a client must get a fresh IdP token before each
-exchange, and the IdP checks the user again when it issues one. A user cut off at the IdP can keep a bridge
-token for at most `maxTokenAgeSeconds + tokenTtlSeconds + clockToleranceSeconds`: 900 + 900 + 60 seconds,
-31 minutes, with the defaults. Lower both durations for a faster cut-off.
+exchange, and the IdP checks the user again when it issues one. A user cut off at the IdP keeps access for at
+most `maxTokenAgeSeconds + clockToleranceSeconds + tokenTtlSeconds`, plus the verifier's own leeway on `exp`
+(at most 60 seconds, as below): 900 + 60 + 900 + 60 seconds, 32 minutes, with the defaults. Lower both
+durations for a faster cut-off.
 
 ### Success
 
