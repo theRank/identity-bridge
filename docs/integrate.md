@@ -182,7 +182,7 @@ Use a JWT library that supports ES256 and a JWKS, and check, for an access token
 - `typ` is `at+jwt` or `application/at+jwt`;
 - `iss` is the bridge's issuer and `aud` the product's id;
 - `exp` is present and in the future, allowing at most 60 seconds of clock skew;
-- `sub` is the user id.
+- `sub` is a user id: a lowercase UUID ([user ids](api.md#user-ids)).
 
 The `typ` check is the one libraries do not make for you, and it matters: event tokens are signed with the same
 key, name the product as `aud` and the user as `sub`, and have no `exp`. Without the check, an event delivered
@@ -205,10 +205,14 @@ import (
 	"fmt"
 	"math/big"
 	"net/http"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
 )
+
+// userID is the form of every bridge user id: a lowercase UUID
+var userID = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
 
 // Verifier checks the bridge's access tokens and event tokens for one product.
 type Verifier struct {
@@ -287,7 +291,7 @@ func (v *Verifier) verify(token, typ string) (*Claims, error) {
 	if err := decodeSegment(parts[1], &claims); err != nil {
 		return nil, err
 	}
-	if claims.Iss != v.Issuer || claims.Aud != v.Audience || claims.Sub == "" {
+	if claims.Iss != v.Issuer || claims.Aud != v.Audience || !userID.MatchString(claims.Sub) {
 		return nil, errors.New("wrong issuer, audience or subject")
 	}
 	return &claims, nil
@@ -383,10 +387,14 @@ since Python's standard library has no ECDSA: `pip install "pyjwt>=2.9" cryptogr
 do not accept the `PyJWK` that `get_signing_key_from_jwt` returns in `jwt.decode`; with them, pass its `.key`.
 
 ```python
+import re
+
 import jwt
 
 ISSUER = "https://id.acme.example"
 AUDIENCE = "acme"
+# The form of every bridge user id: a lowercase UUID
+USER_ID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 
 # One client, reused: it caches the bridge's keys
 jwks = jwt.PyJWKClient(f"{ISSUER}/.well-known/jwks.json", cache_keys=True, timeout=5)
@@ -398,7 +406,7 @@ def _verify(token: str, typ: str, required: list[str]) -> dict:
     if header_typ.removeprefix("application/") != typ:
         raise jwt.InvalidTokenError("wrong token type")
     key = jwks.get_signing_key_from_jwt(token)
-    return jwt.decode(
+    claims = jwt.decode(
         token,
         key,
         algorithms=["ES256"],
@@ -407,6 +415,9 @@ def _verify(token: str, typ: str, required: list[str]) -> dict:
         leeway=60,
         options={"require": required},
     )
+    if not isinstance(claims["sub"], str) or not USER_ID.fullmatch(claims["sub"]):
+        raise jwt.InvalidTokenError("not a bridge user id")
+    return claims
 
 
 def verify_access_token(token: str) -> dict:
