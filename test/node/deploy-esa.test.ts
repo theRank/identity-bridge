@@ -215,6 +215,7 @@ interface Call {
     query: Record<string, string>
     form: Record<string, string>
     upload?: FormData
+    signal: AbortSignal | undefined
 }
 
 type Respond = (call: Call, nth: number) => Response | undefined
@@ -272,8 +273,11 @@ function fakeEsa(respond: Respond = () => undefined, held: Record<string, { Type
             query: Object.fromEntries(parsed.searchParams),
             form: Object.fromEntries(new URLSearchParams(body)),
             ...(upload && { upload }),
+            signal: init.signal ?? undefined,
         }
         calls.push(call)
+        // As fetch does, rejecting with the reason of a signal that has aborted
+        init.signal?.throwIfAborted()
         const answer = respond(call, nth) ?? usual[action]?.(call, nth)
         if (answer === undefined) throw new Error(`no answer for ${action}`)
         return answer
@@ -293,13 +297,20 @@ interface Ran {
     // Whatever went to the process's own streams or the console rather than through Io
     direct: string
     slept: number[]
+    // The time limit each signal handed out stands for
+    limits: Map<AbortSignal, number>
 }
 
-async function deploy(esa: FakeEsa, args = ARGS, env: Record<string, string | undefined> = CREDENTIALS): Promise<Ran> {
+type Overrides = Partial<Pick<Io, 'sleep' | 'timeout'>>
+
+// By default a signal that never aborts, so that no test waits on a real time limit
+async function deploy(esa: FakeEsa, args = ARGS, env: Record<string, string | undefined> = CREDENTIALS, overrides: Overrides = {}): Promise<Ran> {
     let stdout = ''
     let stderr = ''
     let direct = ''
     const slept: number[] = []
+    const limits = new Map<AbortSignal, number>()
+    const timeout = overrides.timeout ?? (() => new AbortController().signal)
     const write = ((chunk: string | Uint8Array) => {
         direct += String(chunk)
         return true
@@ -317,9 +328,17 @@ async function deploy(esa: FakeEsa, args = ARGS, env: Record<string, string | un
             env,
             stdout: (text) => void (stdout += text),
             stderr: (text) => void (stderr += text),
-            sleep: async (ms) => void slept.push(ms),
+            sleep: async (ms) => {
+                slept.push(ms)
+                await overrides.sleep?.(ms)
+            },
+            timeout: (ms) => {
+                const signal = timeout(ms)
+                limits.set(signal, ms)
+                return signal
+            },
         })
-        return { code, stdout, stderr, direct, slept }
+        return { code, stdout, stderr, direct, slept, limits }
     } finally {
         for (const spy of spies) spy.mockRestore()
     }
@@ -418,6 +437,7 @@ describe('deploy-esa', () => {
         expect(ran.stderr).toBe('')
         expect(ran.slept).toHaveLength(1)
         expectNoValue(ran)
+        expect(esa.calls.map((call) => ran.limits.get(call.signal!))).toEqual(esa.calls.map((call) => (call.action === 'OSS' ? 120_000 : 30_000)))
     })
 
     it('deploys to a routine that exists without creating it, and prints its default domain', async () => {
@@ -528,13 +548,22 @@ describe('deploy-esa', () => {
         expectNoValue(ran)
     })
 
-    it('prints only the name of an unexpected error, whose message could quote anything', async () => {
+    it('stops at an answer it cannot read, quoting nothing of the error', async () => {
         const broken = () => new ReadableStream({ start: (controller) => controller.error(new Error(`broken at ${VALUES.SIGNING_KEYS}`)) })
         const esa = fakeEsa(answering('ListRoutineEnvironmentVariables', () => new Response(broken())))
         const ran = await deploy(esa)
 
         expect(ran.code).toBe(1)
-        expect(ran.stderr).toMatch(/^deploy failed: unexpected \w+\n$/)
+        expect(ran.stderr).toBe('deploy failed: ListRoutineEnvironmentVariables: the answer could not be read\n')
+        expectNoValue(ran)
+    })
+
+    it('prints only the name of an unexpected error, whose message could quote anything', async () => {
+        const sleep = () => Promise.reject(new RangeError(`broken at ${VALUES.SIGNING_KEYS}`))
+        const ran = await deploy(fakeEsa(), ARGS, CREDENTIALS, { sleep })
+
+        expect(ran.code).toBe(1)
+        expect(ran.stderr).toBe('deploy failed: unexpected RangeError\n')
         expectNoValue(ran)
     })
 
@@ -542,7 +571,25 @@ describe('deploy-esa', () => {
         const ran = await deploy({ ...fakeEsa(), fetch: () => Promise.reject(new TypeError('fetch failed')) })
 
         expect(ran.code).toBe(1)
-        expect(ran.stderr).toMatch(/GetRoutine.*esa\.cn-hangzhou\.aliyuncs\.com/)
+        expect(ran.stderr).toBe('deploy failed: GetRoutine: no answer from esa.cn-hangzhou.aliyuncs.com\n')
+    })
+
+    const expired = () => AbortSignal.abort(new DOMException('The operation was aborted due to timeout', 'TimeoutError'))
+
+    it('stops when the API does not answer in time, quoting nothing of the error', async () => {
+        const ran = await deploy(fakeEsa(), ARGS, CREDENTIALS, { timeout: expired })
+
+        expect(ran.code).toBe(1)
+        expect(ran.stderr).toBe('deploy failed: GetRoutine: no answer from esa.cn-hangzhou.aliyuncs.com within 30 s\n')
+    })
+
+    it('stops when the upload does not finish in time, before deploying', async () => {
+        const esa = fakeEsa()
+        const ran = await deploy(esa, ARGS, CREDENTIALS, { timeout: (ms) => (ms === 120_000 ? expired() : new AbortController().signal) })
+
+        expect(ran.code).toBe(1)
+        expect(ran.stderr).toBe('deploy failed: OSS upload: no answer within 120 s\n')
+        expect(esa.calls.at(-1)!.action).toBe('OSS')
     })
 
     it('stops when OSS refuses the upload, before deploying', async () => {

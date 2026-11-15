@@ -41,6 +41,8 @@ const MAX_PAGES = 100
 // Five minutes, as long as ESA's CLI waits for a version
 const POLL_MS = 2_000
 const POLLS = 150
+const API_TIMEOUT_MS = 30_000
+const UPLOAD_TIMEOUT_MS = 120_000
 // The file of the code package that the routine runs
 const ENTRY = 'routine/index.js'
 // 1980-01-01, the earliest date a zip entry holds, so that one bundle always gives the same archive
@@ -53,6 +55,9 @@ const ARGUMENT_ERRORS: Record<string, string> = {
 
 // A message known to quote no variable value and no credential, so that it can be printed
 class DeployError extends Error {}
+
+// No answer in time, or one cut off: a failure that may pass
+class Unanswered extends DeployError {}
 
 class ApiError extends DeployError {
     readonly code: string | undefined
@@ -171,6 +176,8 @@ export interface Io {
     stdout(text: string): void
     stderr(text: string): void
     sleep(ms: number): Promise<void>
+    // A signal that aborts after ms, as AbortSignal.timeout gives
+    timeout(ms: number): AbortSignal
 }
 
 interface Options {
@@ -228,7 +235,7 @@ async function deploy(options: Options, credentials: Credentials, io: Io): Promi
     // Both files first, so that a mistake in either stops the deploy before it changes anything
     const variables = readEnvFile(options.vars)
     const bundle = read(options.bundle, 'the bundle')
-    const api = client(options.endpoint, credentials, io.fetch)
+    const api = client(options.endpoint, credentials, io)
 
     let routine = await getRoutine(api, name)
     if (routine === undefined) await api({ action: 'CreateRoutine', method: 'POST', query: { Name: name, Description: 'identity-bridge' } })
@@ -240,7 +247,7 @@ async function deploy(options: Options, credentials: Credentials, io: Io): Promi
         if (BRIDGE_VARIABLE.test(key) && !variables.has(key)) io.stderr(`warning: ${env} holds ${key}, which ${options.vars} does not set; it is kept\n`)
     }
 
-    const version = await createVersion(api, io.fetch, name, env, bundle)
+    const version = await createVersion(api, io, name, env, bundle)
     io.stdout(`code version ${version}: uploaded\n`)
     await waitUntilAvailable(api, io, name, version)
     io.stdout(`code version ${version}: available\n`)
@@ -320,7 +327,7 @@ async function listVariables(api: Api, name: string, env: string): Promise<strin
 
 // A version created with DeployEnv takes that environment's variables. ESA answers with a form for OSS's
 // PostObject, which reads its fields before the file.
-async function createVersion(api: Api, fetch: Io['fetch'], name: string, env: string, bundle: Buffer): Promise<string> {
+async function createVersion(api: Api, io: Io, name: string, env: string, bundle: Buffer): Promise<string> {
     const answer = await api({
         action: 'CreateRoutineWithAssetsCodeVersion',
         method: 'POST',
@@ -341,9 +348,9 @@ async function createVersion(api: Api, fetch: Io['fetch'], name: string, env: st
     form.append('file', new Blob([zip(ENTRY, bundle)]), 'code.zip')
     let response: Response
     try {
-        response = await fetch(url, { method: 'POST', body: form })
-    } catch {
-        throw new DeployError('OSS upload: no answer')
+        response = await io.fetch(url, { method: 'POST', body: form, signal: io.timeout(UPLOAD_TIMEOUT_MS) })
+    } catch (error) {
+        throw new Unanswered(`OSS upload: no answer${timedOut(error) ? ` within ${UPLOAD_TIMEOUT_MS / 1000} s` : ''}`)
     }
     if (!response.ok) {
         // OSS answers an error in XML
@@ -380,7 +387,7 @@ type Answer = Record<string, unknown>
 type Api = (call: Call) => Promise<Answer>
 
 // The ESA OpenAPI, in RPC style: parameters in the query or a form body, and a JSON answer that names its error
-function client(host: string, credentials: Credentials, fetch: Io['fetch']): Api {
+function client(host: string, credentials: Credentials, io: Io): Api {
     return async ({ action, method, query = {}, form, carriesValues = false }) => {
         const body = form === undefined ? '' : new URLSearchParams(form).toString()
         const headers: Record<string, string> = {
@@ -393,19 +400,31 @@ function client(host: string, credentials: Credentials, fetch: Io['fetch']): Api
         if (form !== undefined) headers['content-type'] = 'application/x-www-form-urlencoded'
         headers.authorization = authorization({ method, host, query, headers, body }, credentials)
         const search = canonicalQuery(query)
+        const url = `https://${host}/${search === '' ? '' : `?${search}`}`
+        // The error is never quoted: its message or cause could name anything about the request
         let response: Response
+        let raw: string
         try {
-            response = await fetch(`https://${host}/${search === '' ? '' : `?${search}`}`, { method, headers, ...(form !== undefined && { body }) })
-        } catch {
-            throw new DeployError(`${action}: no answer from ${host}`)
+            response = await io.fetch(url, { method, headers, ...(form !== undefined && { body }), signal: io.timeout(API_TIMEOUT_MS) })
+        } catch (error) {
+            throw new Unanswered(`${action}: no answer from ${host}${timedOut(error) ? ` within ${API_TIMEOUT_MS / 1000} s` : ''}`)
         }
-        const answer = parseAnswer(await response.text())
+        try {
+            raw = await response.text()
+        } catch {
+            throw new Unanswered(`${action}: the answer could not be read`)
+        }
+        const answer = parseAnswer(raw)
         if (answer === undefined) throw new DeployError(`${action}: HTTP ${response.status}, an answer that is not JSON`)
         if (response.ok) return answer
         const code = text(answer.Code)
         const message = carriesValues ? undefined : text(answer.Message)
         throw new ApiError(`${action}: HTTP ${response.status} ${code ?? 'without a code'}${message === undefined ? '' : `: ${message}`}`, code)
     }
+}
+
+function timedOut(error: unknown): boolean {
+    return error instanceof DOMException && error.name === 'TimeoutError'
 }
 
 function parseAnswer(body: string): Answer | undefined {
@@ -442,5 +461,6 @@ if (isMain()) {
         stdout: (text) => void process.stdout.write(text),
         stderr: (text) => void process.stderr.write(text),
         sleep: (ms) => sleep(ms),
+        timeout: (ms) => AbortSignal.timeout(ms),
     })
 }
