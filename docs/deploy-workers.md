@@ -84,7 +84,15 @@ the new secret, since a new version starts new isolates.
 
 ## Upgrading
 
-Check out the new tag, `npm ci`, and deploy with the same `--name` and `--var`.
+Check out the new tag in the shallow clone, reinstall, and deploy with the same `--name` and `--var`:
+
+```sh
+git fetch --depth 1 origin tag v1.1.0
+git checkout v1.1.0
+npm ci
+```
+
+Or clone the new tag afresh, as above.
 
 ## Trying it locally
 

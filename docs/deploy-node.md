@@ -18,9 +18,8 @@ Pulling from `ghcr.io` can be slow or fail inside mainland China. There, mirror 
 the mainland, such as Alibaba Cloud Container Registry, or run the bundle on a `node:24-slim` image that a
 mainland registry mirrors.
 
-GitHub publishes a package as private, and a package never takes on its repository's visibility, so the
-package is made public by hand in its settings ([GitHub][gh-visibility]). If a pull asks for credentials, build
-the image from the `Dockerfile` or use the bundle.
+GitHub publishes a package as private ([GitHub][gh-visibility]). The maintainers make the package public by
+hand; until then, a pull asks for credentials, and the `Dockerfile` or the bundle serves instead.
 
 ### The bundle
 
@@ -74,6 +73,11 @@ docker run --detach --name identity-bridge --publish 127.0.0.1:8080:8080 \
     --env-file bridge.env ghcr.io/therank/identity-bridge:1.0.0
 ```
 
+`--env-file` makes the values part of the container's configuration, and `docker inspect` shows them to anyone
+who can reach the Docker daemon, as observed with this image in 2026-11; Docker warns against passing secrets
+as environment variables ([Compose secrets][compose-use-secrets]). Keep it for local runs, and use the Compose
+or Kubernetes secrets below in production.
+
 With Docker Compose secrets, which arrive as files, a shell reads them into the environment; `$(cat ...)` also
 drops a trailing newline:
 
@@ -94,6 +98,13 @@ secrets:
   webhook_secret_casdoor_acme:
     file: ./webhook-secret-casdoor-acme
 ```
+
+Compose mounts a file secret as the host's file itself, so it keeps the file's owner and permissions: the
+`uid`, `gid` and `mode` options apply only to secrets taken from the environment
+([Compose secrets][compose-use-secrets], [`secrets`][compose-service-secrets]). The bridge runs as uid 1000, so
+make each file readable by it, for example with `sudo chown 1000 <file> && chmod 400 <file>`. A file it cannot
+read leaves its variable empty, and the bridge serves in [failure mode](api.md#failure-mode). Docker Desktop's
+file sharing can hide this on a workstation.
 
 On Kubernetes, give each variable from a Secret with `env[].valueFrom.secretKeyRef`.
 
@@ -194,6 +205,8 @@ node scripts/smoke.ts http://127.0.0.1:8080 acme
 [docker-kvfile]: https://github.com/docker/cli/blob/fdd4b8e5da335e1d0d83d29af5045f57280cd694/pkg/kvfile/kvfile.go#L18-L19
 [compose-env-file]: https://docs.docker.com/compose/how-tos/environment-variables/variable-interpolation/#env-file-syntax
 [docker-stop]: https://docs.docker.com/reference/cli/docker/container/stop/#timeout
+[compose-use-secrets]: https://docs.docker.com/compose/how-tos/use-secrets/
+[compose-service-secrets]: https://docs.docker.com/reference/compose-file/services/#secrets
 [compose-stop]: https://docs.docker.com/reference/compose-file/services/#stop_grace_period
 [k8s-termination]: https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/#pod-termination-flow
 [wx-network]: https://developers.weixin.qq.com/miniprogram/dev/framework/ability/network.html
