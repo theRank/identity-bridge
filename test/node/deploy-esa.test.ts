@@ -652,6 +652,49 @@ describe('deploy-esa', () => {
         expect(esa.calls.at(-1)!.action).toBe('OSS')
     })
 
+    describe('creating the version', () => {
+        const created = (fields: Record<string, unknown>) => json(200, { RequestId: 'r', CodeVersion: VERSION, Status: 'Init', OssPostConfig: OSS, ...fields })
+        const uploaded = (esa: FakeEsa) => esa.calls.some((call) => call.action === 'OSS')
+
+        // JSON.parse would round 1763100000000000001 to 1763100000000000000, another version
+        it.each<[string, () => Response]>([
+            ['a number', () => new Response(JSON.stringify({ CodeVersion: 'x', OssPostConfig: OSS }).replace('"x"', VERSION))],
+            ['missing', () => created({ CodeVersion: undefined })],
+            ['empty', () => created({ CodeVersion: '' })],
+            ['an object', () => created({ CodeVersion: { Id: VERSION } })],
+        ])('stops at a CodeVersion that is %s, before uploading', async (_, answer) => {
+            const esa = fakeEsa(answering('CreateRoutineWithAssetsCodeVersion', answer))
+            const ran = await deploy(esa)
+
+            expect(ran.code).toBe(1)
+            expect(ran.stderr).toBe('deploy failed: CreateRoutineWithAssetsCodeVersion: the answer has no CodeVersion as text\n')
+            expect(uploaded(esa)).toBe(false)
+        })
+
+        it.each([
+            ['an upload form over plain HTTP', { ...OSS, Url: 'http://routine-upload.oss.example/' }],
+            ['no upload form', undefined],
+            ['an upload form without its policy', { ...OSS, Policy: undefined }],
+        ])('stops at %s, before uploading', async (_, form) => {
+            const esa = fakeEsa(answering('CreateRoutineWithAssetsCodeVersion', () => created({ OssPostConfig: form })))
+            const ran = await deploy(esa)
+
+            expect(ran.code).toBe(1)
+            expect(ran.stderr).toMatch(/^deploy failed: CreateRoutineWithAssetsCodeVersion: the answer has no upload form over HTTPS\n$/)
+            expect(uploaded(esa)).toBe(false)
+            expectNoValue(ran, OSS.Signature, OSS.Policy, OSS.XOssSecurityToken)
+        })
+
+        it('sends no security token to OSS when the form has none', async () => {
+            const esa = fakeEsa(answering('CreateRoutineWithAssetsCodeVersion', () => created({ OssPostConfig: { ...OSS, XOssSecurityToken: undefined } })))
+            const ran = await deploy(esa)
+
+            expect(ran.code).toBe(0)
+            const upload = esa.calls.find((call) => call.action === 'OSS')!
+            expect([...upload.upload!.keys()]).toEqual(['OSSAccessKeyId', 'Signature', 'policy', 'key', 'file'])
+        })
+    })
+
     it('stops when OSS refuses the upload, before deploying', async () => {
         const refused = '<?xml version="1.0"?>\n<Error><Code>AccessDenied</Code><Message>Invalid according to Policy: Policy expired.</Message></Error>'
         const esa = fakeEsa(answering('OSS', () => new Response(refused, { status: 403, headers: { 'content-type': 'application/xml' } })))

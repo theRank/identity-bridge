@@ -349,16 +349,20 @@ async function createVersion(api: Api, io: Io, name: string, env: string, bundle
         method: 'POST',
         form: { Name: name, CodeDescription: `identity-bridge ${sha256(bundle).slice(0, 12)}`, DeployEnv: env },
     })
-    const version = text(answer.CodeVersion)
+    // Text only: as a number, a version of 19 digits would lose its last ones to JSON.parse
+    const version = typeof answer.CodeVersion === 'string' && answer.CodeVersion !== '' ? answer.CodeVersion : undefined
+    if (version === undefined) throw new DeployError('CreateRoutineWithAssetsCodeVersion: the answer has no CodeVersion as text')
     const oss = isRecord(answer.OssPostConfig) ? answer.OssPostConfig : {}
     const [url, accessKeyId, signature, policy, key] = ['Url', 'OSSAccessKeyId', 'Signature', 'Policy', 'Key'].map((field) => text(oss[field]))
-    if (version === undefined || !url || !accessKeyId || !signature || !policy || !key) {
-        throw new DeployError('CreateRoutineWithAssetsCodeVersion: the answer has no code version or upload form')
+    // Over plain HTTP, the form's signature and security token would travel in clear
+    if (!url || !/^https:\/\//i.test(url) || !accessKeyId || !signature || !policy || !key) {
+        throw new DeployError('CreateRoutineWithAssetsCodeVersion: the answer has no upload form over HTTPS')
     }
     const form = new FormData()
     form.append('OSSAccessKeyId', accessKeyId)
     form.append('Signature', signature)
-    form.append('x-oss-security-token', text(oss.XOssSecurityToken) ?? '')
+    const token = text(oss.XOssSecurityToken)
+    if (token !== undefined) form.append('x-oss-security-token', token)
     form.append('policy', policy)
     form.append('key', key)
     form.append('file', new Blob([zip(ENTRY, bundle)]), 'code.zip')
