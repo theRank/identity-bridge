@@ -69,9 +69,18 @@ Why each one:
 ## Configuration and secrets
 
 The configuration, the keys and the webhook secrets are environment variables, which Function Compute stores
-encrypted. Their names and values must fit in 4 KB in total ([environment variables][fc-env]). Minify
-`BRIDGE_CONFIG`; [sizes](configuration.md#sizes) gives typical lengths. A deployment that does not fit needs
-another runtime: the bridge reads its configuration only from the environment.
+encrypted at rest ([environment variables][fc-env]).
+
+**Size.** Function Compute documents a limit of 4 KB for all environment variables together
+([environment variables][fc-env]). Observed on Function Compute 3.0 in 2026-11, `UpdateFunction` accepted up
+to 32 KiB and refused 33 KiB with `Environment variable size is too large (max: 32768, actual: '33792')`.
+Keep the minified configuration, the keys and the secrets within the documented 4 KB;
+[sizes](configuration.md#sizes) gives typical lengths. A deployment that does not fit needs another runtime:
+the bridge reads its configuration only from the environment.
+
+**Who can read them.** `GetFunction` returns the function's environment variables, the keys and secrets
+included, to any RAM user allowed the action `fc:GetFunction` on it ([GetFunction][fc-get-function]). Grant
+that action only to the people and roles that deploy the bridge.
 
 Changing a variable updates the function, and new instances load it. Then wait for the update, as below, and
 run the smoke test.
@@ -116,7 +125,7 @@ Observed: a code package function serves the new code at once. [What the smoke t
 
 Follow [rotating the signing key](configuration.md#rotating-the-signing-key): update `SIGNING_KEYS`, wait for
 the update, run the smoke test, and later update it again without the retired key. During a rotation
-`SIGNING_KEYS` holds two keys; check that they still fit in 4 KB with the rest.
+`SIGNING_KEYS` holds two keys; check that everything still fits within the documented 4 KB.
 
 ## Container images
 
@@ -136,6 +145,7 @@ and region; its Personal Edition has no service level agreement, so use the Ente
 [fc-concurrency]: https://www.alibabacloud.com/help/en/functioncompute/configure-the-concurrency-of-a-single-instance
 [fc-instance-types]: https://www.alibabacloud.com/help/en/functioncompute/instance-types-and-specifications
 [fc-env]: https://www.alibabacloud.com/help/en/functioncompute/environment-variables
+[fc-get-function]: https://www.alibabacloud.com/help/en/functioncompute/api-fc-2023-03-30-getfunction
 [fc-http-trigger-config]: https://www.alibabacloud.com/help/en/functioncompute/api-fc-2023-03-30-struct-httptriggerconfig
 [fc-http-triggers]: https://www.alibabacloud.com/help/en/functioncompute/http-triggers-overview
 [fc-http-invoke]: https://www.alibabacloud.com/help/en/functioncompute/http-trigger-invoking-function
