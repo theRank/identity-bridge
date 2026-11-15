@@ -4,7 +4,8 @@
 //     node scripts/smoke.ts <base-url> <product-id> [--header 'name: value']...
 //
 // Each --header goes with every request, such as the access cookie an ESA debug domain needs. Header values are never
-// printed, since they can be credentials.
+// printed, since they can be credentials. A header given twice is sent once, its values joined with ", ", so
+// several cookies go in one --header: 'cookie: a=1; b=2'.
 //
 // Self-contained, with fetch only: Node runs this file by stripping its types, which needs import specifiers with a
 // .ts extension, and src/ is not written that way.
