@@ -307,13 +307,14 @@ interface Ran {
     limits: Map<AbortSignal, number>
 }
 
-type Overrides = Partial<Pick<Io, 'sleep' | 'timeout'>>
+type Overrides = Partial<Pick<Io, 'sleep' | 'timeout' | 'now'>>
 
-// By default a signal that never aborts, so that no test waits on a real time limit
+// By default a signal that never aborts and a clock that moves only by sleeping, so that no test waits on real time
 async function deploy(esa: FakeEsa, args = ARGS, env: Record<string, string | undefined> = CREDENTIALS, overrides: Overrides = {}): Promise<Ran> {
     let stdout = ''
     let stderr = ''
     let direct = ''
+    let clock = 1_763_100_000_000
     const slept: number[] = []
     const limits = new Map<AbortSignal, number>()
     const timeout = overrides.timeout ?? (() => new AbortController().signal)
@@ -336,8 +337,10 @@ async function deploy(esa: FakeEsa, args = ARGS, env: Record<string, string | un
             stderr: (text) => void (stderr += text),
             sleep: async (ms) => {
                 slept.push(ms)
+                clock += ms
                 await overrides.sleep?.(ms)
             },
+            now: overrides.now ?? (() => clock),
             timeout: (ms) => {
                 const signal = timeout(ms)
                 limits.set(signal, ms)
@@ -843,6 +846,7 @@ describe('deploy-esa', () => {
             ['an HTTP 503', () => apiError(503, 'ServiceUnavailable', 'The service is unavailable.')],
             ['a 502 that is not JSON', () => new Response('<html>Bad Gateway</html>', { status: 502 })],
             ['throttling', () => apiError(400, 'Throttling.User', 'Request was denied due to user flow control.')],
+            ['an HTTP 429 without a Throttling code', () => apiError(429, 'TooManyRequests', 'Too many requests.')],
             [
                 'a network error',
                 () => {
@@ -896,17 +900,41 @@ describe('deploy-esa', () => {
         })
     })
 
-    it('gives up on a version that stays Init, waiting between checks', async () => {
-        const esa = fakeEsa(answering('GetRoutineCodeVersionInfo', () => json(200, { CodeVersion: VERSION, Status: 'Init' })))
-        const ran = await deploy(esa)
+    describe('waiting for the version', () => {
+        const init = () => json(200, { CodeVersion: VERSION, Status: 'Init' })
+        const checks = (esa: FakeEsa) => esa.calls.filter((call) => call.action === 'GetRoutineCodeVersionInfo').length
 
-        expect(ran.code).toBe(1)
-        expect(ran.stderr).toMatch(new RegExp(`${VERSION}.*Init`))
-        const checks = esa.calls.filter((call) => call.action === 'GetRoutineCodeVersionInfo').length
-        expect(checks).toBeGreaterThan(10)
-        expect(ran.slept).toHaveLength(checks - 1)
-        expect(ran.slept.reduce((total, ms) => total + ms, 0)).toBeGreaterThanOrEqual(60_000)
-        expect(esa.calls.map((call) => call.action)).not.toContain('CreateRoutineCodeDeployment')
+        it('gives up on a version that stays Init after five minutes, waiting between checks', async () => {
+            const esa = fakeEsa(answering('GetRoutineCodeVersionInfo', init))
+            const ran = await deploy(esa)
+
+            expect(ran.code).toBe(1)
+            expect(ran.stderr).toBe(`error: code version ${VERSION} is not available after 300 s\n`)
+            expect(ran.slept).toHaveLength(checks(esa) - 1)
+            expect(ran.slept.reduce((total, ms) => total + ms, 0)).toBe(300_000)
+            expect(esa.calls.map((call) => call.action)).not.toContain('CreateRoutineCodeDeployment')
+        })
+
+        it('counts the time the checks themselves take', async () => {
+            let now = 1_763_100_000_000
+            const esa = fakeEsa(answering('GetRoutineCodeVersionInfo', init))
+            const ran = await deploy(esa, ARGS, CREDENTIALS, { now: () => (now += 61_000) })
+
+            expect(ran.code).toBe(1)
+            expect(ran.stderr).toMatch(new RegExp(`^error: code version ${VERSION} is not available after \\d+ s\\n$`))
+            expect(checks(esa)).toBeLessThanOrEqual(6)
+        })
+
+        it('says the version is not available, rather than still Init, when the last checks failed', async () => {
+            const esa = fakeEsa((call, nth) => {
+                if (call.action !== 'GetRoutineCodeVersionInfo') return undefined
+                return nth % 2 === 0 ? init() : apiError(503, 'ServiceUnavailable', 'The service is unavailable.')
+            })
+            const ran = await deploy(esa)
+
+            expect(ran.code).toBe(1)
+            expect(ran.stderr).toBe(`error: code version ${VERSION} is not available after 300 s\n`)
+        })
     })
 
     describe('before calling the API', () => {

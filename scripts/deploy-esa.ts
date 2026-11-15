@@ -45,8 +45,8 @@ const BRIDGE_VARIABLE = /^(BRIDGE_CONFIG|SIGNING_KEYS|WEBHOOK_SECRET_[A-Z0-9_]+)
 const PAGE_SIZE = 50
 const MAX_PAGES = 100
 // Five minutes, as long as ESA's CLI waits for a version
+const WAIT_MS = 300_000
 const POLL_MS = 2_000
-const POLLS = 150
 const RETRIES = 3
 const API_TIMEOUT_MS = 30_000
 const UPLOAD_TIMEOUT_MS = 120_000
@@ -80,7 +80,7 @@ class ApiError extends DeployError {
 // What may pass on its own: no answer, a server error or throttling
 function transient(error: unknown): boolean {
     if (error instanceof Unanswered) return true
-    return error instanceof ApiError && (error.status >= 500 || (error.code?.startsWith('Throttling') ?? false))
+    return error instanceof ApiError && (error.status >= 500 || error.status === 429 || (error.code?.startsWith('Throttling') ?? false))
 }
 
 export interface Credentials {
@@ -194,6 +194,8 @@ export interface Io {
     sleep(ms: number): Promise<void>
     // A signal that aborts after ms, as AbortSignal.timeout gives
     timeout(ms: number): AbortSignal
+    // In ms, as Date.now gives
+    now(): number
 }
 
 interface Options {
@@ -432,11 +434,17 @@ async function createVersion(api: Api, io: Io, name: string, env: string, bundle
 }
 
 // A version is Init until its upload is unpacked, then Available. Any other status is a failed build, as ESA's CLI
-// reads it. A check that fails in a way that may pass is tried again, up to RETRIES times in a row.
+// reads it. A check that fails in a way that may pass is tried again, up to RETRIES times in a row. The wait is
+// bounded by the time spent, the checks' own included, rather than by their number.
 async function waitUntilAvailable(api: Api, io: Io, name: string, version: string): Promise<void> {
+    const start = io.now()
     let failures = 0
-    for (let check = 1; check <= POLLS; check++) {
-        if (check > 1) await io.sleep(POLL_MS)
+    for (let check = 1; ; check++) {
+        if (check > 1) {
+            const waited = io.now() - start
+            if (waited >= WAIT_MS) throw new DeployError(`code version ${version} is not available after ${Math.round(waited / 1000)} s`)
+            await io.sleep(POLL_MS)
+        }
         let answer: Answer
         try {
             answer = await api({ action: 'GetRoutineCodeVersionInfo', method: 'GET', query: { Name: name, CodeVersion: version } })
@@ -449,7 +457,6 @@ async function waitUntilAvailable(api: Api, io: Io, name: string, version: strin
         if (status?.toLowerCase() === 'available') return
         if (status?.toLowerCase() !== 'init') throw new DeployError(`code version ${version} is ${status ?? 'without a status'}`)
     }
-    throw new DeployError(`code version ${version} is still Init after ${((POLLS - 1) * POLL_MS) / 1000} s`)
 }
 
 interface Call {
@@ -541,5 +548,6 @@ if (isMain()) {
         stderr: (text) => void process.stderr.write(text),
         sleep: (ms) => sleep(ms),
         timeout: (ms) => AbortSignal.timeout(ms),
+        now: () => Date.now(),
     })
 }
