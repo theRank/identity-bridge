@@ -1,6 +1,7 @@
 // Deploys the bridge to an ESA Functions and Pages routine through the ESA OpenAPI, with the deployer's AccessKey:
 //
 //     node scripts/deploy-esa.ts --name <routine> --bundle <esa.js> --vars <file> [--env staging|production] [--endpoint <host>]
+//                                [--print-access-token]
 //
 // In order, it:
 // - creates the routine unless it exists;
@@ -8,7 +9,9 @@
 //   and warns of bridge variables the environment holds that the file lacks, deleting none;
 // - creates a code version bound to the environment, the only way the variables reach a version, uploads the bundle
 //   into it and waits until it is available;
-// - deploys that version to all requests and prints the routine's default domain.
+// - deploys that version to all requests and prints the routine's default domain;
+// - for staging, prints the addresses staging answers on: the default domain resolves to production;
+// - with --print-access-token, prints the token the default domain needs as its esa_er_token cookie.
 // ESA's own CLI cannot set the variables: it refuses values over 200 characters, which a configuration or a
 // rotation's SIGNING_KEYS exceed, though ESA takes them.
 //
@@ -26,7 +29,8 @@ import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 import { crc32, deflateRawSync } from 'node:zlib'
 
-const USAGE = 'usage: node scripts/deploy-esa.ts --name <routine> --bundle <esa.js> --vars <file> [--env staging|production] [--endpoint <host>]'
+const USAGE =
+    'usage: node scripts/deploy-esa.ts --name <routine> --bundle <esa.js> --vars <file> [--env staging|production] [--endpoint <host>] [--print-access-token]'
 const API_VERSION = '2024-09-10'
 const ALGORITHM = 'ACS3-HMAC-SHA256'
 const DEFAULT_ENDPOINT = 'esa.cn-hangzhou.aliyuncs.com'
@@ -51,7 +55,7 @@ const DOS_DATE = (1 << 5) | 1
 const ARGUMENT_ERRORS: Record<string, string> = {
     ERR_PARSE_ARGS_UNKNOWN_OPTION: 'unknown option',
     ERR_PARSE_ARGS_UNEXPECTED_POSITIONAL: 'unexpected argument',
-    ERR_PARSE_ARGS_INVALID_OPTION_VALUE: 'an option without its value',
+    ERR_PARSE_ARGS_INVALID_OPTION_VALUE: 'an option with a missing or unexpected value',
 }
 
 // A message known to quote no variable value and no credential, so that it can be printed
@@ -195,6 +199,7 @@ interface Options {
     vars: string
     env: string
     endpoint: string
+    printAccessToken: boolean
 }
 
 // 0 once deployed, 1 when a step fails, 2 for a usage error
@@ -217,26 +222,27 @@ export async function main(args: string[], io: Io): Promise<number> {
         return 0
     } catch (error) {
         // Any other message, such as a JSON parser's, can quote the text it failed on
-        io.stderr(`deploy failed: ${error instanceof DeployError ? error.message : `unexpected ${error instanceof Error ? error.name : 'error'}`}\n`)
+        io.stderr(`error: ${error instanceof DeployError ? error.message : `unexpected ${error instanceof Error ? error.name : 'error'}`}\n`)
         return 1
     }
 }
 
 // The arguments hold no secret, but a fixed message stays safe if one is passed by mistake
 function parseOptions(args: string[]): Options {
-    let values: { name?: string; bundle?: string; vars?: string; env?: string; endpoint?: string }
+    let values: { name?: string; bundle?: string; vars?: string; env?: string; endpoint?: string; 'print-access-token'?: boolean }
     try {
         const string = { type: 'string' } as const
-        values = parseArgs({ args, options: { name: string, bundle: string, vars: string, env: string, endpoint: string } }).values
+        const options = { name: string, bundle: string, vars: string, env: string, endpoint: string, 'print-access-token': { type: 'boolean' } } as const
+        values = parseArgs({ args, options }).values
     } catch (error) {
         throw new DeployError(ARGUMENT_ERRORS[(error as { code?: string }).code ?? ''] ?? 'invalid arguments')
     }
-    const { name, bundle, vars, env = 'production', endpoint = DEFAULT_ENDPOINT } = values
+    const { name, bundle, vars, env = 'production', endpoint = DEFAULT_ENDPOINT, 'print-access-token': printAccessToken = false } = values
     if (name === undefined || bundle === undefined || vars === undefined) throw new DeployError('--name, --bundle and --vars are required')
     if (!ROUTINE_NAME.test(name)) throw new DeployError('--name takes lowercase letters, digits and -, starting with a letter, at least 2 characters')
     if (!ENVIRONMENTS.includes(env)) throw new DeployError('--env is staging or production')
     if (!HOST.test(endpoint)) throw new DeployError(`--endpoint is a host name, such as ${DEFAULT_ENDPOINT}`)
-    return { name, bundle, vars, env, endpoint }
+    return { name, bundle, vars, env, endpoint, printAccessToken }
 }
 
 async function deploy(options: Options, credentials: Credentials, io: Io): Promise<void> {
@@ -269,6 +275,44 @@ async function deploy(options: Options, credentials: Credentials, io: Io): Promi
     routine ??= await getRoutine(api, name)
     const domain = text(routine?.DefaultRelatedRecord)
     io.stdout(domain === undefined ? 'the routine has no default domain\n' : `default domain: https://${domain}\n`)
+
+    if (env === 'staging') await printStagingAddresses(api, io, domain ?? '<domain>')
+    if (options.printAccessToken) await printAccessToken(api, io, name, domain ?? '<domain>')
+}
+
+// The default domain resolves to production, so staging answers only on its own addresses. They only help reach a
+// deploy that is done, so a failure to read them is a warning.
+async function printStagingAddresses(api: Api, io: Io, domain: string): Promise<void> {
+    let answer: Answer
+    try {
+        answer = await api({ action: 'GetRoutineStagingEnvIp', method: 'GET' })
+    } catch (error) {
+        if (!(error instanceof DeployError)) throw error
+        io.stderr(`warning: the staging addresses could not be read: ${error.message}\n`)
+        return
+    }
+    const addresses = Array.isArray(answer.IPV4) ? answer.IPV4.filter((address): address is string => typeof address === 'string' && address !== '') : []
+    if (addresses.length === 0) {
+        io.stderr('warning: ESA gave no staging address\n')
+        return
+    }
+    io.stdout(`staging addresses: ${addresses.join(', ')}\n`)
+    io.stdout(
+        `note: the default domain resolves to production; staging answers only on these addresses, as with ` +
+            `curl --resolve ${domain}:443:${addresses[0]} https://${domain}/healthz\n`,
+    )
+}
+
+// Only on request: the token opens the default domain to whoever holds it
+async function printAccessToken(api: Api, io: Io, name: string, domain: string): Promise<void> {
+    const answer = await api({ action: 'GetRoutineAccessToken', method: 'GET', query: { Name: name } })
+    const token = typeof answer.Token === 'string' && answer.Token !== '' ? answer.Token : undefined
+    if (token === undefined) throw new DeployError('GetRoutineAccessToken: the answer has no Token')
+    io.stdout(`access token: ${token}\n`)
+    io.stdout(
+        `note: the default domain answers only with it as the esa_er_token cookie, as in ` +
+            `node scripts/smoke.ts https://${domain} <product-id> --header 'cookie: esa_er_token=${token}'\n`,
+    )
 }
 
 function read(path: string, what: string): Buffer {

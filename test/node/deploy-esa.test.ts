@@ -28,6 +28,9 @@ const OSS = {
     Policy: 'eyJjb25kaXRpb25zIjpbXX0=',
     XOssSecurityToken: 'test-oss-security-token',
 }
+// Documentation addresses, RFC 5737
+const STAGING_IPS = ['203.0.113.10', '203.0.113.11']
+const ACCESS_TOKEN = 'test-access-token-dG9rZW4'
 
 // Every value holds a marker, so that a value printed in any form shows up
 const marker = () => `canary${randomBytes(12).toString('hex')}`
@@ -255,6 +258,8 @@ function fakeEsa(respond: Respond = () => undefined, held: Record<string, { Type
         OSS: () => new Response(null, { status: 204 }),
         GetRoutineCodeVersionInfo: (_, nth) => json(200, { RequestId: 'r', CodeVersion: VERSION, Status: nth === 1 ? 'Init' : 'Available' }),
         CreateRoutineCodeDeployment: (call) => json(200, { RequestId: 'r', DeploymentId: 'd-1', CodeVersions: JSON.parse(call.query.CodeVersions!) }),
+        GetRoutineStagingEnvIp: () => json(200, { RequestId: 'r', IPV4: STAGING_IPS }),
+        GetRoutineAccessToken: () => json(200, { RequestId: 'r', Token: ACCESS_TOKEN }),
     }
     const fetch: Io['fetch'] = async (url, init) => {
         const request = new Request(url, init)
@@ -461,6 +466,86 @@ describe('deploy-esa', () => {
         expect(esa.variables.production).toEqual({})
     })
 
+    describe('after deploying', () => {
+        const actions = (esa: FakeEsa) => esa.calls.map((call) => call.action)
+
+        // The default domain resolves to production, so staging answers only on its own addresses
+        it('prints the addresses staging answers on, and how to reach them', async () => {
+            const esa = fakeEsa()
+            const ran = await deploy(esa, [...ARGS, '--env', 'staging'])
+
+            expect(ran.code).toBe(0)
+            expect(actions(esa).slice(-2)).toEqual(['CreateRoutineCodeDeployment', 'GetRoutineStagingEnvIp'])
+            expect(esa.calls.at(-1)).toMatchObject({ method: 'GET', query: {}, body: '' })
+            expectSigned(esa.calls.at(-1)!)
+            expect(ran.stdout).toContain(`staging addresses: ${STAGING_IPS.join(', ')}\n`)
+            expect(ran.stdout).toMatch(/default domain resolves to production/)
+            expect(ran.stdout).toContain(`--resolve ${DOMAIN}:443:${STAGING_IPS[0]}`)
+            expect(ran.stderr).toBe('')
+        })
+
+        it('looks up no staging address for production', async () => {
+            const esa = fakeEsa()
+            const ran = await deploy(esa)
+
+            expect(actions(esa)).not.toContain('GetRoutineStagingEnvIp')
+            expect(ran.stdout).not.toContain(STAGING_IPS[0])
+        })
+
+        it.each<[string, () => Response, RegExp]>([
+            ['fails', () => apiError(403, 'Forbidden.RAM', 'The user is not authorized.'), /^warning: .*staging addresses.*GetRoutineStagingEnvIp: HTTP 403 Forbidden\.RAM/],
+            ['gives none', () => json(200, { RequestId: 'r', IPV4: [] }), /^warning: ESA gave no staging address/],
+            ['gives no list', () => json(200, { RequestId: 'r' }), /^warning: ESA gave no staging address/],
+        ])('only warns when the staging address lookup %s, as the deploy is done', async (_, answer, warning) => {
+            const esa = fakeEsa(answering('GetRoutineStagingEnvIp', answer))
+            const ran = await deploy(esa, [...ARGS, '--env', 'staging'])
+
+            expect(ran.code).toBe(0)
+            expect(ran.stderr.trimEnd().split('\n')).toEqual([expect.stringMatching(warning)])
+        })
+
+        it('prints the access token of the default domain with --print-access-token', async () => {
+            const esa = fakeEsa()
+            const ran = await deploy(esa, [...ARGS, '--print-access-token'])
+
+            expect(ran.code).toBe(0)
+            expect(actions(esa).at(-1)).toBe('GetRoutineAccessToken')
+            expect(esa.calls.at(-1)).toMatchObject({ method: 'GET', query: { Name: NAME }, body: '' })
+            expectSigned(esa.calls.at(-1)!)
+            expect(ran.stdout).toContain(`access token: ${ACCESS_TOKEN}\n`)
+            expect(ran.stdout).toContain(`--header 'cookie: esa_er_token=${ACCESS_TOKEN}'`)
+            expect(ran.stdout).toMatch(/esa_er_token cookie/)
+        })
+
+        it('prints the token after the staging addresses', async () => {
+            const esa = fakeEsa()
+            const ran = await deploy(esa, [...ARGS, '--env', 'staging', '--print-access-token'])
+
+            expect(ran.code).toBe(0)
+            expect(actions(esa).slice(-3)).toEqual(['CreateRoutineCodeDeployment', 'GetRoutineStagingEnvIp', 'GetRoutineAccessToken'])
+        })
+
+        it('never asks for the token without --print-access-token', async () => {
+            const esa = fakeEsa()
+            const ran = await deploy(esa, [...ARGS, '--env', 'staging'])
+
+            expect(actions(esa)).not.toContain('GetRoutineAccessToken')
+            expect(ran.stdout + ran.stderr).not.toContain(ACCESS_TOKEN)
+        })
+
+        it.each<[string, () => Response, string]>([
+            ['fails', () => apiError(403, 'Forbidden.RAM', 'The user is not authorized.'), 'GetRoutineAccessToken: HTTP 403 Forbidden.RAM: The user is not authorized.'],
+            ['gives none', () => json(200, { RequestId: 'r' }), 'GetRoutineAccessToken: the answer has no Token'],
+        ])('stops when the token asked for %s, the deploy done', async (_, answer, message) => {
+            const esa = fakeEsa(answering('GetRoutineAccessToken', answer))
+            const ran = await deploy(esa, [...ARGS, '--print-access-token'])
+
+            expect(ran.code).toBe(1)
+            expect(ran.stdout).toMatch(/deployed to 100 percent/)
+            expect(ran.stderr).toBe(`error: ${message}\n`)
+        })
+    })
+
     it('calls the endpoint --endpoint names', async () => {
         const esa = fakeEsa()
         const ran = await deploy(esa, [...ARGS, '--endpoint', 'esa.ap-southeast-1.api.example'])
@@ -614,7 +699,7 @@ describe('deploy-esa', () => {
         const ran = await deploy(esa)
 
         expect(ran.code).toBe(1)
-        expect(ran.stderr).toBe('deploy failed: ListRoutineEnvironmentVariables: the answer could not be read\n')
+        expect(ran.stderr).toBe('error: ListRoutineEnvironmentVariables: the answer could not be read\n')
         expectNoValue(ran)
     })
 
@@ -623,7 +708,7 @@ describe('deploy-esa', () => {
         const ran = await deploy(fakeEsa(), ARGS, CREDENTIALS, { sleep })
 
         expect(ran.code).toBe(1)
-        expect(ran.stderr).toBe('deploy failed: unexpected RangeError\n')
+        expect(ran.stderr).toBe('error: unexpected RangeError\n')
         expectNoValue(ran)
     })
 
@@ -631,7 +716,7 @@ describe('deploy-esa', () => {
         const ran = await deploy({ ...fakeEsa(), fetch: () => Promise.reject(new TypeError('fetch failed')) })
 
         expect(ran.code).toBe(1)
-        expect(ran.stderr).toBe('deploy failed: GetRoutine: no answer from esa.cn-hangzhou.aliyuncs.com\n')
+        expect(ran.stderr).toBe('error: GetRoutine: no answer from esa.cn-hangzhou.aliyuncs.com\n')
     })
 
     const expired = () => AbortSignal.abort(new DOMException('The operation was aborted due to timeout', 'TimeoutError'))
@@ -640,7 +725,7 @@ describe('deploy-esa', () => {
         const ran = await deploy(fakeEsa(), ARGS, CREDENTIALS, { timeout: expired })
 
         expect(ran.code).toBe(1)
-        expect(ran.stderr).toBe('deploy failed: GetRoutine: no answer from esa.cn-hangzhou.aliyuncs.com within 30 s\n')
+        expect(ran.stderr).toBe('error: GetRoutine: no answer from esa.cn-hangzhou.aliyuncs.com within 30 s\n')
     })
 
     it('stops when the upload does not finish in time, before deploying', async () => {
@@ -648,7 +733,7 @@ describe('deploy-esa', () => {
         const ran = await deploy(esa, ARGS, CREDENTIALS, { timeout: (ms) => (ms === 120_000 ? expired() : new AbortController().signal) })
 
         expect(ran.code).toBe(1)
-        expect(ran.stderr).toBe('deploy failed: OSS upload: no answer within 120 s\n')
+        expect(ran.stderr).toBe('error: OSS upload: no answer within 120 s\n')
         expect(esa.calls.at(-1)!.action).toBe('OSS')
     })
 
@@ -667,7 +752,7 @@ describe('deploy-esa', () => {
             const ran = await deploy(esa)
 
             expect(ran.code).toBe(1)
-            expect(ran.stderr).toBe('deploy failed: CreateRoutineWithAssetsCodeVersion: the answer has no CodeVersion as text\n')
+            expect(ran.stderr).toBe('error: CreateRoutineWithAssetsCodeVersion: the answer has no CodeVersion as text\n')
             expect(uploaded(esa)).toBe(false)
         })
 
@@ -680,7 +765,7 @@ describe('deploy-esa', () => {
             const ran = await deploy(esa)
 
             expect(ran.code).toBe(1)
-            expect(ran.stderr).toMatch(/^deploy failed: CreateRoutineWithAssetsCodeVersion: the answer has no upload form over HTTPS\n$/)
+            expect(ran.stderr).toMatch(/^error: CreateRoutineWithAssetsCodeVersion: the answer has no upload form over HTTPS\n$/)
             expect(uploaded(esa)).toBe(false)
             expectNoValue(ran, OSS.Signature, OSS.Policy, OSS.XOssSecurityToken)
         })
@@ -747,7 +832,7 @@ describe('deploy-esa', () => {
             const ran = await deploy(esa)
 
             expect(ran.code).toBe(1)
-            expect(ran.stderr).toMatch(/^deploy failed: GetRoutineCodeVersionInfo: /)
+            expect(ran.stderr).toMatch(/^error: GetRoutineCodeVersionInfo: /)
             expect(checks(esa)).toBe(4)
             expect(esa.calls.map((call) => call.action)).not.toContain('CreateRoutineCodeDeployment')
         })
@@ -801,6 +886,7 @@ describe('deploy-esa', () => {
             ['another environment', [...ARGS, '--env', 'prod']],
             ['an endpoint that is a URL', [...ARGS, '--endpoint', 'https://esa.cn-hangzhou.aliyuncs.com']],
             ['an unknown option', [...ARGS, '--force']],
+            ['a value for --print-access-token', [...ARGS, '--print-access-token=yes']],
             ['--env-file, which Node takes as its own', [...ARGS.slice(0, 4), '--env-file', VARS_FILE]],
             ['an argument', [...ARGS, 'extra']],
         ])('prints the usage for %s', async (_, args) => {
@@ -887,7 +973,7 @@ describe('deploy-esa', () => {
             const { code, stderr } = await run(SCRIPT, ['--name', NAME, '--bundle', BUNDLE_FILE, '--vars', missing], CREDENTIALS)
 
             expect(code).toBe(1)
-            expect(stderr).toBe(`deploy failed: cannot read the variables file ${missing}: ENOENT\n`)
+            expect(stderr).toBe(`error: cannot read the variables file ${missing}: ENOENT\n`)
         })
     })
 })
