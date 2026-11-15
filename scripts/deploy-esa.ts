@@ -223,8 +223,7 @@ export async function main(args: string[], io: Io): Promise<number> {
         return 2
     }
     try {
-        await deploy(options, { accessKeyId, accessKeySecret }, io)
-        return 0
+        return await deploy(options, { accessKeyId, accessKeySecret }, io)
     } catch (error) {
         // Any other message, such as a JSON parser's, can quote the text it failed on
         io.stderr(`error: ${error instanceof DeployError ? error.message : `unexpected ${error instanceof Error ? error.name : 'error'}`}\n`)
@@ -250,7 +249,8 @@ function parseOptions(args: string[]): Options {
     return { name, bundle, vars, env, endpoint, printAccessToken }
 }
 
-async function deploy(options: Options, credentials: Credentials, io: Io): Promise<void> {
+// 0, or 1 when the deploy is done but the access token asked for could not be read
+async function deploy(options: Options, credentials: Credentials, io: Io): Promise<number> {
     const { name, env } = options
     // Both files first, so that a mistake in either stops the deploy before it changes anything
     const variables = readVarsFile(options.vars)
@@ -281,43 +281,59 @@ async function deploy(options: Options, credentials: Credentials, io: Io): Promi
     const domain = text(routine?.DefaultRelatedRecord)
     io.stdout(domain === undefined ? 'the routine has no default domain\n' : `default domain: https://${domain}\n`)
 
-    if (env === 'staging') await printStagingAddresses(api, io, domain ?? '<domain>')
-    if (options.printAccessToken) await printAccessToken(api, io, name, domain ?? '<domain>')
+    const host = domain ?? '<domain>'
+    const staging = env === 'staging' ? await printStagingAddresses(api, io, host) : undefined
+    return options.printAccessToken && !(await printAccessToken(api, io, name, host, staging)) ? 1 : 0
 }
 
 // The default domain resolves to production, so staging answers only on its own addresses. They only help reach a
 // deploy that is done, so a failure to read them is a warning.
-async function printStagingAddresses(api: Api, io: Io, domain: string): Promise<void> {
+async function printStagingAddresses(api: Api, io: Io, domain: string): Promise<string[]> {
     let answer: Answer
     try {
         answer = await api({ action: 'GetRoutineStagingEnvIp', method: 'GET' })
     } catch (error) {
         if (!(error instanceof DeployError)) throw error
         io.stderr(`warning: the staging addresses could not be read: ${error.message}\n`)
-        return
+        return []
     }
     const addresses = Array.isArray(answer.IPV4) ? answer.IPV4.filter((address): address is string => typeof address === 'string' && address !== '') : []
     if (addresses.length === 0) {
         io.stderr('warning: ESA gave no staging address\n')
-        return
+        return []
     }
     io.stdout(`staging addresses: ${addresses.join(', ')}\n`)
     io.stdout(
         `note: the default domain resolves to production; staging answers only on these addresses, as with ` +
             `curl --resolve ${domain}:443:${addresses[0]} https://${domain}/healthz\n`,
     )
+    return addresses
 }
 
-// Only on request: the token opens the default domain to whoever holds it
-async function printAccessToken(api: Api, io: Io, name: string, domain: string): Promise<void> {
-    const answer = await api({ action: 'GetRoutineAccessToken', method: 'GET', query: { Name: name } })
-    const token = typeof answer.Token === 'string' && answer.Token !== '' ? answer.Token : undefined
-    if (token === undefined) throw new DeployError('GetRoutineAccessToken: the answer has no Token')
+// Only on request: the token opens the default domain to whoever holds it. It goes on a line of its own and never
+// into a command, which a quote in it would break. For staging, given its addresses, the smoke test, which has no
+// --resolve, needs the domain pointed at one of them first.
+async function printAccessToken(api: Api, io: Io, name: string, domain: string, staging: string[] | undefined): Promise<boolean> {
+    let token: string | undefined
+    try {
+        const answer = await api({ action: 'GetRoutineAccessToken', method: 'GET', query: { Name: name } })
+        token = typeof answer.Token === 'string' && answer.Token !== '' ? answer.Token : undefined
+        if (token === undefined) throw new DeployError('GetRoutineAccessToken: the answer has no Token')
+    } catch (error) {
+        if (!(error instanceof DeployError)) throw error
+        io.stderr(`deployed, but the access token could not be read: ${error.message}\n`)
+        return false
+    }
     io.stdout(`access token: ${token}\n`)
-    io.stdout(
-        `note: the default domain answers only with it as the esa_er_token cookie, as in ` +
-            `node scripts/smoke.ts https://${domain} <product-id> --header 'cookie: esa_er_token=${token}'\n`,
-    )
+    io.stdout('note: the default domain answers only with the token as its esa_er_token cookie\n')
+    if (staging !== undefined) {
+        io.stdout(
+            `note: the smoke test reaches staging only once ${domain} points at a staging address, ` +
+                `for example through this line in the hosts file: ${staging[0] ?? '<address>'} ${domain}\n`,
+        )
+    }
+    io.stdout(`smoke test: node scripts/smoke.ts https://${domain} <product-id> --header 'cookie: esa_er_token=<token>'\n`)
+    return true
 }
 
 function read(path: string, what: string): Buffer {

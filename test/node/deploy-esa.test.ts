@@ -525,16 +525,32 @@ describe('deploy-esa', () => {
             expect(esa.calls.at(-1)).toMatchObject({ method: 'GET', query: { Name: NAME }, body: '' })
             expectSigned(esa.calls.at(-1)!)
             expect(ran.stdout).toContain(`access token: ${ACCESS_TOKEN}\n`)
-            expect(ran.stdout).toContain(`--header 'cookie: esa_er_token=${ACCESS_TOKEN}'`)
             expect(ran.stdout).toMatch(/esa_er_token cookie/)
+            expect(ran.stdout).toContain(`node scripts/smoke.ts https://${DOMAIN} <product-id> --header 'cookie: esa_er_token=<token>'`)
         })
 
-        it('prints the token after the staging addresses', async () => {
+        // A quote in the token would break a command it was pasted into
+        it.each([
+            ['production', []],
+            ['staging', ['--env', 'staging']],
+        ])('prints the token for %s on its own line only', async (_, args) => {
+            const ran = await deploy(fakeEsa(), [...ARGS, ...args, '--print-access-token'])
+
+            expect(ran.stdout.split(ACCESS_TOKEN)).toHaveLength(2)
+            expect(ran.stdout).toContain(`access token: ${ACCESS_TOKEN}\n`)
+        })
+
+        // The smoke test has no --resolve, and the default domain resolves to production
+        it('says how to smoke test staging after the staging addresses', async () => {
             const esa = fakeEsa()
             const ran = await deploy(esa, [...ARGS, '--env', 'staging', '--print-access-token'])
 
             expect(ran.code).toBe(0)
             expect(actions(esa).slice(-3)).toEqual(['CreateRoutineCodeDeployment', 'GetRoutineStagingEnvIp', 'GetRoutineAccessToken'])
+            expect(ran.stdout).toContain(`--resolve ${DOMAIN}:443:${STAGING_IPS[0]}`)
+            expect(ran.stdout).toMatch(/smoke test reaches staging only once .* points at a staging address/)
+            expect(ran.stdout).toContain(`hosts file: ${STAGING_IPS[0]} ${DOMAIN}`)
+            expect(ran.stdout).toContain(`--header 'cookie: esa_er_token=<token>'`)
         })
 
         it('never asks for the token without --print-access-token', async () => {
@@ -548,13 +564,13 @@ describe('deploy-esa', () => {
         it.each<[string, () => Response, string]>([
             ['fails', forbidden, 'GetRoutineAccessToken: HTTP 403 Forbidden.RAM: The user is not authorized.'],
             ['gives none', () => json(200, { RequestId: 'r' }), 'GetRoutineAccessToken: the answer has no Token'],
-        ])('stops when the token asked for %s, the deploy done', async (_, answer, message) => {
+        ])('exits 1 when the token asked for %s, saying the deploy is done', async (_, answer, message) => {
             const esa = fakeEsa(answering('GetRoutineAccessToken', answer))
             const ran = await deploy(esa, [...ARGS, '--print-access-token'])
 
             expect(ran.code).toBe(1)
             expect(ran.stdout).toMatch(/deployed to 100 percent/)
-            expect(ran.stderr).toBe(`error: ${message}\n`)
+            expect(ran.stderr).toBe(`deployed, but the access token could not be read: ${message}\n`)
         })
     })
 
