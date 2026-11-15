@@ -193,7 +193,9 @@ already queued.
 
 To set the fields, read the webhook with `GET /api/get-webhook?id=admin/<webhook name>`, change them, and post
 the whole object back to `POST /api/update-webhook?id=admin/<webhook name>`, as an admin
-([API][casdoor-api], [source][casdoor-webhook-api]). The instance's Swagger page may not list the retry fields;
+([API][casdoor-api], [source][casdoor-webhook-api]). An organization admin must add
+`&organization=<organization>` to the `get-webhook` request, or Casdoor answers `null`; a global admin need not
+([source][casdoor-get-webhook], [source][casdoor-get-webhook-org]). The instance's Swagger page may not list the retry fields;
 Casdoor reads them anyway ([source][casdoor-webhook-struct]).
 
 ### Restart after the first webhook
@@ -293,6 +295,8 @@ program call only the HTTPS domains listed there, and those domains need ICP fil
 [casdoor-worker]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/object/webhook_worker.go#L31
 [casdoor-queue]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/object/webhook_event.go#L250-L267
 [casdoor-attempt]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/object/webhook_worker.go#L114-L201
+[casdoor-get-webhook]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/controllers/webhook.go#L79-L89
+[casdoor-get-webhook-org]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/object/webhook.go#L127-L138
 [casdoor-webhook-api]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/controllers/webhook.go#L71-L125
 [casdoor-worker-start]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/object/webhook_worker.go#L36-L44
 [casdoor-new-user]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/routers/record.go#L166-L191

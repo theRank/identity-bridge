@@ -54,8 +54,8 @@ bridge maps in the Clerk Dashboard, on the **Sessions** page, under **Customize 
   ([customizing][clerk-customize]); these four are well within it. Do not add others for the bridge: it reads
   only the mapped claims.
 - Clerk's session tokens expire after 60 seconds, and `getToken()` returns a valid one, from its cache or newly
-  minted ([`getToken()`][clerk-gettoken]). They are always far younger than the bridge's
-  `maxTokenAgeSeconds`.
+  minted ([`getToken()`][clerk-gettoken]), so a token can be up to a minute old. That is far younger than the
+  default `maxTokenAgeSeconds` of 900; for Clerk, keep it at 60 or more, although the configuration allows 30.
 
 ## Email verification
 
@@ -99,8 +99,10 @@ On the **Webhooks** page of the Clerk Dashboard, select **Add Endpoint** ([setti
 
 Copy the endpoint's signing secret, `whsec_...` ([webhooks][clerk-webhooks]), into the source's
 [webhook secret](configuration.md#webhook-secrets), `WEBHOOK_SECRET_CLERK_ACME` for the source `clerk-acme`.
-When you rotate the endpoint's secret, update the bridge's at the same time: until they match, deliveries fail
-with `401`, and Svix retries them.
+To rotate the secret, rotate it in Clerk first, then deploy the new value within about 24 hours: Svix signs each
+delivery with both the old and the new secret for that long ([Svix][svix-rotation],
+[Svix API][svix-rotate-api]), and the bridge accepts a delivery when any `v1` signature matches its secret,
+so no delivery fails.
 
 Clerk delivers webhooks through Svix ([webhooks][clerk-webhooks]), which signs each one
 ([verifying][svix-verify]) and retries a delivery not answered with a `2xx`, on a schedule that runs for more
@@ -128,6 +130,8 @@ Clients pass a fresh session token to the bridge: [integrate.md](integrate.md#cl
 [clerk-webhook-setup]: https://clerk.com/docs/guides/development/webhooks/syncing#set-up-a-webhook-endpoint
 [svix-verify]: https://docs.svix.com/receiving/verifying-payloads/how-manual
 [svix-retries]: https://docs.svix.com/retries
+[svix-rotation]: https://www.svix.com/blog/svix-update-december-2021-part-1/
+[svix-rotate-api]: https://pkg.go.dev/github.com/svix/svix-webhooks/go#Endpoint.RotateSecret
 [mdn-origin]: https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Origin
 [clerk-user-json]: https://github.com/clerk/javascript/blob/c9bdae3b0aef91699a73824fecc6726959196ab4/packages/backend/src/api/resources/JSON.ts#L695
 [clerk-deleted-json]: https://github.com/clerk/javascript/blob/c9bdae3b0aef91699a73824fecc6726959196ab4/packages/backend/src/api/resources/JSON.ts#L747-L764
