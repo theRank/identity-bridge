@@ -611,6 +611,67 @@ describe('deploy-esa', () => {
         expect(esa.calls.map((call) => call.action)).not.toContain('CreateRoutineCodeDeployment')
     })
 
+    describe('checking the version', () => {
+        const timedOut = () => {
+            throw new DOMException('The operation was aborted due to timeout', 'TimeoutError')
+        }
+        const failures: [string, () => Response][] = [
+            ['an HTTP 503', () => apiError(503, 'ServiceUnavailable', 'The service is unavailable.')],
+            ['a 502 that is not JSON', () => new Response('<html>Bad Gateway</html>', { status: 502 })],
+            ['throttling', () => apiError(400, 'Throttling.User', 'Request was denied due to user flow control.')],
+            [
+                'a network error',
+                () => {
+                    throw new TypeError('fetch failed')
+                },
+            ],
+            ['a timeout', timedOut],
+        ]
+        const checks = (esa: FakeEsa) => esa.calls.filter((call) => call.action === 'GetRoutineCodeVersionInfo').length
+
+        it.each(failures)('retries a check that fails with %s', async (_, failure) => {
+            const esa = fakeEsa((call, nth) => (call.action === 'GetRoutineCodeVersionInfo' && nth <= 3 ? failure() : undefined))
+            const ran = await deploy(esa)
+
+            expect(ran.code).toBe(0)
+            expect(checks(esa)).toBe(4)
+            expect(ran.slept).toHaveLength(3)
+            expect(esa.calls.map((call) => call.action)).toContain('CreateRoutineCodeDeployment')
+        })
+
+        it.each(failures)('stops after four checks in a row fail with %s', async (_, failure) => {
+            const esa = fakeEsa((call) => (call.action === 'GetRoutineCodeVersionInfo' ? failure() : undefined))
+            const ran = await deploy(esa)
+
+            expect(ran.code).toBe(1)
+            expect(ran.stderr).toMatch(/^deploy failed: GetRoutineCodeVersionInfo: /)
+            expect(checks(esa)).toBe(4)
+            expect(esa.calls.map((call) => call.action)).not.toContain('CreateRoutineCodeDeployment')
+        })
+
+        it('counts the failures in a row only', async () => {
+            const init = json(200, { CodeVersion: VERSION, Status: 'Init' })
+            const failing = new Set([1, 2, 3, 5, 6, 7])
+            const esa = fakeEsa((call, nth) => {
+                if (call.action !== 'GetRoutineCodeVersionInfo' || nth > 7) return undefined
+                return failing.has(nth) ? apiError(503, 'ServiceUnavailable', 'The service is unavailable.') : init
+            })
+            const ran = await deploy(esa)
+
+            expect(ran.code).toBe(0)
+            expect(checks(esa)).toBe(8)
+        })
+
+        it('stops at once on any other error', async () => {
+            const esa = fakeEsa(answering('GetRoutineCodeVersionInfo', () => apiError(400, 'InvalidParameter.CodeVersion', 'The code version is invalid.')))
+            const ran = await deploy(esa)
+
+            expect(ran.code).toBe(1)
+            expect(ran.stderr).toMatch(/GetRoutineCodeVersionInfo: HTTP 400 InvalidParameter\.CodeVersion/)
+            expect(checks(esa)).toBe(1)
+        })
+    })
+
     it('gives up on a version that stays Init, waiting between checks', async () => {
         const esa = fakeEsa(answering('GetRoutineCodeVersionInfo', () => json(200, { CodeVersion: VERSION, Status: 'Init' })))
         const ran = await deploy(esa)

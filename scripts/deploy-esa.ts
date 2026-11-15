@@ -41,6 +41,7 @@ const MAX_PAGES = 100
 // Five minutes, as long as ESA's CLI waits for a version
 const POLL_MS = 2_000
 const POLLS = 150
+const RETRIES = 3
 const API_TIMEOUT_MS = 30_000
 const UPLOAD_TIMEOUT_MS = 120_000
 // The file of the code package that the routine runs
@@ -60,12 +61,20 @@ class DeployError extends Error {}
 class Unanswered extends DeployError {}
 
 class ApiError extends DeployError {
+    readonly status: number
     readonly code: string | undefined
 
-    constructor(message: string, code: string | undefined) {
+    constructor(message: string, status: number, code: string | undefined) {
         super(message)
+        this.status = status
         this.code = code
     }
+}
+
+// What may pass on its own: no answer, a server error or throttling
+function transient(error: unknown): boolean {
+    if (error instanceof Unanswered) return true
+    return error instanceof ApiError && (error.status >= 500 || (error.code?.startsWith('Throttling') ?? false))
 }
 
 export interface Credentials {
@@ -362,16 +371,24 @@ async function createVersion(api: Api, io: Io, name: string, env: string, bundle
 }
 
 // A version is Init until its upload is unpacked, then Available. Any other status is a failed build, as ESA's CLI
-// reads it.
+// reads it. A check that fails in a way that may pass is tried again, up to RETRIES times in a row.
 async function waitUntilAvailable(api: Api, io: Io, name: string, version: string): Promise<void> {
-    for (let check = 1; ; check++) {
-        const answer = await api({ action: 'GetRoutineCodeVersionInfo', method: 'GET', query: { Name: name, CodeVersion: version } })
+    let failures = 0
+    for (let check = 1; check <= POLLS; check++) {
+        if (check > 1) await io.sleep(POLL_MS)
+        let answer: Answer
+        try {
+            answer = await api({ action: 'GetRoutineCodeVersionInfo', method: 'GET', query: { Name: name, CodeVersion: version } })
+        } catch (error) {
+            if (!transient(error) || ++failures > RETRIES) throw error
+            continue
+        }
+        failures = 0
         const status = text(answer.Status)
         if (status?.toLowerCase() === 'available') return
         if (status?.toLowerCase() !== 'init') throw new DeployError(`code version ${version} is ${status ?? 'without a status'}`)
-        if (check === POLLS) throw new DeployError(`code version ${version} is still Init after ${((POLLS - 1) * POLL_MS) / 1000} s`)
-        await io.sleep(POLL_MS)
     }
+    throw new DeployError(`code version ${version} is still Init after ${((POLLS - 1) * POLL_MS) / 1000} s`)
 }
 
 interface Call {
@@ -415,11 +432,11 @@ function client(host: string, credentials: Credentials, io: Io): Api {
             throw new Unanswered(`${action}: the answer could not be read`)
         }
         const answer = parseAnswer(raw)
-        if (answer === undefined) throw new DeployError(`${action}: HTTP ${response.status}, an answer that is not JSON`)
+        if (answer === undefined) throw new ApiError(`${action}: HTTP ${response.status}, an answer that is not JSON`, response.status, undefined)
         if (response.ok) return answer
         const code = text(answer.Code)
         const message = carriesValues ? undefined : text(answer.Message)
-        throw new ApiError(`${action}: HTTP ${response.status} ${code ?? 'without a code'}${message === undefined ? '' : `: ${message}`}`, code)
+        throw new ApiError(`${action}: HTTP ${response.status} ${code ?? 'without a code'}${message === undefined ? '' : `: ${message}`}`, response.status, code)
     }
 }
 
