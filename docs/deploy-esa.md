@@ -1,8 +1,8 @@
 # Deploying on Alibaba Cloud ESA
 
 The bridge as an ESA Functions and Pages routine, for mainland China. It suits deployments where every webhook
-source relays to at most 10 products, or 100 on the Advanced plan, and where cold starts or cost matter:
-observed, a routine showed no cold start, and the free plan covers a small deployment.
+source relays to at most 10 products, or 100 on the Advanced plan, and where cold starts matter: observed in
+2026-11, a routine showed no cold start after a deployment.
 [Choosing a runtime](../README.md#choosing-a-runtime) compares the options.
 
 ESA's documentation does not describe all of what a deployment meets. What it leaves out or contradicts is
@@ -26,11 +26,14 @@ curl -fsSLO https://github.com/theRank/identity-bridge/releases/download/v1.0.0/
 curl -fsSLO https://github.com/theRank/identity-bridge/releases/download/v1.0.0/esa.js.sha256
 sha256sum -c esa.js.sha256
 
-export ALIBABA_CLOUD_ACCESS_KEY_ID=<access key id> ALIBABA_CLOUD_ACCESS_KEY_SECRET=<access key secret>
+export ALIBABA_CLOUD_ACCESS_KEY_ID=<access key id>
+read -rs ALIBABA_CLOUD_ACCESS_KEY_SECRET && export ALIBABA_CLOUD_ACCESS_KEY_SECRET
 node scripts/deploy-esa.ts --name identity-bridge-acme --bundle esa.js --vars bridge.env
 ```
 
-The script needs Node 24 or later and nothing installed.
+The script needs Node 24 or later and nothing installed. `read -rs`, in bash or zsh, takes the AccessKey secret
+without showing it or keeping it in the shell's history; in a pipeline, take it from the CI system's secret store
+or a credentials file instead. Never type the secret into a command line.
 
 | Option | Meaning |
 |---|---|
@@ -39,7 +42,7 @@ The script needs Node 24 or later and nothing installed.
 | `--vars <file>` | The [variables file](#variables) |
 | `--env staging\|production` | The environment, `production` by default |
 | `--endpoint <host>` | The ESA OpenAPI endpoint, `esa.cn-hangzhou.aliyuncs.com` by default |
-| `--print-access-token` | Also print the access token of the [default domain](#default-domain-and-staging) |
+| `--print-access-token` | Also print the access token of the [default domain](#default-domain-and-staging), a credential: see there |
 
 In order, it:
 
@@ -60,19 +63,19 @@ production: code version 1794600000000000000 deployed to 100 percent of requests
 default domain: https://identity-bridge-acme-<account id>.debug.er.aliyun-esa.net
 ```
 
-It exits with `0` once deployed, `1` when a step fails, and `2` for a usage error. Nothing it prints holds a
-variable's value or the AccessKey: an error gives the API's code and message, and for the call that carries the
-values only its code.
+It exits with `0` once deployed, `1` when a step fails, and `2` for a usage error. It never prints a variable's
+value or the AccessKey: an error gives the API's code and message, and for the call that carries the values only
+its code. With `--print-access-token` it does print a credential, the default domain's access token.
 
 ### The AccessKey
 
-The script calls the ESA OpenAPI, version 2024-09-10, with the AccessKey of a RAM user. Grant it the system
-policy `AliyunESAFullAccess` ([policies][esa-ram-policies]), or a policy of your own that allows only the
-actions it calls: `esa:GetRoutine`, `esa:CreateRoutine`, `esa:SetRoutineEnvironmentVariables`,
-`esa:ListRoutineEnvironmentVariables`, `esa:CreateRoutineWithAssetsCodeVersion`,
-`esa:GetRoutineCodeVersionInfo`, `esa:CreateRoutineCodeDeployment`, `esa:GetRoutineStagingEnvIp` and, for
-`--print-access-token`, `esa:GetRoutineAccessToken` ([`AliyunESAFullAccess`][esa-full-access] grants
-`esa:*`). Some of these actions have no page in ESA's API reference
+The script calls the ESA OpenAPI, version 2024-09-10, with the AccessKey of a RAM user. Give that user a policy of
+its own that allows only the actions the script calls: `esa:GetRoutine`, `esa:CreateRoutine`,
+`esa:SetRoutineEnvironmentVariables`, `esa:ListRoutineEnvironmentVariables`,
+`esa:CreateRoutineWithAssetsCodeVersion`, `esa:GetRoutineCodeVersionInfo`, `esa:CreateRoutineCodeDeployment`,
+`esa:GetRoutineStagingEnvIp` and, for `--print-access-token`, `esa:GetRoutineAccessToken`. The system policy
+`AliyunESAFullAccess` ([policies][esa-ram-policies]) also covers them, but grants every other ESA action too
+(`esa:*`, [`AliyunESAFullAccess`][esa-full-access]). Some of these actions have no page in ESA's API reference
 ([API overview][esa-api-overview]); ESA's SDK has them ([SDK][esa-sdk]).
 
 ### Why not ESA's CLI
@@ -103,15 +106,16 @@ WEBHOOK_SECRET_CASDOOR_ACME=...
 - The value is everything after the first `=`, quotes included. Blank lines and lines starting with `#` are
   skipped.
 - An error names the line by its number, never by its text, which may be a stray secret.
-- Keep the file out of version control.
+- Keep the file out of version control. Write it under `umask 077`, so only you can read it, and delete it
+  once deployed.
 
 ESA stores secret variables encrypted and passes all variables to the routine ([variables][esa-variables]). The
 bridge reads each webhook secret by its computed name, which works on ESA.
 
-**Capacity.** The free plan allows 16 KB of function variables, and the Advanced plan 64 KB
-([billing][esa-billing]). Observed: the limit counts names and values together, 16,384 characters on the free
-plan, with no limit per value. Over it, the script reports ESA's error `400019`. [Sizes](configuration.md#sizes)
-gives typical lengths.
+**Capacity.** The free plan allows 16 KiB of function variables, and the Advanced plan 64 KiB
+([billing][esa-billing]). Observed in 2026-11: the free plan's limit is 16 KiB (16,384 characters of names and
+values) in total, with no limit per value. Over it, the script reports ESA's error `400019`.
+[Sizes](configuration.md#sizes) gives typical lengths.
 
 ## Fetch limit and fan-out
 
@@ -129,16 +133,26 @@ limit. A token exchange makes at most one `fetch`, for the IdP's keys.
 - **Default domain.** A routine's default domain, `<routine>-<account id>.debug.er.aliyun-esa.net`, is for
   testing only, and since 2026-04 asks for a token ([notice][esa-test-domain]). Observed: it answers `401`
   without the token, sent as the cookie `esa_er_token`, and the token lasts 60 minutes. `--print-access-token`
-  prints it, with the smoke test command:
+  prints it, with the smoke test command.
+
+  The token is a credential: for 60 minutes it opens the default domain, which serves production, to whoever
+  holds it. Keep it out of CI logs and shell history: write the script's output to a file only you can read,
+  and pass the token to the smoke test from a file.
 
   ```sh
-  node scripts/smoke.ts https://identity-bridge-acme-<account id>.debug.er.aliyun-esa.net acme --header 'cookie: esa_er_token=<token>'
+  umask 077
+  node scripts/deploy-esa.ts --name identity-bridge-acme --bundle esa.js --vars bridge.env --print-access-token > deploy.out
+  sed -n 's/^access token: //p' deploy.out > esa-token
+  node scripts/smoke.ts https://identity-bridge-acme-<account id>.debug.er.aliyun-esa.net acme --header "cookie: esa_er_token=$(cat esa-token)"
+  rm deploy.out esa-token
   ```
 
+  The smoke test never prints header values.
+
 - **Staging.** Observed: the default domain serves production. Staging answers only on ESA's staging addresses
-  ([overview][esa-overview]), which the script prints for `--env staging`, for example through
-  `curl --resolve`, or a hosts file line for the smoke test. An environment with no deployment answers ESA's own
-  HTML page with status 582, "Version retrieval failed".
+  ([overview][esa-overview]), which the script prints for `--env staging`. Reach them with `curl --resolve`, or
+  with a hosts-file line for the smoke test. An environment with no deployment answers ESA's own HTML page with
+  status 582, "Version retrieval failed".
 
 ## Production domain
 
@@ -172,7 +186,18 @@ the smoke test; later drop the retired key and run it again.
 
 ## Upgrading
 
-Download the new release's `esa.js`, check out the same tag, and run the script with the same options.
+Check out the new tag in the shallow clone, download that release's `esa.js`, and run the script with the same
+options:
+
+```sh
+git fetch --depth 1 origin tag v1.1.0
+git checkout v1.1.0
+curl -fsSLO https://github.com/theRank/identity-bridge/releases/download/v1.1.0/esa.js
+curl -fsSLO https://github.com/theRank/identity-bridge/releases/download/v1.1.0/esa.js.sha256
+sha256sum -c esa.js.sha256
+```
+
+Or clone the new tag afresh, as above.
 
 [esa-billing]: https://help.aliyun.com/en/edge-security-acceleration/esa/user-guide/functions-and-pages-billing
 [esa-overview]: https://www.alibabacloud.com/help/en/edge-security-acceleration/esa/user-guide/what-is-functions-and-pages/
