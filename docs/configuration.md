@@ -150,8 +150,9 @@ A source's secret is named after its id, so the source `casdoor-acme` needs `WEB
 ### Choosing the durations
 
 `maxTokenAgeSeconds` and `tokenTtlSeconds` bound how long a user the IdP cut off keeps access:
-`maxTokenAgeSeconds + tokenTtlSeconds + clockToleranceSeconds`, 31 minutes with the defaults
-([why](api.md#processing)). Lower them for a faster cut-off. Each client exchanges about once per
+`maxTokenAgeSeconds + clockToleranceSeconds + tokenTtlSeconds`, plus the verifier's own leeway on `exp`, up to
+60 seconds with the server SDK; about 32 minutes with the defaults ([why](api.md#processing)). Lower them for
+a faster cut-off. Each client exchanges about once per
 `tokenTtlSeconds`, so a shorter lifetime means more exchanges.
 
 ## Signing keys
@@ -168,9 +169,10 @@ A source's secret is named after its id, so the source `casdoor-acme` needs `WEB
   [RFC 7638](https://www.rfc-editor.org/rfc/rfc7638) thumbprint, `alg` must be `ES256` and `use` must be `sig`.
 - Any other top-level member is an error, so a misspelled `retired` cannot drop keys silently.
 
-Generate a key with Node 24 or later:
+Generate a key with Node 24 or later. `umask 077` makes the file readable by you alone:
 
 ```sh
+umask 077
 node --input-type=module -e '
 const { privateKey } = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"])
 const { kty, crv, x, y, d } = await crypto.subtle.exportKey("jwk", privateKey)
@@ -178,32 +180,37 @@ console.log(JSON.stringify({ active: { kty, crv, x, y, d } }))
 ' > signing-keys.json
 ```
 
-Keep the file out of version control and out of images.
+Keep the file out of version control and out of images, and delete it once the deployment holds the keys. A
+rotation needs only the public keys, which the bridge publishes.
 
 ### Rotating the signing key
 
-1. Generate a new key and move the current active key, without `d`, to the front of `retired`:
+1. Generate a new key. This writes two files: `signing-keys.next.json`, the new key with every key the
+   deployment publishes now in `retired`, read from its JWKS, and `signing-keys.final.json`, the new key
+   alone:
 
    ```sh
+   umask 077
    node --input-type=module -e '
-   import { readFileSync } from "node:fs"
-   const current = JSON.parse(readFileSync(process.argv[1], "utf8"))
+   import { writeFileSync } from "node:fs"
+   const { keys } = await (await fetch(`${process.argv[1]}/.well-known/jwks.json`)).json()
    const { privateKey } = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"])
    const { kty, crv, x, y, d } = await crypto.subtle.exportKey("jwk", privateKey)
-   const retiring = { kty: current.active.kty, crv: current.active.crv, x: current.active.x, y: current.active.y }
-   console.log(JSON.stringify({ active: { kty, crv, x, y, d }, retired: [retiring, ...(current.retired ?? [])] }))
-   ' signing-keys.json > signing-keys.next.json
+   const retired = keys.map((key) => ({ kty: key.kty, crv: key.crv, x: key.x, y: key.y }))
+   writeFileSync("signing-keys.next.json", JSON.stringify({ active: { kty, crv, x, y, d }, retired }))
+   writeFileSync("signing-keys.final.json", JSON.stringify({ active: { kty, crv, x, y, d } }))
+   ' https://id.acme.example
    ```
 
-2. Deploy the new `SIGNING_KEYS` and run the smoke test. New tokens carry the new `kid`; verifiers that cached
-   the old JWKS fetch it again when they meet the unknown `kid`, as jose and the server SDK do.
+2. Deploy `signing-keys.next.json` as `SIGNING_KEYS` and run the smoke test. New tokens carry the new `kid`;
+   verifiers that cached the old JWKS fetch it again when they meet the unknown `kid`, as jose and the server
+   SDK do.
 3. Wait at least `tokenTtlSeconds` plus the verifiers' clock tolerance (60 seconds at most), so that every token
-   signed with the old key has expired, then drop it from `retired` and deploy again.
+   signed with the old keys has expired. Then deploy `signing-keys.final.json`, and delete both files.
 
 If an HTTP cache sits between verifiers and the bridge, it may serve the previous JWKS for up to 300 seconds
-(`max-age`), and verifiers would not find the new key in it. Then publish the new key a deploy ahead: first
-deploy the current `active` key with the new key's public JWK (`kty`, `crv`, `x` and `y` of the new `active`)
-added to `retired`, wait five minutes, and only then deploy `signing-keys.next.json`.
+(`max-age`), and verifiers would not find the new key in it until then. Purge the cache's copy of
+`/.well-known/jwks.json` after step 2, or let verifiers fetch it from the bridge directly.
 
 ## Webhook secrets
 
@@ -217,26 +224,28 @@ the source `clerk-acme` reads `WEBHOOK_SECRET_CLERK_ACME`.
 A missing or empty secret, or one with leading or trailing whitespace, fails the runtime load, with a reason
 naming the source. A secret read from a file that ends with a newline is the usual cause: strip it.
 
-Secrets can take two forms. The per-source variables above are the form every runtime in this repository
-reads: Workers, Function Compute, ESA and Node can all read a variable by a computed name. A runtime that
-cannot may instead take a single `WEBHOOK_SECRETS` variable, a JSON object from source id to secret, such as
-`{"clerk-acme": "whsec_..."}`; no runtime in this release reads it, so setting it has no effect.
+To rotate a webhook secret:
 
-To rotate a webhook secret, change it on the bridge and at the IdP together; deliveries in between fail with
-`401`, and the IdP retries them. Casdoor reads the webhook's headers at each attempt
-([source](https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/object/webhook_worker.go#L114-L129)),
-so its queued deliveries use the new secret too.
+- **Clerk**: rotate the endpoint's secret in Clerk first. For about 24 hours afterwards, Svix signs each
+  delivery with both the old and the new secret ([Svix][svix-rotation], [Svix API][svix-rotate-api]), and the
+  bridge accepts a delivery when any `v1` signature matches its secret. Deploy the new
+  `WEBHOOK_SECRET_<SOURCE>` within that window, and no delivery fails.
+- **Casdoor**: there is no overlap. Change the bridge's secret and the webhook's header together; deliveries in
+  between fail with `401` and are retried. Casdoor reads the webhook's headers at each attempt
+  ([source](https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/object/webhook_worker.go#L114-L129)),
+  so its queued retries pick up the new header.
 
 ## Sizes
 
-Some runtimes limit the total size of their variables: Function Compute to 4 KB of names and values together,
-and ESA's free plan to 16 KB ([Function Compute](deploy-fc.md#configuration-and-secrets),
-[ESA](deploy-esa.md#variables)). For scale, minified:
+Some runtimes limit the total size of their variables. Function Compute documents 4 KB of names and values
+together, though it accepted 32 KiB in 2026-11; keep within the documented 4 KB
+([Function Compute](deploy-fc.md#configuration-and-secrets)). ESA's free plan allows 16 KiB (16,384
+characters of names and values) ([ESA](deploy-esa.md#variables)). For scale, minified:
 
 - the two examples above take 631 and 780 bytes. A further Clerk product, with its IdP record and webhook
   source, adds about 500; a further Casdoor product 70 to 230, plus about 100 for a webhook source;
 - `SIGNING_KEYS` takes about 190 bytes for one key and 330 during a rotation;
-- a webhook secret takes its name plus 40 to 70 bytes.
+- a webhook secret takes its name plus 35 to 70 bytes.
 
 Minify `BRIDGE_CONFIG`, for example with `node -e 'process.stdout.write(JSON.stringify(require("./bridge-config.json")))'`.
 
@@ -318,3 +327,6 @@ The reason names what failed and never contains secret material. Its forms:
 
 The Node entry also logs `{"event":"listening","host":"0.0.0.0","port":8080}` once it accepts connections, and
 `{"event":"stopping","signal":"SIGTERM"}` when it begins to stop ([deploy-node.md](deploy-node.md#stopping)).
+
+[svix-rotation]: https://www.svix.com/blog/svix-update-december-2021-part-1/
+[svix-rotate-api]: https://pkg.go.dev/github.com/svix/svix-webhooks/go#Endpoint.RotateSecret
