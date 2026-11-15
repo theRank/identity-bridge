@@ -16,7 +16,7 @@ const MISSING_ON_ESA: [name: string, uses: RegExp[]][] = [
             /\bURL\s*(?:\?\.|\.)\s*parse\b/,
             /\bURL\s*(?:\?\.)?\[\s*['"`]parse['"`]\s*\]/,
             // Destructured, as in const { parse } = URL
-            /\{[^}]*\bparse\b[^}]*\}\s*=\s*(?:globalThis\s*\.\s*)?URL\b/,
+            /\{[^}]*\bparse\b[^}]*\}\s*=\s*(?:(?:globalThis|self|window)\s*\.\s*)?URL\b/,
         ],
     ],
     ['performance', [/\bperformance\b/]],
@@ -44,6 +44,9 @@ describe('APIs missing on ESA', () => {
         ["const url = URL['parse'](input)", ['URL.parse']],
         ['const { parse } = URL', ['URL.parse']],
         ['const { canParse, parse: parseUrl } = globalThis.URL', ['URL.parse']],
+        ['const { parse } = self.URL', ['URL.parse']],
+        ['const { parse } = window . URL', ['URL.parse']],
+        ['const url = self.URL.parse(input)', ['URL.parse']],
         ['const { parse } = JSON', []],
         ['const start = performance.now()', ['performance']],
         ['const start = globalThis.performance.now()', ['performance']],

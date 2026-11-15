@@ -1,10 +1,11 @@
 import { spawn } from 'node:child_process'
 import { createHash, createHmac, randomBytes } from 'node:crypto'
-import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { crc32, inflateRawSync } from 'node:zlib'
+import { transformSync } from 'esbuild'
 import { afterAll, describe, expect, it, vi } from 'vitest'
 import { authorization, canonicalQuery, type Io, main, parseVarsFile, zip } from '../../scripts/deploy-esa'
 
@@ -959,6 +960,14 @@ describe('deploy-esa', () => {
             expect(code).toBe(2)
             expect(stdout).toBe('')
             expect(stderr).toMatch(/^usage: node scripts\/deploy-esa\.ts /m)
+        })
+
+        // Node 24.0 and 24.1 lack it, so the script would do nothing there; the Node that runs the tests has it
+        it('does not depend on import.meta.main', () => {
+            const { code } = transformSync(readFileSync(SCRIPT, 'utf8'), { loader: 'ts', legalComments: 'none' })
+
+            expect(code).toMatch(/\bprocess\.argv\b/)
+            expect(code).not.toMatch(/\bimport\s*\.\s*meta\s*\.\s*main\b/)
         })
 
         it('runs through a symbolic link to it', async () => {
