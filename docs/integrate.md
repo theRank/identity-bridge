@@ -437,7 +437,9 @@ webhook sources that list it ([fan-out](api.md#fan-out)). The body is the event 
 3. **Keep deleted users deleted.** Events carry no sequence: an event an IdP redelivers can arrive after a
    later one, as Clerk warns ([Clerk](https://clerk.com/docs/guides/development/webhooks/overview)). A late
    `user-created` or `user-updated` has its own `jti`, so it passes the check above; on a `user-deleted`, keep
-   a tombstone for the id, and skip upserts for ids that have one.
+   a tombstone for the id, and skip upserts for ids that have one. Take a lock on the user id first: two events
+   for one user can arrive at once, and without it an upsert that found no tombstone can commit after the
+   deletion that wrote one.
 4. **Answer `202`** once the transaction has committed. Any `2xx` counts as delivered; any other answer, a
    redirect included, makes the bridge answer the IdP with `502`, and the IdP sends the webhook again. The
    bridge waits 5 seconds for an answer. Refuse an event that does not verify with `400` and the error body of
@@ -462,6 +464,8 @@ export async function identityEvents(request: Request): Promise<Response> {
         return Response.json(body, { status: 400, headers: { 'content-language': 'en' } })
     }
     await db.transaction(async (tx) => {
+        // Held until commit, so events for one user apply one at a time
+        await tx.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [event.userId])
         // jti is the primary key, so a repeat inserts nothing
         const { rowCount } = await tx.query('INSERT INTO identity_events (jti) VALUES ($1) ON CONFLICT DO NOTHING', [event.jti])
         if (rowCount === 0) return
@@ -490,7 +494,8 @@ which is why users are created on first sight, below.
 - **Key users by `sub`**, the bridge's user id. It is the same whichever client the user signs in from, and in
   every event. Do not key by email, which can change or be absent, and do not branch on the `idp` claim.
 - **Create users on first sight**, from whichever comes first: an access token or a `user-created` event, unless
-  the id has a tombstone (below). Some users produce no `user-created` at all.
+  the id has a tombstone (below), checking it under the same lock on the user id as events. Some users produce
+  no `user-created` at all.
 - **Refresh profiles from token claims.** Each access token carries the current verified email, name and
   picture. For Casdoor users this is the only way profile changes arrive.
 - **Keep authorization in the product**, keyed by `sub`. The bridge carries no roles or permissions.
