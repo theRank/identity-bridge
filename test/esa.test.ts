@@ -16,7 +16,7 @@ const bindings = env as unknown as Bindings
 const active = JSON.parse(bindings.SIGNING_KEYS).active as JsonWebKey
 const kid = await calculateJwkThumbprint({ kty: active.kty!, crv: active.crv!, x: active.x!, y: active.y! })
 
-// All the probe saw on ESA's context
+// All a staging routine found on ESA's context
 const context = { waitUntil: () => {} }
 
 type Handler = (request: Request, ...rest: unknown[]) => Promise<Response>

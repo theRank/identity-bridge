@@ -212,8 +212,8 @@ interface FakeEsa {
     variables: Record<string, Record<string, { Type: string; Value: string }>>
 }
 
-// ESA as the probe saw it answer, keeping the variables it is given. A test changes an answer with `respond`, which
-// gives the answer to the nth call of an action, or undefined for the usual one.
+// ESA as it answered a staging deployment, keeping the variables it is given. A test changes an answer with
+// `respond`, which gives the answer to the nth call of an action, or undefined for the usual one.
 function fakeEsa(respond: Respond = () => undefined, held: Record<string, { Type: string; Value: string }> = {}): FakeEsa {
     const calls: Call[] = []
     const counts = new Map<string, number>()

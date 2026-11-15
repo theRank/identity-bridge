@@ -22,7 +22,7 @@ const result = await build({
     platform: 'browser',
     conditions: ['workerd', 'worker', 'browser'],
     format: 'esm',
-    // What ESA ran in the probe
+    // The target a bundle was verified with on a staging routine
     target: 'es2022',
     outfile: OUTFILE,
     metafile: true,
