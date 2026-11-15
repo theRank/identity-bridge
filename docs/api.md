@@ -150,7 +150,9 @@ Every `/token` response, to `POST` and `OPTIONS` alike, carries `Vary: Origin`.
 - **Preflight.** `OPTIONS /token` answers `204`. When the request's `Origin` is in the `allowedOrigins` of any
   product, the answer carries `Access-Control-Allow-Origin: <origin>`, `Access-Control-Allow-Methods: POST`,
   `Access-Control-Allow-Headers: Content-Type` and `Access-Control-Max-Age: 600`; otherwise no CORS headers. A
-  preflight carries no body, so the product is not known yet.
+  preflight carries no body, so the product is not known yet. In [failure mode](#failure-mode) a preflight
+  gets the same `500` as a `POST`, without CORS headers, so a browser reports a CORS error rather than the
+  `500`: check `/healthz` and the `runtime_load_failed` log line, not `allowedOrigins`.
 - **`POST`.** `Access-Control-Allow-Origin: <origin>` is sent only when the request's `Origin` is in the
   `allowedOrigins` of the product named by `audience`. It is sent on success and on every error after the
   product is resolved, so a browser can read the error.
@@ -425,7 +427,8 @@ the webhook secret of every configured source. If any part fails, the bridge kee
 after the `404` and `405` checks:
 
 - `/healthz` answers `503 {"status": "unavailable"}`, with `Cache-Control: no-store`;
-- `/token` answers `500 server_error`, with the headers of a token error, `Vary: Origin` included;
+- `/token` answers `500 server_error` to `POST` and `OPTIONS` alike, with the headers of a token error,
+  `Vary: Origin` included, and no CORS headers;
 - every other route answers `500` with an empty body.
 
 Each such request is logged with the code `runtime_unavailable`, and once per isolate or process the bridge
