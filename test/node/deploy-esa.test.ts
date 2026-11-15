@@ -641,6 +641,38 @@ describe('deploy-esa', () => {
             expect(ran.stderr.trimEnd().split('\n')).toEqual([expect.stringMatching(/^warning: .*check for stale variables was skipped/)])
             expect(lists(esa)).toHaveLength(1)
         })
+
+        // As an empty last page often comes, without the record or with null
+        it.each<[string, Record<string, unknown>]>([
+            ['without EnvironmentVariables', {}],
+            ['with EnvironmentVariables null', { EnvironmentVariables: null }],
+        ])('ends the list at a later page %s, keeping the names before it', async (_, last) => {
+            const esa: FakeEsa = fakeEsa((call, nth) => {
+                if (call.action !== 'ListRoutineEnvironmentVariables' || nth < 4) return capped(() => esa, false)(call, nth)
+                return json(200, { PageNumber: nth, PageSize: 20, ...last })
+            }, stale)
+            const ran = await deploy(esa)
+
+            expect(ran.code).toBe(0)
+            expect(ran.stderr.match(/^warning: .*WEBHOOK_SECRET_OLD_\d+/gm)).toHaveLength(60)
+            expect(ran.stderr).not.toMatch(/skipped/)
+            expect(lists(esa)).toHaveLength(4)
+        })
+
+        it('warns of a stale name once, and ends the list, when a server gives the same page again', async () => {
+            const esa: FakeEsa = fakeEsa((call) => {
+                if (call.action !== 'ListRoutineEnvironmentVariables') return undefined
+                const first = Object.fromEntries(Object.entries(esa.variables[call.form.Env!]!).slice(0, 50))
+                return json(200, { TotalCount: 63, PageNumber: 1, PageSize: 50, EnvironmentVariables: first })
+            }, stale)
+            const ran = await deploy(esa)
+
+            expect(ran.code).toBe(0)
+            const warned = ran.stderr.match(/WEBHOOK_SECRET_OLD_\d+/g)!
+            expect(warned).toHaveLength(new Set(warned).size)
+            expect(warned).toHaveLength(50)
+            expect(lists(esa)).toHaveLength(2)
+        })
     })
 
     it("stops at an API error, printing only the API's code and message", async () => {

@@ -366,9 +366,10 @@ async function setVariables(api: Api, name: string, env: string, variables: Map<
 }
 
 // The names only, since the answer holds the plain values in clear. A page can hold fewer names than asked for, so
-// the pages run to TotalCount when ESA gives it, and to an empty page when not.
-async function listVariables(api: Api, io: Io, name: string, env: string): Promise<string[]> {
-    const names: string[] = []
+// the pages run to TotalCount when ESA gives it, and otherwise to a page that adds no name. That also ends the list
+// for a server that gives the same page again.
+async function listVariables(api: Api, io: Io, name: string, env: string): Promise<Set<string>> {
+    const names = new Set<string>()
     for (let page = 1; page <= MAX_PAGES; page++) {
         const answer = await api({
             action: 'ListRoutineEnvironmentVariables',
@@ -376,13 +377,15 @@ async function listVariables(api: Api, io: Io, name: string, env: string): Promi
             form: { Name: name, Env: env, PageNumber: String(page), PageSize: String(PAGE_SIZE) },
         })
         if (!isRecord(answer.EnvironmentVariables)) {
+            // Past the first page, how an empty last page can come
+            if (page > 1) return names
             io.stderr(`warning: ESA listed the ${env} variables without their names, so the check for stale variables was skipped\n`)
-            return []
+            return names
         }
-        const listed = Object.keys(answer.EnvironmentVariables)
-        names.push(...listed)
+        const before = names.size
+        for (const key of Object.keys(answer.EnvironmentVariables)) names.add(key)
         const total = typeof answer.TotalCount === 'number' ? answer.TotalCount : undefined
-        if (listed.length === 0 || (total !== undefined && names.length >= total)) return names
+        if (names.size === before || (total !== undefined && names.size >= total)) return names
     }
     io.stderr(`warning: listing the ${env} variables stopped after ${MAX_PAGES} pages, so the check for stale variables may have missed some\n`)
     return names
