@@ -1,0 +1,482 @@
+# Integrating a product
+
+A product integrates the bridge in three places: its clients exchange IdP tokens for bridge access tokens, its
+backend verifies those tokens, and, if it wants lifecycle events, its backend receives them. The TypeScript
+SDKs cover the first two in a few lines; other languages use a standard JWT library and the rules in
+[api.md](api.md).
+
+| Package | For | Reference |
+|---|---|---|
+| [`@therank/identity-bridge-client`](https://www.npmjs.com/package/@therank/identity-bridge-client) | Browsers, Node.js 22 or later, JavaScript apps, WeChat mini programs | [README](../packages/client/README.md) |
+| [`@therank/identity-bridge-server`](https://www.npmjs.com/package/@therank/identity-bridge-server) | Backends on Node.js 22.12 or later, Workers, Deno, Bun | [README](../packages/server/README.md) |
+
+The packages share the bridge's release version.
+
+## Clients
+
+A client signs the user in with the IdP, then asks the bridge for an access token before calling its backend.
+The bridge refuses an IdP token older than `maxTokenAgeSeconds`, 15 minutes by default, so the client gets a
+fresh IdP token for every exchange ([why](api.md#processing)).
+
+`createBridgeClient` does the exchange, keeps the bridge token in memory, and exchanges again shortly before it
+expires. Concurrent calls share one exchange, and a `503` from the bridge is retried. It needs only a function
+that returns a fresh IdP token:
+
+```ts
+import { createBridgeClient } from '@therank/identity-bridge-client'
+
+const bridge = createBridgeClient({
+    url: 'https://id.acme.example', // the bridge's issuer
+    audience: 'acme', // the product's id in the bridge configuration
+    getIdpToken, // a fresh IdP token on every call, below
+})
+
+const response = await fetch('https://api.acme.example/me', {
+    headers: { authorization: `Bearer ${await bridge.getToken()}` },
+})
+
+// On sign-out
+bridge.clear()
+```
+
+Call `getToken()` before each request to the backend; it answers from memory while the token is fresh. It
+throws a `BridgeError` whose `error` says why an exchange failed; `invalid_request` with status 400 usually
+means the user must sign in again. The [client README](../packages/client/README.md#bridgeerror) lists them.
+
+### Clerk
+
+Clerk's session tokens last 60 seconds, and `getToken()` returns a valid one, from its cache or newly minted
+([Clerk](https://clerk.com/docs/js-frontend/reference/objects/session#gettoken)):
+
+```ts
+async function getIdpToken(): Promise<string> {
+    const token = await clerk.session?.getToken()
+    if (!token) throw new Error('not signed in')
+    return token
+}
+```
+
+`clerk` is the loaded Clerk instance; with a framework SDK, use its own `getToken`. The session token must carry
+the claims [idp-clerk.md](idp-clerk.md#session-token) adds.
+
+### Casdoor on the web and in apps
+
+The client signs in with the OIDC authorization code flow with PKCE, through any OIDC library, against the
+application of that client, and keeps the refresh token. Before each exchange it refreshes, which also lets
+Casdoor refuse a user who was deleted or forbidden meanwhile
+([idp-casdoor.md](idp-casdoor.md#refresh-tokens)):
+
+```ts
+let refreshToken = '<the refresh token from the sign-in>'
+
+async function getIdpToken(): Promise<string> {
+    const response = await fetch('https://casdoor.example/api/login/oauth/access_token', {
+        method: 'POST',
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: refreshToken, client_id: '<web client id>' }),
+    })
+    const body: { access_token?: string; refresh_token?: string } = await response.json()
+    if (!response.ok || !body.access_token) throw new Error('sign in again')
+    refreshToken = body.refresh_token ?? refreshToken // Casdoor rotates refresh tokens
+    return body.access_token
+}
+```
+
+A client that got its token through PKCE refreshes without a client secret
+([source](https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/object/token_oauth_util.go#L799-L803)),
+and Casdoor answers with a new refresh token, since it rotates them by default
+([Casdoor](https://casdoor.ai/docs/how-to-connect/oauth/)). Casdoor's documentation shows the refresh at
+`/api/login/oauth/refresh_token`; the token endpoint above takes the same grant
+([source](https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/object/token_oauth.go#L136-L141)).
+Store the refresh token as the platform's secure storage allows; never in the bridge client, which keeps
+nothing outside memory.
+
+### WeChat mini programs
+
+Mini programs have no `fetch`. The `wechat` entry point sends requests with `wx.request` and signs the user in
+through Casdoor's mini program code login ([idp-casdoor.md](idp-casdoor.md#wechat-mini-programs)), without any
+client secret:
+
+```js
+const { createBridgeClient } = require('@therank/identity-bridge-client')
+const { casdoorMiniProgramIdpToken, wxRequestTransport } = require('@therank/identity-bridge-client/wechat')
+
+const bridge = createBridgeClient({
+    url: 'https://id.cn.acme.example',
+    audience: 'acme',
+    getIdpToken: casdoorMiniProgramIdpToken({ casdoorUrl: 'https://casdoor.example', clientId: '<mini program client id>' }),
+    transport: wxRequestTransport,
+})
+```
+
+Each exchange gets a new [`wx.login`](https://developers.weixin.qq.com/miniprogram/dev/api/open-api/login/wx.login.html)
+code. Add the bridge's and Casdoor's domains to the mini program's server domains; both need ICP filing
+([WeChat](https://developers.weixin.qq.com/miniprogram/dev/framework/ability/network.html)). The
+[client README](../packages/client/README.md#wechat-mini-programs) lists the other constraints.
+
+### Without the SDK
+
+Any HTTP client can exchange a token ([request](api.md#request)):
+
+```sh
+curl -sS https://id.acme.example/token \
+    --data-urlencode 'grant_type=urn:ietf:params:oauth:grant-type:token-exchange' \
+    --data-urlencode "subject_token=$IDP_TOKEN" \
+    --data-urlencode 'subject_token_type=urn:ietf:params:oauth:token-type:jwt' \
+    --data-urlencode 'audience=acme'
+```
+
+```json
+{"access_token":"eyJhbGciOiJFUzI1NiIs...","issued_token_type":"urn:ietf:params:oauth:token-type:access_token","token_type":"Bearer","expires_in":900}
+```
+
+A client that does this itself follows the same pattern as the SDK:
+
+1. Keep the access token in memory, never in persistent storage. Note when it arrived.
+2. Reuse it while more than `min(60, expires_in / 2)` seconds of its `expires_in` remain, counted from its
+   arrival by the client's own clock. The device's clock may be wrong, so do not compare the JWT's `exp` with
+   it.
+3. When it is due, get a fresh IdP token and exchange again. Let concurrent callers wait for the one exchange
+   in flight.
+4. Retry `503 temporarily_unavailable`, and a request that got no answer, a couple of times with the same IdP
+   token, after a short wait. Do not retry other errors: `400 invalid_request` means the IdP token was not
+   accepted, so sign the user in again.
+5. On sign-out, drop the token.
+
+## Backends
+
+Every request from a client carries `Authorization: Bearer <access token>`. The backend verifies it against
+the bridge's JWKS and takes the user from it.
+
+### With the server SDK
+
+```ts
+import { BridgeTokenError, createVerifier } from '@therank/identity-bridge-server'
+
+// One verifier, reused, so the bridge's keys stay cached
+const verifier = createVerifier({ issuer: 'https://id.acme.example', audience: 'acme' })
+
+export async function me(request: Request): Promise<Response> {
+    let user
+    try {
+        user = await verifier.verifyRequest(request)
+    } catch (error) {
+        if (!(error instanceof BridgeTokenError)) throw error
+        if (error.reason === 'jwks_unavailable') return new Response(null, { status: 503 })
+        return new Response(null, { status: 401, headers: { 'www-authenticate': 'Bearer' } })
+    }
+    return Response.json({ id: user.userId, email: user.email, name: user.name })
+}
+```
+
+`createVerifier` fixes every check of [api.md](api.md#access-token), the `typ` check included, and throws at
+start-up when `issuer` or `audience` is missing. The [server README](../packages/server/README.md) has the
+full API.
+
+### Other languages
+
+Use a JWT library that supports ES256 and a JWKS, and check, for an access token
+([rules](api.md#access-token)):
+
+- `alg` is `ES256`, and the signature verifies with the JWKS key whose `kid` the header names;
+- `typ` is `at+jwt` or `application/at+jwt`;
+- `iss` is the bridge's issuer and `aud` the product's id;
+- `exp` is present and in the future, allowing at most 60 seconds of clock skew;
+- `sub` is the user id.
+
+The `typ` check is the one libraries do not make for you, and it matters: event tokens are signed with the same
+key, name the product as `aud` and the user as `sub`, and have no `exp`. Without the check, an event delivered
+to the product, or one read from its logs, would pass as an access token that never expires.
+
+#### Go
+
+With the standard library only, Go 1.25 or later:
+
+```go
+package bridge
+
+import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"math/big"
+	"net/http"
+	"strings"
+	"sync"
+	"time"
+)
+
+// Verifier checks the bridge's access tokens and event tokens for one product.
+type Verifier struct {
+	Issuer   string // the bridge's issuer, such as https://id.acme.example
+	Audience string // the product's id
+	JWKSURL  string // default: Issuer + "/.well-known/jwks.json"
+
+	mu      sync.Mutex
+	keys    map[string]*ecdsa.PublicKey
+	fetched time.Time
+}
+
+type Claims struct {
+	Iss    string                     `json:"iss"`
+	Sub    string                     `json:"sub"`
+	Aud    string                     `json:"aud"`
+	Exp    *int64                     `json:"exp"`
+	Iat    *int64                     `json:"iat"`
+	Jti    string                     `json:"jti"`
+	Email  string                     `json:"email"`
+	Name   string                     `json:"name"`
+	Events map[string]json.RawMessage `json:"events"`
+}
+
+// VerifyAccessToken returns the claims of a valid access token.
+func (v *Verifier) VerifyAccessToken(token string) (*Claims, error) {
+	claims, err := v.verify(token, "at+jwt")
+	if err != nil {
+		return nil, err
+	}
+	if claims.Exp == nil || time.Now().Unix() > *claims.Exp+60 {
+		return nil, errors.New("expired")
+	}
+	return claims, nil
+}
+
+// VerifyEvent returns the claims of a valid event token. Events have no exp.
+func (v *Verifier) VerifyEvent(body string) (*Claims, error) {
+	claims, err := v.verify(strings.TrimSpace(body), "secevent+jwt")
+	if err != nil {
+		return nil, err
+	}
+	if claims.Jti == "" || claims.Iat == nil || len(claims.Events) != 1 {
+		return nil, errors.New("not a bridge event")
+	}
+	return claims, nil
+}
+
+func (v *Verifier) verify(token, typ string) (*Claims, error) {
+	parts := strings.Split(token, ".")
+	if len(parts) != 3 {
+		return nil, errors.New("malformed")
+	}
+	var header struct{ Alg, Typ, Kid string }
+	if err := decodeSegment(parts[0], &header); err != nil {
+		return nil, err
+	}
+	// Both kinds are signed with the same key: typ keeps an event from passing as an access token
+	if header.Alg != "ES256" || strings.TrimPrefix(strings.ToLower(header.Typ), "application/") != typ {
+		return nil, errors.New("wrong algorithm or type")
+	}
+	key, err := v.key(header.Kid)
+	if err != nil {
+		return nil, err
+	}
+	signature, err := base64.RawURLEncoding.DecodeString(parts[2])
+	if err != nil || len(signature) != 64 {
+		return nil, errors.New("malformed signature")
+	}
+	digest := sha256.Sum256([]byte(parts[0] + "." + parts[1]))
+	r, s := new(big.Int).SetBytes(signature[:32]), new(big.Int).SetBytes(signature[32:])
+	if !ecdsa.Verify(key, digest[:], r, s) {
+		return nil, errors.New("bad signature")
+	}
+	var claims Claims
+	if err := decodeSegment(parts[1], &claims); err != nil {
+		return nil, err
+	}
+	if claims.Iss != v.Issuer || claims.Aud != v.Audience || claims.Sub == "" {
+		return nil, errors.New("wrong issuer, audience or subject")
+	}
+	return &claims, nil
+}
+
+// key returns the JWKS key with this kid, fetching the set again for an unknown kid at most every 30 seconds
+func (v *Verifier) key(kid string) (*ecdsa.PublicKey, error) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	if key, ok := v.keys[kid]; ok {
+		return key, nil
+	}
+	if time.Since(v.fetched) < 30*time.Second {
+		return nil, errors.New("unknown key")
+	}
+	url := v.JWKSURL
+	if url == "" {
+		url = v.Issuer + "/.well-known/jwks.json"
+	}
+	client := http.Client{Timeout: 5 * time.Second}
+	response, err := client.Get(url)
+	if err != nil {
+		return nil, err
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("JWKS answered %d", response.StatusCode)
+	}
+	var set struct {
+		Keys []struct{ Kty, Crv, X, Y, Kid string }
+	}
+	if err := json.NewDecoder(response.Body).Decode(&set); err != nil {
+		return nil, err
+	}
+	keys := map[string]*ecdsa.PublicKey{}
+	for _, jwk := range set.Keys {
+		x, errX := base64.RawURLEncoding.DecodeString(jwk.X)
+		y, errY := base64.RawURLEncoding.DecodeString(jwk.Y)
+		if jwk.Kty != "EC" || jwk.Crv != "P-256" || errX != nil || errY != nil || len(x) != 32 || len(y) != 32 {
+			continue
+		}
+		key, err := ecdsa.ParseUncompressedPublicKey(elliptic.P256(), append(append([]byte{4}, x...), y...))
+		if err == nil {
+			keys[jwk.Kid] = key
+		}
+	}
+	v.keys, v.fetched = keys, time.Now()
+	if key, ok := keys[kid]; ok {
+		return key, nil
+	}
+	return nil, errors.New("unknown key")
+}
+
+func decodeSegment(segment string, into any) error {
+	data, err := base64.RawURLEncoding.DecodeString(segment)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(data, into)
+}
+```
+
+Use it from a handler:
+
+```go
+var verifier = &bridge.Verifier{Issuer: "https://id.acme.example", Audience: "acme"}
+
+func me(w http.ResponseWriter, r *http.Request) {
+	token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+	claims, err := verifier.VerifyAccessToken(token)
+	if !ok || err != nil {
+		w.Header().Set("WWW-Authenticate", "Bearer")
+		http.Error(w, "", http.StatusUnauthorized)
+		return
+	}
+	fmt.Fprintf(w, "hello %s\n", claims.Sub)
+}
+```
+
+#### Python
+
+With [PyJWT](https://pyjwt.readthedocs.io/) and [`cryptography`](https://cryptography.io/), since Python's
+standard library has no ECDSA: `pip install pyjwt cryptography`.
+
+```python
+import jwt
+
+ISSUER = "https://id.acme.example"
+AUDIENCE = "acme"
+
+# One client, reused: it caches the bridge's keys
+jwks = jwt.PyJWKClient(f"{ISSUER}/.well-known/jwks.json", cache_keys=True, timeout=5)
+
+
+def _verify(token: str, typ: str, required: list[str]) -> dict:
+    # Both kinds are signed with the same key: typ keeps an event from passing as an access token
+    header_typ = str(jwt.get_unverified_header(token).get("typ", "")).lower()
+    if header_typ.removeprefix("application/") != typ:
+        raise jwt.InvalidTokenError("wrong token type")
+    key = jwks.get_signing_key_from_jwt(token)
+    return jwt.decode(
+        token,
+        key,
+        algorithms=["ES256"],
+        issuer=ISSUER,
+        audience=AUDIENCE,
+        leeway=60,
+        options={"require": required},
+    )
+
+
+def verify_access_token(token: str) -> dict:
+    return _verify(token, "at+jwt", ["exp", "iat", "sub"])
+
+
+def verify_event(body: str) -> dict:
+    claims = _verify(body.strip(), "secevent+jwt", ["iat", "jti", "sub"])
+    if not isinstance(claims.get("events"), dict) or len(claims["events"]) != 1:
+        raise jwt.InvalidTokenError("not a bridge event")
+    return claims
+```
+
+`verify_access_token` raises a subclass of `jwt.InvalidTokenError` for an invalid token, and
+`jwt.PyJWKClientError` when the keys cannot be fetched or no key matches.
+
+## Consuming events
+
+A product that sets `events.url` in the bridge configuration receives a POST for each user event of the
+webhook sources that list it ([fan-out](api.md#fan-out)). The body is the event token itself, with
+`Content-Type: application/secevent+jwt`.
+
+1. **Verify it** like an access token, but with `typ` `secevent+jwt` and without requiring `exp`: events have
+   none ([rules](api.md#event-token)). `verifyEvent` of the server SDK does this.
+2. **Process each `jti` once.** The same event arrives again whenever the IdP redelivers a webhook, which it
+   does after any product's delivery fails. Record the `jti` in the same transaction as the change it causes,
+   so a crash between the two cannot apply an event twice or lose it.
+3. **Answer `202`** once the transaction has committed. Any `2xx` counts as delivered; any other answer, a
+   redirect included, makes the bridge answer the IdP with `502`, and the IdP sends the webhook again. The
+   bridge waits 5 seconds for an answer.
+
+```ts
+import { BridgeTokenError, createVerifier, type BridgeEvent } from '@therank/identity-bridge-server'
+
+const verifier = createVerifier({ issuer: 'https://id.acme.example', audience: 'acme' })
+
+export async function identityEvents(request: Request): Promise<Response> {
+    let event: BridgeEvent
+    try {
+        event = await verifier.verifyEvent(await request.text())
+    } catch (error) {
+        if (!(error instanceof BridgeTokenError)) throw error
+        return new Response(null, { status: error.reason === 'jwks_unavailable' ? 503 : 400 })
+    }
+    await db.transaction(async (tx) => {
+        // jti is the primary key, so a repeat inserts nothing
+        const { rowCount } = await tx.query('INSERT INTO identity_events (jti) VALUES ($1) ON CONFLICT DO NOTHING', [event.jti])
+        if (rowCount === 0) return
+        if (event.type === 'user-deleted') {
+            await tx.query('DELETE FROM users WHERE id = $1', [event.userId])
+        } else {
+            await tx.query(
+                'INSERT INTO users (id, email, name) VALUES ($1, $2, $3) ON CONFLICT (id) DO UPDATE SET email = $2, name = $3',
+                [event.userId, event.profile.email ?? null, event.profile.name ?? null],
+            )
+        }
+    })
+    return new Response(null, { status: 202 })
+}
+```
+
+`db` stands for the product's database client. Events carry no sequence: an event an IdP redelivers can arrive
+after a later one, as Clerk warns ([Clerk](https://clerk.com/docs/guides/development/webhooks/overview)), and a
+`user-created` can arrive after the user's first request.
+
+## Data rules
+
+- **Key users by `sub`**, the bridge's user id. It is the same whichever client the user signs in from, and in
+  every event. Do not key by email, which can change or be absent, and do not branch on the `idp` claim.
+- **Create users on first sight**, from whichever comes first: an access token or a `user-created` event.
+  Some users produce no `user-created` at all.
+- **Refresh profiles from token claims.** Each access token carries the current verified email, name and
+  picture. For Casdoor users this is the only way profile changes arrive.
+- **Keep authorization in the product**, keyed by `sub`. The bridge carries no roles or permissions.
+- **After `user-deleted`**, the user's last access token still verifies until it expires, up to
+  `tokenTtlSeconds`. Check your user table where that matters.
+
+## Casdoor events products do not receive
+
+Casdoor's webhook relays only what the bridge can trust. Products do not receive profile updates, users created
+without a sign-up flow (such as through the mini program code login or an admin), or deletions other than an
+organization admin's. Those users lose access within the revocation bound instead. The full list and the
+reasons are in [idp-casdoor.md](idp-casdoor.md#what-is-not-relayed).
