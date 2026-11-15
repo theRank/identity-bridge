@@ -72,6 +72,25 @@ async function tampered(origin: string, edit: (jwks: Jwks) => Jwks): Promise<str
     return listen(server)
 }
 
+// In front of a bridge, answering 401 to a request without every one of the headers, as the ESA debug domain does
+// without its access cookie
+async function guarded(origin: string, required: Record<string, string>): Promise<string> {
+    const server = createServer(async (req, res) => {
+        let body = ''
+        for await (const chunk of req) body += String(chunk)
+        if (Object.entries(required).some(([name, value]) => req.headers[name] !== value)) {
+            res.writeHead(401).end()
+            return
+        }
+        const headers = { 'content-type': req.headers['content-type'] ?? 'text/plain' }
+        const answer = await fetch(`${origin}${req.url}`, { method: req.method!, headers, ...(req.method === 'POST' && { body }) })
+        res.writeHead(answer.status, { 'content-type': answer.headers.get('content-type') ?? 'text/plain' })
+        res.end(await answer.text())
+    })
+    servers.push(server)
+    return listen(server)
+}
+
 function hostsIn(value: unknown): string[] {
     if (typeof value === 'string') return /^https?:\/\//.test(value) ? [new URL(value).hostname] : []
     if (typeof value !== 'object' || value === null) return []
@@ -173,5 +192,49 @@ describe('smoke script', () => {
 
         expect(code).toBe(2)
         expect(stderr).toMatch(/usage: node scripts\/smoke\.ts <base-url> <product-id>/)
+    })
+
+    describe('with --header', () => {
+        const COOKIE = 'esa_er_token=c21va2UtdG9rZW4'
+
+        it('sends the header with every request', async () => {
+            const origin = await guarded(await bridge(await devEnv()), { cookie: COOKIE })
+            const { code, stdout } = await run('smoke.ts', origin, 'acme', '--header', `cookie: ${COOKIE}`)
+
+            expect(stdout).not.toMatch(/FAIL/)
+            expect(stdout.match(/^ok /gm)).toHaveLength(7)
+            expect(code).toBe(0)
+        })
+
+        it('sends every header given, before or after the arguments, with or without a space after the colon', async () => {
+            const origin = await guarded(await bridge(await devEnv()), { cookie: COOKIE, 'x-smoke': 'yes' })
+            const { code, stdout } = await run('smoke.ts', '--header', `Cookie:${COOKIE}`, origin, '--header', 'X-Smoke:  yes ', 'acme')
+
+            expect(stdout).not.toMatch(/FAIL/)
+            expect(code).toBe(0)
+        })
+
+        it('fails every check without the header the server needs', async () => {
+            const origin = await guarded(await bridge(await devEnv()), { cookie: COOKIE })
+            const { code, stdout } = await run('smoke.ts', origin, 'acme')
+
+            expect(code).toBe(1)
+            expect(stdout.match(/^FAIL .*401/gm)).toHaveLength(7)
+        })
+
+        it.each([
+            ['without a colon', ['--header', `cookie ${COOKIE}`]],
+            ['without a name', ['--header', `: ${COOKIE}`]],
+            ['with a name that is not a token', ['--header', `my cookie: ${COOKIE}`]],
+            ['with a value holding a line break', ['--header', `cookie: ${COOKIE}\r\nx-other: 1`]],
+            ['without its value', ['--header']],
+        ])('refuses a header %s, quoting none of it', async (_, args) => {
+            const { code, stdout, stderr } = await run('smoke.ts', 'http://127.0.0.1:9', 'acme', ...args)
+
+            expect(code).toBe(2)
+            expect(stderr).toMatch(/--header 'name: value'/)
+            expect(stdout).toBe('')
+            expect(stderr).not.toContain('c21va2U')
+        })
     })
 })
