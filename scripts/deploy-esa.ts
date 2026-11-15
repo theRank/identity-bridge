@@ -35,7 +35,6 @@ const ENVIRONMENTS = ['staging', 'production']
 // ESA's rule for routine names
 const ROUTINE_NAME = /^[a-z][a-z0-9-]+$/
 const HOST = /^[a-z0-9-]+(\.[a-z0-9-]+)+$/i
-const VARIABLE_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/
 // A webhook secret is named for its source id in capitals, with _ for -
 const BRIDGE_VARIABLE = /^(BRIDGE_CONFIG|SIGNING_KEYS|WEBHOOK_SECRET_[A-Z0-9_]+)$/
 const PAGE_SIZE = 50
@@ -145,19 +144,19 @@ export function zip(name: string, data: Uint8Array): Buffer {
     return Buffer.concat([local, compressed, central, end])
 }
 
-// NAME=value lines, as docker run --env-file reads them: the value is everything after the first =, quotes and all,
-// so a JSON value needs no escaping. Blank lines and lines starting with # are skipped. A line is named by its
-// number, never by its text, which may hold a secret.
+// NAME=value lines, read much as docker run --env-file reads them: a byte order mark, blank lines, the spaces before
+// a name and lines starting with # are skipped, and the value is everything after the first =, quotes and all, so a
+// JSON value needs no escaping. A refused line is named by its number alone, since a secret pasted on a line of its
+// own can look like NAME=value; only a bridge variable's name, which is no secret, is quoted.
 export function parseEnvFile(text: string): Map<string, string> {
     const variables = new Map<string, string>()
-    for (const [index, raw] of text.split('\n').entries()) {
-        const line = raw.endsWith('\r') ? raw.slice(0, -1) : raw
-        if (line.trim() === '' || line.startsWith('#')) continue
+    for (const [index, raw] of text.replace(/^﻿/, '').split('\n').entries()) {
+        const line = (raw.endsWith('\r') ? raw.slice(0, -1) : raw).trimStart()
+        if (line === '' || line.startsWith('#')) continue
         const at = line.indexOf('=')
         const name = line.slice(0, Math.max(at, 0))
         const where = `line ${index + 1}`
-        if (at < 0 || !VARIABLE_NAME.test(name)) throw new DeployError(`${where}: not NAME=value`)
-        if (!BRIDGE_VARIABLE.test(name)) throw new DeployError(`${where}: ${name} is not a variable the bridge reads`)
+        if (at < 0 || !BRIDGE_VARIABLE.test(name)) throw new DeployError(`${where}: not BRIDGE_CONFIG, SIGNING_KEYS or a WEBHOOK_SECRET_ name`)
         if (variables.has(name)) throw new DeployError(`${where}: ${name} is set twice`)
         if (at === line.length - 1) throw new DeployError(`${where}: ${name} is empty`)
         variables.set(name, line.slice(at + 1))

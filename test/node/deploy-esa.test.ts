@@ -169,19 +169,36 @@ describe('env file', () => {
         expect(Object.fromEntries(parseEnvFile(text))).toEqual({ SIGNING_KEYS: '{}', WEBHOOK_SECRET_A: 'b ' })
     })
 
+    it('reads past a byte order mark and the spaces before a name or a comment', () => {
+        const text = '﻿BRIDGE_CONFIG={}\n   # indented\n\t SIGNING_KEYS= {} \n'
+
+        expect(Object.fromEntries(parseEnvFile(text))).toEqual({ BRIDGE_CONFIG: '{}', SIGNING_KEYS: ' {} ' })
+    })
+
+    const NOT_BRIDGE = 'line 2: not BRIDGE_CONFIG, SIGNING_KEYS or a WEBHOOK_SECRET_ name'
+
+    // A secret pasted alone on a line can look like NAME=value, so nothing of a refused line is quoted
     it.each([
-        ['another name', 'PATH=/usr/bin', 'line 2: PATH is not a variable the bridge reads'],
-        ['a name in lower case', 'bridge_config={}', 'line 2: bridge_config is not a variable the bridge reads'],
-        ['a webhook secret without a source', 'WEBHOOK_SECRET_=x', 'line 2: WEBHOOK_SECRET_ is not a variable the bridge reads'],
-        ['a name that only starts like one', 'WEBHOOK_SECRETS=x', 'line 2: WEBHOOK_SECRETS is not a variable the bridge reads'],
-        ['a shell export', 'export SIGNING_KEYS={}', 'line 2: not NAME=value'],
-        ['a line without =', 'whsec_c2VjcmV0', 'line 2: not NAME=value'],
-        ['a value before the =', '{"d":"c2VjcmV0"}=x', 'line 2: not NAME=value'],
-        ['a name set twice', 'BRIDGE_CONFIG={}', 'line 2: BRIDGE_CONFIG is set twice'],
+        ['another name', 'PATH=/usr/bin', 'PATH'],
+        ['a name in lower case', 'bridge_config={}', 'bridge_config'],
+        ['a webhook secret without a source', 'WEBHOOK_SECRET_=x', 'WEBHOOK_SECRET_='],
+        ['a name that only starts like one', 'WEBHOOK_SECRETS=x', 'SECRETS'],
+        ['a shell export', 'export SIGNING_KEYS={}', 'export'],
+        ['a line without =', 'whsec_c2VjcmV0', 'c2VjcmV0'],
+        ['a value before the =', '{"d":"c2VjcmV0"}=x', 'c2VjcmV0'],
+        ['a secret alone on a line', 'whsec_c2VjcmV0==', 'c2VjcmV0'],
+        ['a secret in capitals alone on a line', 'WHSEC_QzJWSkNNVjA==', 'QzJWSkNNVjA'],
+        ['a secret shaped like a name', 'C2VJCMV0_QUJDREVG=R0hJSktM', 'QUJDREVG'],
+    ])('refuses %s, quoting nothing of the line', (_, line, part) => {
+        expect(() => parseEnvFile(`BRIDGE_CONFIG={}\n${line}\n`)).toThrow(new RegExp(`^${NOT_BRIDGE}$`))
+        expect(NOT_BRIDGE).not.toContain(part)
+    })
+
+    it.each([
+        ['a name set twice', 'BRIDGE_CONFIG={"x":"c2VjcmV0"}', 'line 2: BRIDGE_CONFIG is set twice'],
         ['an empty value', 'SIGNING_KEYS=', 'line 2: SIGNING_KEYS is empty'],
-    ])('refuses %s, naming the line but not its value', (_, line, message) => {
-        expect(() => parseEnvFile(`BRIDGE_CONFIG={}\n${line}\n`)).toThrow(message)
-        expect(() => parseEnvFile(`BRIDGE_CONFIG={}\n${line}\n`)).not.toThrow(/c2VjcmV0/)
+    ])('refuses %s, naming the bridge variable but not its value', (_, line, message) => {
+        expect(() => parseEnvFile(`BRIDGE_CONFIG={}\n${line}\n`)).toThrow(new RegExp(`^${message}$`))
     })
 
     it('refuses a file that sets nothing', () => {
@@ -603,7 +620,8 @@ describe('deploy-esa', () => {
             const ran = await deploy(esa, ['--name', NAME, '--bundle', BUNDLE_FILE, '--env-file', envFile])
 
             expect(ran.code).toBe(1)
-            expect(ran.stderr).toMatch(/other\.env: line 2: NODE_OPTIONS/)
+            expect(ran.stderr).toMatch(/other\.env: line 2: not BRIDGE_CONFIG, SIGNING_KEYS or a WEBHOOK_SECRET_ name\n/)
+            expect(ran.stderr).not.toContain('NODE_OPTIONS')
             expect(esa.calls).toEqual([])
             expectNoValue(ran)
         })
