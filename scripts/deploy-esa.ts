@@ -20,8 +20,9 @@
 // Self-contained, like scripts/smoke.ts, so that Node runs it by stripping its types.
 
 import { createHash, createHmac, randomUUID } from 'node:crypto'
-import { readFileSync } from 'node:fs'
+import { readFileSync, realpathSync } from 'node:fs'
 import { setTimeout as sleep } from 'node:timers/promises'
+import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 import { crc32, deflateRawSync } from 'node:zlib'
 
@@ -425,7 +426,16 @@ function text(value: unknown): string | undefined {
     return typeof value === 'string' && value !== '' ? value : undefined
 }
 
-if (import.meta.main) {
+// Not import.meta.main, which Node 24.0 and 24.1 lack: there the script would do nothing and exit 0
+function isMain(): boolean {
+    try {
+        return process.argv[1] !== undefined && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))
+    } catch {
+        return false
+    }
+}
+
+if (isMain()) {
     process.exitCode = await main(process.argv.slice(2), {
         fetch: (url, init) => fetch(url, init),
         env: process.env,

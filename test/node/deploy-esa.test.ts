@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process'
 import { createHash, createHmac, randomBytes } from 'node:crypto'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -658,6 +658,15 @@ describe('deploy-esa', () => {
 
             expect(code).toBe(2)
             expect(stdout).toBe('')
+            expect(stderr).toMatch(/^usage: node scripts\/deploy-esa\.ts /m)
+        })
+
+        it('runs through a symbolic link to it', async () => {
+            const link = join(dir, 'linked-deploy-esa.ts')
+            symlinkSync(SCRIPT, link)
+            const { code, stderr } = await run(link)
+
+            expect(code).toBe(2)
             expect(stderr).toMatch(/^usage: node scripts\/deploy-esa\.ts /m)
         })
 
