@@ -58,6 +58,8 @@ are public, and the subject token is the credential.
 
 - A parameter with an empty value is treated as absent, as
   [RFC 6749 §3.2](https://www.rfc-editor.org/rfc/rfc6749#section-3.2) requires.
+- Values are compared exactly, case included: a `grant_type` that differs only in case is refused with
+  `unsupported_grant_type`, and a `subject_token_type` or `requested_token_type` with `invalid_request`.
 - Each parameter in the table may appear at most once. Any other parameter is ignored.
 
 ```http
