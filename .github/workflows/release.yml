@@ -1,11 +1,12 @@
 name: Release
 
 # Releases the service when a v* tag is pushed: the container image for linux/amd64 and linux/arm64 on GitHub
-# Container Registry, tagged X.Y.Z, then the GitHub release for the tag, with the single-file Node bundle server.mjs
-# and its SHA-256 sum attached, so a release is never announced before its image exists. A version with a - is a
-# prerelease. Only the highest version that is not a prerelease, among all v* tags, gets the image tags X.Y and
-# latest and is marked as the latest release, so a patch to an older line moves neither. Started by hand
-# (workflow_dispatch), it checks, builds the image and the bundle under a placeholder version, and publishes nothing.
+# Container Registry, tagged X.Y.Z, then the GitHub release for the tag, with the single-file Node bundle server.mjs,
+# the single-file ESA bundle esa.js and their SHA-256 sums attached, so a release is never announced before its image
+# exists. A version with a - is a prerelease. Only the highest version that is not a prerelease, among all v* tags,
+# gets the image tags X.Y and latest and is marked as the latest release, so a patch to an older line moves neither.
+# Started by hand (workflow_dispatch), it checks, builds the image and the bundles under a placeholder version, and
+# publishes nothing.
 #
 # Three jobs, so install scripts and test code never run where anything can be published: check installs,
 # typechecks, tests and builds with read-only permissions; image builds the Dockerfile, whose build stage installs
@@ -180,6 +181,15 @@ jobs:
           sha256sum server.mjs > server.mjs.sha256
           cat server.mjs.sha256
 
+      - name: Bundle for ESA
+        run: npm run build:esa
+
+      - name: Checksum the ESA bundle
+        working-directory: dist/esa
+        run: |
+          sha256sum esa.js > esa.js.sha256
+          cat esa.js.sha256
+
       - name: Create the release
         if: env.DRY_RUN != 'true'
         env:
@@ -191,5 +201,5 @@ jobs:
           flags=(--latest=false)
           if [ "$LATEST" = true ]; then flags=(--latest); fi
           if [ "$PRERELEASE" = true ]; then flags+=(--prerelease); fi
-          gh release create "$TAG" dist/node/server.mjs dist/node/server.mjs.sha256 \
+          gh release create "$TAG" dist/node/server.mjs dist/node/server.mjs.sha256 dist/esa/esa.js dist/esa/esa.js.sha256 \
             --repo "$GITHUB_REPOSITORY" --verify-tag --title "$TAG" --generate-notes "${flags[@]}"
