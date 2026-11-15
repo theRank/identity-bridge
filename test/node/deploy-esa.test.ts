@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { crc32, inflateRawSync } from 'node:zlib'
 import { afterAll, describe, expect, it, vi } from 'vitest'
-import { authorization, canonicalQuery, type Io, main, parseEnvFile, zip } from '../../scripts/deploy-esa'
+import { authorization, canonicalQuery, type Io, main, parseVarsFile, zip } from '../../scripts/deploy-esa'
 
 const SCRIPT = fileURLToPath(new URL('../../scripts/deploy-esa.ts', import.meta.url).href)
 const dir = mkdtempSync(join(tmpdir(), 'identity-bridge-deploy-esa-'))
@@ -47,7 +47,7 @@ function file(name: string, content: string | Uint8Array): string {
     return path
 }
 
-const VARS_FILE = file('bridge.env', Object.entries(VALUES).map(([name, value]) => `${name}=${value}\n`).join(''))
+const VARS_FILE = file('bridge.vars', Object.entries(VALUES).map(([name, value]) => `${name}=${value}\n`).join(''))
 const BUNDLE_FILE = file('esa.js', BUNDLE)
 const ARGS = ['--name', NAME, '--bundle', BUNDLE_FILE, '--vars', VARS_FILE]
 
@@ -158,7 +158,7 @@ describe('variables file', () => {
             'WEBHOOK_SECRET_CASDOOR_2=x==',
         ].join('\n')
 
-        expect(Object.fromEntries(parseEnvFile(text))).toEqual({
+        expect(Object.fromEntries(parseVarsFile(text))).toEqual({
             BRIDGE_CONFIG: '{"issuer":"https://id.acme.example","tag":"a=b"}',
             SIGNING_KEYS: '"{\'quoted\': true}"',
             WEBHOOK_SECRET_CLERK_ACME: "'whsec_abc=='",
@@ -169,13 +169,13 @@ describe('variables file', () => {
     it('skips blank lines and comments, and reads CRLF line ends', () => {
         const text = '# the bridge\r\n\r\nSIGNING_KEYS={}\r\n   \r\n#WEBHOOK_SECRET_OLD=x\r\nWEBHOOK_SECRET_A=b \r\n'
 
-        expect(Object.fromEntries(parseEnvFile(text))).toEqual({ SIGNING_KEYS: '{}', WEBHOOK_SECRET_A: 'b ' })
+        expect(Object.fromEntries(parseVarsFile(text))).toEqual({ SIGNING_KEYS: '{}', WEBHOOK_SECRET_A: 'b ' })
     })
 
     it('reads past a byte order mark and the spaces before a name or a comment', () => {
-        const text = '﻿BRIDGE_CONFIG={}\n   # indented\n\t SIGNING_KEYS= {} \n'
+        const text = '\uFEFFBRIDGE_CONFIG={}\n   # indented\n\t SIGNING_KEYS= {} \n'
 
-        expect(Object.fromEntries(parseEnvFile(text))).toEqual({ BRIDGE_CONFIG: '{}', SIGNING_KEYS: ' {} ' })
+        expect(Object.fromEntries(parseVarsFile(text))).toEqual({ BRIDGE_CONFIG: '{}', SIGNING_KEYS: ' {} ' })
     })
 
     const NOT_BRIDGE = 'line 2: not BRIDGE_CONFIG, SIGNING_KEYS or a WEBHOOK_SECRET_ name'
@@ -193,7 +193,7 @@ describe('variables file', () => {
         ['a secret in capitals alone on a line', 'WHSEC_QzJWSkNNVjA==', 'QzJWSkNNVjA'],
         ['a secret shaped like a name', 'C2VJCMV0_QUJDREVG=R0hJSktM', 'QUJDREVG'],
     ])('refuses %s, quoting nothing of the line', (_, line, part) => {
-        expect(() => parseEnvFile(`BRIDGE_CONFIG={}\n${line}\n`)).toThrow(new RegExp(`^${NOT_BRIDGE}$`))
+        expect(() => parseVarsFile(`BRIDGE_CONFIG={}\n${line}\n`)).toThrow(new RegExp(`^${NOT_BRIDGE}$`))
         expect(NOT_BRIDGE).not.toContain(part)
     })
 
@@ -201,11 +201,11 @@ describe('variables file', () => {
         ['a name set twice', 'BRIDGE_CONFIG={"x":"c2VjcmV0"}', 'line 2: BRIDGE_CONFIG is set twice'],
         ['an empty value', 'SIGNING_KEYS=', 'line 2: SIGNING_KEYS is empty'],
     ])('refuses %s, naming the bridge variable but not its value', (_, line, message) => {
-        expect(() => parseEnvFile(`BRIDGE_CONFIG={}\n${line}\n`)).toThrow(new RegExp(`^${message}$`))
+        expect(() => parseVarsFile(`BRIDGE_CONFIG={}\n${line}\n`)).toThrow(new RegExp(`^${message}$`))
     })
 
     it('refuses a file that sets nothing', () => {
-        expect(() => parseEnvFile('# nothing\n\n')).toThrow('no variable')
+        expect(() => parseVarsFile('# nothing\n\n')).toThrow('no variable')
     })
 })
 
@@ -916,12 +916,12 @@ describe('deploy-esa', () => {
         })
 
         it('stops at a variables file with a name the bridge does not read, quoting none of its values', async () => {
-            const varsFile = file('other.env', `BRIDGE_CONFIG=${VALUES.BRIDGE_CONFIG}\nNODE_OPTIONS=--require ${marker()}\n`)
+            const varsFile = file('other.vars', `BRIDGE_CONFIG=${VALUES.BRIDGE_CONFIG}\nNODE_OPTIONS=--require ${marker()}\n`)
             const esa = fakeEsa()
             const ran = await deploy(esa, ['--name', NAME, '--bundle', BUNDLE_FILE, '--vars', varsFile])
 
             expect(ran.code).toBe(1)
-            expect(ran.stderr).toMatch(/other\.env: line 2: not BRIDGE_CONFIG, SIGNING_KEYS or a WEBHOOK_SECRET_ name\n/)
+            expect(ran.stderr).toMatch(/other\.vars: line 2: not BRIDGE_CONFIG, SIGNING_KEYS or a WEBHOOK_SECRET_ name\n/)
             expect(ran.stderr).not.toContain('NODE_OPTIONS')
             expect(esa.calls).toEqual([])
             expectNoValue(ran)
@@ -929,13 +929,13 @@ describe('deploy-esa', () => {
 
         it.each([
             ['bundle', ['--name', NAME, '--bundle', join(dir, 'missing.js'), '--vars', VARS_FILE]],
-            ['variables file', ['--name', NAME, '--bundle', BUNDLE_FILE, '--vars', join(dir, 'missing.env')]],
+            ['variables file', ['--name', NAME, '--bundle', BUNDLE_FILE, '--vars', join(dir, 'missing.vars')]],
         ])('stops at a %s it cannot read', async (_, args) => {
             const esa = fakeEsa()
             const ran = await deploy(esa, args)
 
             expect(ran.code).toBe(1)
-            expect(ran.stderr).toMatch(/missing\.(js|env)/)
+            expect(ran.stderr).toMatch(/missing\.(js|vars)/)
             expect(esa.calls).toEqual([])
         })
     })
@@ -972,7 +972,7 @@ describe('deploy-esa', () => {
 
         // Node reads an --env-file option even after the script's name, and exits before the script for a missing file
         it('reports a variables file it cannot read itself', async () => {
-            const missing = join(dir, 'missing.env')
+            const missing = join(dir, 'missing.vars')
             const { code, stderr } = await run(SCRIPT, ['--name', NAME, '--bundle', BUNDLE_FILE, '--vars', missing], CREDENTIALS)
 
             expect(code).toBe(1)

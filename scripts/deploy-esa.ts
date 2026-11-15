@@ -163,13 +163,14 @@ export function zip(name: string, data: Uint8Array): Buffer {
     return Buffer.concat([local, compressed, central, end])
 }
 
-// NAME=value lines, read much as docker run --env-file reads them: a byte order mark, blank lines, the spaces before
-// a name and lines starting with # are skipped, and the value is everything after the first =, quotes and all, so a
-// JSON value needs no escaping. A refused line is named by its number alone, since a secret pasted on a line of its
-// own can look like NAME=value; only a bridge variable's name, which is no secret, is quoted.
-export function parseEnvFile(text: string): Map<string, string> {
+// NAME=value lines, read much as docker run --env-file reads them: blank lines, the spaces before a name, a byte
+// order mark among them, and lines starting with # are skipped, and the value is everything after the first =, quotes
+// and all, so a JSON value needs no escaping. A refused line is named by its number alone, since a secret pasted on a
+// line of its own can look like NAME=value; only a bridge variable's name, which is no secret, is quoted.
+export function parseVarsFile(text: string): Map<string, string> {
     const variables = new Map<string, string>()
-    for (const [index, raw] of text.replace(/^\uFEFF/, '').split('\n').entries()) {
+    for (const [index, raw] of text.split('\n').entries()) {
+        // trimStart counts U+FEFF as a space, so it also drops a byte order mark
         const line = (raw.endsWith('\r') ? raw.slice(0, -1) : raw).trimStart()
         if (line === '' || line.startsWith('#')) continue
         const at = line.indexOf('=')
@@ -250,7 +251,7 @@ function parseOptions(args: string[]): Options {
 async function deploy(options: Options, credentials: Credentials, io: Io): Promise<void> {
     const { name, env } = options
     // Both files first, so that a mistake in either stops the deploy before it changes anything
-    const variables = readEnvFile(options.vars)
+    const variables = readVarsFile(options.vars)
     const bundle = read(options.bundle, 'the bundle')
     const api = client(options.endpoint, credentials, io)
 
@@ -325,10 +326,10 @@ function read(path: string, what: string): Buffer {
     }
 }
 
-function readEnvFile(path: string): Map<string, string> {
+function readVarsFile(path: string): Map<string, string> {
     const text = read(path, 'the variables file').toString('utf8')
     try {
-        return parseEnvFile(text)
+        return parseVarsFile(text)
     } catch (error) {
         throw error instanceof DeployError ? new DeployError(`${path}: ${error.message}`) : error
     }
