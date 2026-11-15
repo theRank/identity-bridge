@@ -9,7 +9,7 @@ import { CLERK_SECRET } from '../helpers/webhooks'
 
 const ROOT = fileURLToPath(new URL('../..', import.meta.url).href)
 const BUNDLE = join(ROOT, 'dist/esa/esa.js')
-// ESA's limit for a code package
+// ESA's limit for a code package, which scripts/build-esa.ts lets a bundle reach but not exceed
 const LIMIT = 4_000_000
 
 beforeAll(() => {
@@ -32,8 +32,8 @@ describe('ESA bundle', () => {
         expect(source).toMatch(/^export\s*\{[^}]*\bas default\b[^}]*\}/m)
     })
 
-    it('stays under the code package limit', () => {
-        expect(statSync(BUNDLE).size).toBeLessThan(LIMIT)
+    it('stays within the code package limit', () => {
+        expect(statSync(BUNDLE).size).toBeLessThanOrEqual(LIMIT)
     })
 
     it("opens with the bridge's licence notice and the full licence of jose", () => {

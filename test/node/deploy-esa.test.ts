@@ -353,7 +353,8 @@ function expectNoValue(ran: Ran, ...extra: string[]): void {
     const printed = ran.stdout + ran.stderr
     expect(ran.direct).toBe('')
     expect(printed).not.toContain('canary')
-    for (const value of [...Object.values(VALUES), ACCESS_KEY_SECRET, ...extra]) expect(printed).not.toContain(value)
+    const never = [...Object.values(VALUES), ACCESS_KEY_ID, ACCESS_KEY_SECRET, OSS.Signature, OSS.Policy, OSS.XOssSecurityToken, ...extra]
+    for (const value of never) expect(printed).not.toContain(value)
 }
 
 const encode = (text: string) => encodeURIComponent(text).replace(/[!'()*]/g, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`)
