@@ -494,11 +494,13 @@ which is why users are created on first sight, below.
 - **Refresh profiles from token claims.** Each access token carries the current verified email, name and
   picture. For Casdoor users this is the only way profile changes arrive.
 - **Keep authorization in the product**, keyed by `sub`. The bridge carries no roles or permissions.
-- **After `user-deleted`**, keep the tombstone: later events for the id change nothing. The user's last access
-  token still verifies until it expires, up to `tokenTtlSeconds` plus the verifier's leeway, so refuse tokens
-  for a tombstoned id for that long. A token for the id after that means the IdP signed the user in again,
-  as when a Casdoor user signs up again through the same OAuth account, which gives the same id
-  ([idp-casdoor.md](idp-casdoor.md#sign-in-providers)): create the user anew and drop the tombstone.
+- **After `user-deleted`**, keep the tombstone: later events for the id change nothing. The bridge does not
+  know about the deletion: it still exchanges an IdP token issued before it until that token expires or is too
+  old, and each access token it issues lives `tokenTtlSeconds`. So refuse tokens for a tombstoned id until the
+  [revocation bound](api.md#processing) has passed since the deletion, about 32 minutes with the defaults. A
+  token for the id after that means the IdP signed the user in again, as when a Casdoor user signs up again
+  through the same OAuth account, which gives the same id ([idp-casdoor.md](idp-casdoor.md#sign-in-providers)):
+  create the user anew and drop the tombstone.
 
 ## Casdoor events products do not receive
 
