@@ -214,6 +214,14 @@ describe('smoke script', () => {
             expect(code).toBe(0)
         })
 
+        it('sends the cookies of several --header options as one cookie header', async () => {
+            const origin = await guarded(await bridge(await devEnv()), { cookie: `${COOKIE}; other=1` })
+            const { code, stdout } = await run('smoke.ts', origin, 'acme', '--header', `cookie: ${COOKIE}`, '--header', 'cookie: other=1')
+
+            expect(stdout).not.toMatch(/FAIL/)
+            expect(code).toBe(0)
+        })
+
         it('fails every check without the header the server needs', async () => {
             const origin = await guarded(await bridge(await devEnv()), { cookie: COOKIE })
             const { code, stdout } = await run('smoke.ts', origin, 'acme')
