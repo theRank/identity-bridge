@@ -17,8 +17,9 @@
 //
 // The variables file holds NAME=value lines, as scripts/dev-env.ts prints them, for BRIDGE_CONFIG, SIGNING_KEYS and
 // WEBHOOK_SECRET_* only. The AccessKey comes from ALIBABA_CLOUD_ACCESS_KEY_ID and ALIBABA_CLOUD_ACCESS_KEY_SECRET.
-// --env defaults to production and --endpoint to esa.cn-hangzhou.aliyuncs.com. Nothing printed holds a value: an
-// error gives the API's code and message only, and for the call that carries the values only its code.
+// --env defaults to production and --endpoint to esa.cn-hangzhou.aliyuncs.com. Nothing printed holds a variable's
+// value or the AccessKey: an error gives the API's code and message only, and for the call that carries the values
+// only its code.
 //
 // Self-contained, like scripts/smoke.ts, so that Node runs it by stripping its types.
 
@@ -30,7 +31,8 @@ import { parseArgs } from 'node:util'
 import { crc32, deflateRawSync } from 'node:zlib'
 
 const USAGE =
-    'usage: node scripts/deploy-esa.ts --name <routine> --bundle <esa.js> --vars <file> [--env staging|production] [--endpoint <host>] [--print-access-token]'
+    'usage: node scripts/deploy-esa.ts --name <routine> --bundle <esa.js> --vars <file> [--env staging|production] ' +
+    '[--endpoint <host>] [--print-access-token]'
 const API_VERSION = '2024-09-10'
 const ALGORITHM = 'ACS3-HMAC-SHA256'
 const DEFAULT_ENDPOINT = 'esa.cn-hangzhou.aliyuncs.com'
@@ -167,7 +169,7 @@ export function zip(name: string, data: Uint8Array): Buffer {
 // own can look like NAME=value; only a bridge variable's name, which is no secret, is quoted.
 export function parseEnvFile(text: string): Map<string, string> {
     const variables = new Map<string, string>()
-    for (const [index, raw] of text.replace(/^﻿/, '').split('\n').entries()) {
+    for (const [index, raw] of text.replace(/^\uFEFF/, '').split('\n').entries()) {
         const line = (raw.endsWith('\r') ? raw.slice(0, -1) : raw).trimStart()
         if (line === '' || line.startsWith('#')) continue
         const at = line.indexOf('=')
@@ -487,11 +489,12 @@ function client(host: string, credentials: Credentials, io: Io): Api {
             throw new Unanswered(`${action}: the answer could not be read`)
         }
         const answer = parseAnswer(raw)
-        if (answer === undefined) throw new ApiError(`${action}: HTTP ${response.status}, an answer that is not JSON`, response.status, undefined)
+        const status = `${action}: HTTP ${response.status}`
+        if (answer === undefined) throw new ApiError(`${status}, an answer that is not JSON`, response.status, undefined)
         if (response.ok) return answer
         const code = text(answer.Code)
         const message = carriesValues ? undefined : text(answer.Message)
-        throw new ApiError(`${action}: HTTP ${response.status} ${code ?? 'without a code'}${message === undefined ? '' : `: ${message}`}`, response.status, code)
+        throw new ApiError(`${status} ${code ?? 'without a code'}${message === undefined ? '' : `: ${message}`}`, response.status, code)
     }
 }
 

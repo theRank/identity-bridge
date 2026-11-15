@@ -493,8 +493,10 @@ describe('deploy-esa', () => {
             expect(ran.stdout).not.toContain(STAGING_IPS[0])
         })
 
+        const forbidden = () => apiError(403, 'Forbidden.RAM', 'The user is not authorized.')
+
         it.each<[string, () => Response, RegExp]>([
-            ['fails', () => apiError(403, 'Forbidden.RAM', 'The user is not authorized.'), /^warning: .*staging addresses.*GetRoutineStagingEnvIp: HTTP 403 Forbidden\.RAM/],
+            ['fails', forbidden, /^warning: .*staging addresses.*GetRoutineStagingEnvIp: HTTP 403 Forbidden\.RAM/],
             ['gives none', () => json(200, { RequestId: 'r', IPV4: [] }), /^warning: ESA gave no staging address/],
             ['gives no list', () => json(200, { RequestId: 'r' }), /^warning: ESA gave no staging address/],
         ])('only warns when the staging address lookup %s, as the deploy is done', async (_, answer, warning) => {
@@ -535,7 +537,7 @@ describe('deploy-esa', () => {
         })
 
         it.each<[string, () => Response, string]>([
-            ['fails', () => apiError(403, 'Forbidden.RAM', 'The user is not authorized.'), 'GetRoutineAccessToken: HTTP 403 Forbidden.RAM: The user is not authorized.'],
+            ['fails', forbidden, 'GetRoutineAccessToken: HTTP 403 Forbidden.RAM: The user is not authorized.'],
             ['gives none', () => json(200, { RequestId: 'r' }), 'GetRoutineAccessToken: the answer has no Token'],
         ])('stops when the token asked for %s, the deploy done', async (_, answer, message) => {
             const esa = fakeEsa(answering('GetRoutineAccessToken', answer))
