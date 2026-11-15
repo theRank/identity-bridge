@@ -6,5 +6,6 @@
 !packages/server/package.json
 !tsconfig.json
 !scripts/build-node.ts
+!scripts/licence.ts
 !src/**/*.ts
 !LICENSE

@@ -4,8 +4,9 @@
         "module": "nodenext",
         "moduleResolution": "nodenext",
         "types": ["node"],
-        // Node runs these files by stripping their types
-        "erasableSyntaxOnly": true
+        // Node runs these files by stripping their types, so they import each other by their .ts names
+        "erasableSyntaxOnly": true,
+        "allowImportingTsExtensions": true
     },
     "include": ["."],
     "exclude": []
