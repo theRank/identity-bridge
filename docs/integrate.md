@@ -356,21 +356,31 @@ Use it from a handler:
 var verifier = &bridge.Verifier{Issuer: "https://id.acme.example", Audience: "acme"}
 
 func me(w http.ResponseWriter, r *http.Request) {
-	token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
-	claims, err := verifier.VerifyAccessToken(token)
-	if !ok || err != nil {
-		w.Header().Set("WWW-Authenticate", "Bearer")
-		http.Error(w, "", http.StatusUnauthorized)
+	// The scheme is case-insensitive; anything but a bearer token is refused before verifying
+	scheme, token, found := strings.Cut(r.Header.Get("Authorization"), " ")
+	if !found || !strings.EqualFold(scheme, "Bearer") {
+		unauthorized(w)
+		return
+	}
+	claims, err := verifier.VerifyAccessToken(strings.TrimSpace(token))
+	if err != nil {
+		unauthorized(w)
 		return
 	}
 	fmt.Fprintf(w, "hello %s\n", claims.Sub)
+}
+
+func unauthorized(w http.ResponseWriter) {
+	w.Header().Set("WWW-Authenticate", "Bearer")
+	http.Error(w, "", http.StatusUnauthorized)
 }
 ```
 
 #### Python
 
-With [PyJWT](https://pyjwt.readthedocs.io/) and [`cryptography`](https://cryptography.io/), since Python's
-standard library has no ECDSA: `pip install pyjwt cryptography`.
+With [PyJWT](https://pyjwt.readthedocs.io/) 2.9 or later and [`cryptography`](https://cryptography.io/),
+since Python's standard library has no ECDSA: `pip install "pyjwt>=2.9" cryptography`. Earlier PyJWT versions
+do not accept the `PyJWK` that `get_signing_key_from_jwt` returns in `jwt.decode`; with them, pass its `.key`.
 
 ```python
 import jwt
@@ -424,14 +434,22 @@ webhook sources that list it ([fan-out](api.md#fan-out)). The body is the event 
 2. **Process each `jti` once.** The same event arrives again whenever the IdP redelivers a webhook, which it
    does after any product's delivery fails. Record the `jti` in the same transaction as the change it causes,
    so a crash between the two cannot apply an event twice or lose it.
-3. **Answer `202`** once the transaction has committed. Any `2xx` counts as delivered; any other answer, a
+3. **Keep deleted users deleted.** Events carry no sequence: an event an IdP redelivers can arrive after a
+   later one, as Clerk warns ([Clerk](https://clerk.com/docs/guides/development/webhooks/overview)). A late
+   `user-created` or `user-updated` has its own `jti`, so it passes the check above; on a `user-deleted`, keep
+   a tombstone for the id, and skip upserts for ids that have one.
+4. **Answer `202`** once the transaction has committed. Any `2xx` counts as delivered; any other answer, a
    redirect included, makes the bridge answer the IdP with `502`, and the IdP sends the webhook again. The
-   bridge waits 5 seconds for an answer.
+   bridge waits 5 seconds for an answer. Refuse an event that does not verify with `400` and the error body of
+   [RFC 8935 §2.3](https://www.rfc-editor.org/rfc/rfc8935#section-2.3), as the [API](api.md#event-token) asks.
 
 ```ts
 import { BridgeTokenError, createVerifier, type BridgeEvent } from '@therank/identity-bridge-server'
 
 const verifier = createVerifier({ issuer: 'https://id.acme.example', audience: 'acme' })
+
+// RFC 8935 error codes for the verifier's reasons; invalid_request for the rest
+const SET_ERRORS: Record<string, string> = { wrong_issuer: 'invalid_issuer', wrong_audience: 'invalid_audience', unknown_key: 'invalid_key' }
 
 export async function identityEvents(request: Request): Promise<Response> {
     let event: BridgeEvent
@@ -439,7 +457,9 @@ export async function identityEvents(request: Request): Promise<Response> {
         event = await verifier.verifyEvent(await request.text())
     } catch (error) {
         if (!(error instanceof BridgeTokenError)) throw error
-        return new Response(null, { status: error.reason === 'jwks_unavailable' ? 503 : 400 })
+        if (error.reason === 'jwks_unavailable') return new Response(null, { status: 503 })
+        const body = { err: SET_ERRORS[error.reason] ?? 'invalid_request', description: `The event was rejected: ${error.reason}.` }
+        return Response.json(body, { status: 400, headers: { 'content-language': 'en' } })
     }
     await db.transaction(async (tx) => {
         // jti is the primary key, so a repeat inserts nothing
@@ -447,32 +467,38 @@ export async function identityEvents(request: Request): Promise<Response> {
         if (rowCount === 0) return
         if (event.type === 'user-deleted') {
             await tx.query('DELETE FROM users WHERE id = $1', [event.userId])
-        } else {
-            await tx.query(
-                'INSERT INTO users (id, email, name) VALUES ($1, $2, $3) ON CONFLICT (id) DO UPDATE SET email = $2, name = $3',
-                [event.userId, event.profile.email ?? null, event.profile.name ?? null],
-            )
+            // The tombstone keeps a late event from bringing the user back
+            await tx.query('INSERT INTO deleted_users (id, deleted_at) VALUES ($1, now()) ON CONFLICT (id) DO UPDATE SET deleted_at = now()', [event.userId])
+            return
         }
+        const { rowCount: deleted } = await tx.query('SELECT 1 FROM deleted_users WHERE id = $1', [event.userId])
+        if (deleted > 0) return
+        await tx.query(
+            'INSERT INTO users (id, email, name) VALUES ($1, $2, $3) ON CONFLICT (id) DO UPDATE SET email = $2, name = $3',
+            [event.userId, event.profile.email ?? null, event.profile.name ?? null],
+        )
     })
     return new Response(null, { status: 202 })
 }
 ```
 
-`db` stands for the product's database client. Events carry no sequence: an event an IdP redelivers can arrive
-after a later one, as Clerk warns ([Clerk](https://clerk.com/docs/guides/development/webhooks/overview)), and a
-`user-created` can arrive after the user's first request.
+`db` stands for the product's database client. A `user-created` can also arrive after the user's first request,
+which is why users are created on first sight, below.
 
 ## Data rules
 
 - **Key users by `sub`**, the bridge's user id. It is the same whichever client the user signs in from, and in
   every event. Do not key by email, which can change or be absent, and do not branch on the `idp` claim.
-- **Create users on first sight**, from whichever comes first: an access token or a `user-created` event.
-  Some users produce no `user-created` at all.
+- **Create users on first sight**, from whichever comes first: an access token or a `user-created` event, unless
+  the id has a tombstone (below). Some users produce no `user-created` at all.
 - **Refresh profiles from token claims.** Each access token carries the current verified email, name and
   picture. For Casdoor users this is the only way profile changes arrive.
 - **Keep authorization in the product**, keyed by `sub`. The bridge carries no roles or permissions.
-- **After `user-deleted`**, the user's last access token still verifies until it expires, up to
-  `tokenTtlSeconds`. Check your user table where that matters.
+- **After `user-deleted`**, keep the tombstone: later events for the id change nothing. The user's last access
+  token still verifies until it expires, up to `tokenTtlSeconds` plus the verifier's leeway, so refuse tokens
+  for a tombstoned id for that long. A token for the id after that means the IdP signed the user in again,
+  as when a Casdoor user signs up again through the same OAuth account, which gives the same id
+  ([idp-casdoor.md](idp-casdoor.md#sign-in-providers)): create the user anew and drop the tombstone.
 
 ## Casdoor events products do not receive
 
