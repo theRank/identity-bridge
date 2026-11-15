@@ -494,6 +494,66 @@ describe('deploy-esa', () => {
         expectNoValue(ran, ...Object.values(stale).map((variable) => variable.Value))
     })
 
+    describe('listing the variables', () => {
+        const stale = Object.fromEntries(Array.from({ length: 60 }, (_, index) => [`WEBHOOK_SECRET_OLD_${index}`, { Type: 'secret_text', Value: marker() }]))
+        const lists = (esa: FakeEsa) => esa.calls.filter((call) => call.action === 'ListRoutineEnvironmentVariables')
+
+        // Pages of 20 whatever the size asked for, as a server may cap it
+        function capped(esa: () => FakeEsa, total: boolean): Respond {
+            return (call) => {
+                if (call.action !== 'ListRoutineEnvironmentVariables') return undefined
+                const all = Object.entries(esa().variables[call.form.Env!]!)
+                const number = Number(call.form.PageNumber)
+                const page = Object.fromEntries(all.slice((number - 1) * 20, number * 20))
+                return json(200, { ...(total && { TotalCount: all.length }), PageNumber: number, PageSize: 20, EnvironmentVariables: page })
+            }
+        }
+
+        it('follows TotalCount past pages shorter than the size asked for', async () => {
+            const esa: FakeEsa = fakeEsa(capped(() => esa, true), stale)
+            const ran = await deploy(esa)
+
+            expect(ran.code).toBe(0)
+            expect(ran.stderr.match(/^warning: .*WEBHOOK_SECRET_OLD_\d+/gm)).toHaveLength(60)
+            expect(lists(esa).map((call) => call.form.PageNumber)).toEqual(['1', '2', '3', '4'])
+        })
+
+        it('reads to an empty page without TotalCount', async () => {
+            const esa: FakeEsa = fakeEsa(capped(() => esa, false), stale)
+            const ran = await deploy(esa)
+
+            expect(ran.code).toBe(0)
+            expect(ran.stderr.match(/^warning: .*WEBHOOK_SECRET_OLD_\d+/gm)).toHaveLength(60)
+            expect(lists(esa).map((call) => call.form.PageNumber)).toEqual(['1', '2', '3', '4', '5'])
+        })
+
+        it('stops after 100 pages, warning that the check may be incomplete', async () => {
+            const endless = answering('ListRoutineEnvironmentVariables', (call) => {
+                const page = Array.from({ length: 50 }, (_, index) => [`OTHER_${call.form.PageNumber}_${index}`, { Type: 'plain_text', Value: 'x' }])
+                return json(200, { EnvironmentVariables: Object.fromEntries(page) })
+            })
+            const esa = fakeEsa(endless)
+            const ran = await deploy(esa)
+
+            expect(ran.code).toBe(0)
+            expect(lists(esa)).toHaveLength(100)
+            expect(ran.stderr.trimEnd().split('\n')).toEqual([expect.stringMatching(/^warning: .*after 100 pages.*may have missed/)])
+        })
+
+        it.each<[string, unknown]>([
+            ['without EnvironmentVariables', undefined],
+            ['with EnvironmentVariables that is a list', [{ Key: 'WEBHOOK_SECRET_OLD', Type: 'secret_text' }]],
+            ['with EnvironmentVariables that is text', 'WEBHOOK_SECRET_OLD'],
+        ])('warns that the check was skipped for an answer %s', async (_, variables) => {
+            const esa = fakeEsa(answering('ListRoutineEnvironmentVariables', () => json(200, { TotalCount: 1, EnvironmentVariables: variables })), stale)
+            const ran = await deploy(esa)
+
+            expect(ran.code).toBe(0)
+            expect(ran.stderr.trimEnd().split('\n')).toEqual([expect.stringMatching(/^warning: .*check for stale variables was skipped/)])
+            expect(lists(esa)).toHaveLength(1)
+        })
+    })
+
     it("stops at an API error, printing only the API's code and message", async () => {
         const esa = fakeEsa(answering('CreateRoutineWithAssetsCodeVersion', () => apiError(400, 'InvalidParameter', 'The specified parameter is invalid.')))
         const ran = await deploy(esa)

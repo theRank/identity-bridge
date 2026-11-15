@@ -252,7 +252,7 @@ async function deploy(options: Options, credentials: Credentials, io: Io): Promi
 
     await setVariables(api, name, env, variables)
     io.stdout(`${env} variables set: ${[...variables.keys()].map((key) => `${key} (${variableType(key)})`).join(', ')}\n`)
-    for (const key of await listVariables(api, name, env)) {
+    for (const key of await listVariables(api, io, name, env)) {
         if (BRIDGE_VARIABLE.test(key) && !variables.has(key)) io.stderr(`warning: ${env} holds ${key}, which ${options.vars} does not set; it is kept\n`)
     }
 
@@ -318,8 +318,9 @@ async function setVariables(api: Api, name: string, env: string, variables: Map<
     }
 }
 
-// The names only: the answer holds the plain values in clear
-async function listVariables(api: Api, name: string, env: string): Promise<string[]> {
+// The names only, since the answer holds the plain values in clear. A page can hold fewer names than asked for, so
+// the pages run to TotalCount when ESA gives it, and to an empty page when not.
+async function listVariables(api: Api, io: Io, name: string, env: string): Promise<string[]> {
     const names: string[] = []
     for (let page = 1; page <= MAX_PAGES; page++) {
         const answer = await api({
@@ -327,10 +328,16 @@ async function listVariables(api: Api, name: string, env: string): Promise<strin
             method: 'POST',
             form: { Name: name, Env: env, PageNumber: String(page), PageSize: String(PAGE_SIZE) },
         })
-        const listed = isRecord(answer.EnvironmentVariables) ? Object.keys(answer.EnvironmentVariables) : []
+        if (!isRecord(answer.EnvironmentVariables)) {
+            io.stderr(`warning: ESA listed the ${env} variables without their names, so the check for stale variables was skipped\n`)
+            return []
+        }
+        const listed = Object.keys(answer.EnvironmentVariables)
         names.push(...listed)
-        if (listed.length < PAGE_SIZE || names.length >= Number(answer.TotalCount)) break
+        const total = typeof answer.TotalCount === 'number' ? answer.TotalCount : undefined
+        if (listed.length === 0 || (total !== undefined && names.length >= total)) return names
     }
+    io.stderr(`warning: listing the ${env} variables stopped after ${MAX_PAGES} pages, so the check for stale variables may have missed some\n`)
     return names
 }
 
