@@ -9,15 +9,23 @@ const SRC = join(ROOT, 'src')
 
 // APIs that ESA lacks, though the Workers runtime the tests run in has them; with no local ESA runtime, only this
 // check stops the source from using them
-const MISSING_ON_ESA: [name: string, use: RegExp][] = [
-    ['URL.parse', /\bURL\s*(?:\?\.|\.)\s*parse\b|\bURL\s*(?:\?\.)?\[\s*['"`]parse['"`]\s*\]/],
-    ['performance', /\bperformance\b/],
+const MISSING_ON_ESA: [name: string, uses: RegExp[]][] = [
+    [
+        'URL.parse',
+        [
+            /\bURL\s*(?:\?\.|\.)\s*parse\b/,
+            /\bURL\s*(?:\?\.)?\[\s*['"`]parse['"`]\s*\]/,
+            // Destructured, as in const { parse } = URL
+            /\{[^}]*\bparse\b[^}]*\}\s*=\s*(?:globalThis\s*\.\s*)?URL\b/,
+        ],
+    ],
+    ['performance', [/\bperformance\b/]],
 ]
 
 // The code without its comments, which may name the APIs to explain why they are avoided
 function uses(source: string): string[] {
     const { code } = transformSync(source, { loader: 'ts', legalComments: 'none' })
-    return MISSING_ON_ESA.filter(([, use]) => use.test(code)).map(([name]) => name)
+    return MISSING_ON_ESA.filter(([, uses]) => uses.some((use) => use.test(code))).map(([name]) => name)
 }
 
 function sources(directory: string): string[] {
@@ -34,6 +42,9 @@ describe('APIs missing on ESA', () => {
         ['const parse = URL.parse', ['URL.parse']],
         ['const url = URL?.parse(input)', ['URL.parse']],
         ["const url = URL['parse'](input)", ['URL.parse']],
+        ['const { parse } = URL', ['URL.parse']],
+        ['const { canParse, parse: parseUrl } = globalThis.URL', ['URL.parse']],
+        ['const { parse } = JSON', []],
         ['const start = performance.now()', ['performance']],
         ['const start = globalThis.performance.now()', ['performance']],
         ['// URL.parse is missing on ESA\nconst url = new URL(input)', []],
