@@ -497,8 +497,9 @@ export async function identityEvents(request: Request): Promise<Response> {
 }
 ```
 
-`db` stands for the product's database client. A `user-created` can also arrive after the user's first request,
-which is why users are created on first sight, below.
+`db` stands for the product's database client, and the SQL is PostgreSQL's. Another database needs its own lock
+on the user id, held until the transaction ends. A `user-created` can also arrive after the user's first
+request, which is why users are created on first sight, below.
 
 ## Data rules
 
