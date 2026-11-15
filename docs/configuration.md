@@ -108,7 +108,7 @@ A record does not repeat its id as a member: `id` is an unknown key. Durations a
 | `idps.*.algorithms` | no | A non-empty subset of `RS256`, `RS384`, `RS512`, `PS256`, `ES256`, `ES384`, `EdDSA` | `["RS256", "ES256"]` |
 | `idps.*.maxTokenAgeSeconds` | no | How old an IdP token may be, by its `iat`, 30 to 3600 | `900` |
 | `idps.*.clockToleranceSeconds` | no | Tolerance for `exp`, `nbf` and `iat`, 0 to 300 | `60` |
-| `idps.*.requiredClaims` | no | A non-empty object of claim name to string, number or boolean. Each must equal the token's claim exactly | `{}` |
+| `idps.*.requiredClaims` | no | A non-empty object of claim name to string, number or boolean. Each must equal the token's claim exactly. To require none, omit the key: `{}` is refused | absent |
 | `idps.*.claims` | no | The [claim mapping](#claim-mapping) | see below |
 | `products` | yes | A non-empty object of product records | |
 | `products.*.idps` | yes | A non-empty array of bindings, `{ "idp": "<idp id>" }` plus the optional lists below. Each `idp` exists and is bound at most once per product | |
