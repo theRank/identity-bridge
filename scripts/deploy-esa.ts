@@ -1,23 +1,21 @@
 // Deploys the bridge to an ESA Functions and Pages routine through the ESA OpenAPI, with the deployer's AccessKey:
 //
-//     node scripts/deploy-esa.ts --name <routine> --bundle <esa.js> --env-file <file> [--env staging|production] [--endpoint <host>]
+//     node scripts/deploy-esa.ts --name <routine> --bundle <esa.js> --vars <file> [--env staging|production] [--endpoint <host>]
 //
 // In order, it:
 // - creates the routine unless it exists;
-// - sets the env file's variables in the environment, BRIDGE_CONFIG as plain text and the rest as secrets, and warns
-//   of bridge variables the environment holds that the file lacks, deleting none;
+// - sets the variables of the --vars file in the environment, BRIDGE_CONFIG as plain text and the rest as secrets,
+//   and warns of bridge variables the environment holds that the file lacks, deleting none;
 // - creates a code version bound to the environment, the only way the variables reach a version, uploads the bundle
 //   into it and waits until it is available;
 // - deploys that version to all requests and prints the routine's default domain.
 // ESA's own CLI cannot set the variables: it refuses values over 200 characters, which a configuration or a
 // rotation's SIGNING_KEYS exceed, though ESA takes them.
 //
-// The env file holds NAME=value lines, as scripts/dev-env.ts prints them, for BRIDGE_CONFIG, SIGNING_KEYS and
+// The variables file holds NAME=value lines, as scripts/dev-env.ts prints them, for BRIDGE_CONFIG, SIGNING_KEYS and
 // WEBHOOK_SECRET_* only. The AccessKey comes from ALIBABA_CLOUD_ACCESS_KEY_ID and ALIBABA_CLOUD_ACCESS_KEY_SECRET.
 // --env defaults to production and --endpoint to esa.cn-hangzhou.aliyuncs.com. Nothing printed holds a value: an
-// error gives the API's code and message only, and for the call that carries the values only its code. Node itself
-// checks that an --env-file exists, even after the script's name, and exits 9 before this script runs when it does
-// not.
+// error gives the API's code and message only, and for the call that carries the values only its code.
 //
 // Self-contained, like scripts/smoke.ts, so that Node runs it by stripping its types.
 
@@ -27,7 +25,7 @@ import { setTimeout as sleep } from 'node:timers/promises'
 import { parseArgs } from 'node:util'
 import { crc32, deflateRawSync } from 'node:zlib'
 
-const USAGE = 'usage: node scripts/deploy-esa.ts --name <routine> --bundle <esa.js> --env-file <file> [--env staging|production] [--endpoint <host>]'
+const USAGE = 'usage: node scripts/deploy-esa.ts --name <routine> --bundle <esa.js> --vars <file> [--env staging|production] [--endpoint <host>]'
 const API_VERSION = '2024-09-10'
 const ALGORITHM = 'ACS3-HMAC-SHA256'
 const DEFAULT_ENDPOINT = 'esa.cn-hangzhou.aliyuncs.com'
@@ -177,7 +175,7 @@ export interface Io {
 interface Options {
     name: string
     bundle: string
-    envFile: string
+    vars: string
     env: string
     endpoint: string
 }
@@ -209,25 +207,25 @@ export async function main(args: string[], io: Io): Promise<number> {
 
 // The arguments hold no secret, but a fixed message stays safe if one is passed by mistake
 function parseOptions(args: string[]): Options {
-    let values: { name?: string; bundle?: string; 'env-file'?: string; env?: string; endpoint?: string }
+    let values: { name?: string; bundle?: string; vars?: string; env?: string; endpoint?: string }
     try {
         const string = { type: 'string' } as const
-        values = parseArgs({ args, options: { name: string, bundle: string, 'env-file': string, env: string, endpoint: string } }).values
+        values = parseArgs({ args, options: { name: string, bundle: string, vars: string, env: string, endpoint: string } }).values
     } catch (error) {
         throw new DeployError(ARGUMENT_ERRORS[(error as { code?: string }).code ?? ''] ?? 'invalid arguments')
     }
-    const { name, bundle, 'env-file': envFile, env = 'production', endpoint = DEFAULT_ENDPOINT } = values
-    if (name === undefined || bundle === undefined || envFile === undefined) throw new DeployError('--name, --bundle and --env-file are required')
+    const { name, bundle, vars, env = 'production', endpoint = DEFAULT_ENDPOINT } = values
+    if (name === undefined || bundle === undefined || vars === undefined) throw new DeployError('--name, --bundle and --vars are required')
     if (!ROUTINE_NAME.test(name)) throw new DeployError('--name takes lowercase letters, digits and -, starting with a letter, at least 2 characters')
     if (!ENVIRONMENTS.includes(env)) throw new DeployError('--env is staging or production')
     if (!HOST.test(endpoint)) throw new DeployError(`--endpoint is a host name, such as ${DEFAULT_ENDPOINT}`)
-    return { name, bundle, envFile, env, endpoint }
+    return { name, bundle, vars, env, endpoint }
 }
 
 async function deploy(options: Options, credentials: Credentials, io: Io): Promise<void> {
     const { name, env } = options
     // Both files first, so that a mistake in either stops the deploy before it changes anything
-    const variables = readEnvFile(options.envFile)
+    const variables = readEnvFile(options.vars)
     const bundle = read(options.bundle, 'the bundle')
     const api = client(options.endpoint, credentials, io.fetch)
 
@@ -238,7 +236,7 @@ async function deploy(options: Options, credentials: Credentials, io: Io): Promi
     await setVariables(api, name, env, variables)
     io.stdout(`${env} variables set: ${[...variables.keys()].map((key) => `${key} (${variableType(key)})`).join(', ')}\n`)
     for (const key of await listVariables(api, name, env)) {
-        if (BRIDGE_VARIABLE.test(key) && !variables.has(key)) io.stderr(`warning: ${env} holds ${key}, which ${options.envFile} does not set; it is kept\n`)
+        if (BRIDGE_VARIABLE.test(key) && !variables.has(key)) io.stderr(`warning: ${env} holds ${key}, which ${options.vars} does not set; it is kept\n`)
     }
 
     const version = await createVersion(api, io.fetch, name, env, bundle)
@@ -265,7 +263,7 @@ function read(path: string, what: string): Buffer {
 }
 
 function readEnvFile(path: string): Map<string, string> {
-    const text = read(path, 'the env file').toString('utf8')
+    const text = read(path, 'the variables file').toString('utf8')
     try {
         return parseEnvFile(text)
     } catch (error) {

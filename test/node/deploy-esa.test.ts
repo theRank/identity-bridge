@@ -44,9 +44,9 @@ function file(name: string, content: string | Uint8Array): string {
     return path
 }
 
-const ENV_FILE = file('bridge.env', Object.entries(VALUES).map(([name, value]) => `${name}=${value}\n`).join(''))
+const VARS_FILE = file('bridge.env', Object.entries(VALUES).map(([name, value]) => `${name}=${value}\n`).join(''))
 const BUNDLE_FILE = file('esa.js', BUNDLE)
-const ARGS = ['--name', NAME, '--bundle', BUNDLE_FILE, '--env-file', ENV_FILE]
+const ARGS = ['--name', NAME, '--bundle', BUNDLE_FILE, '--vars', VARS_FILE]
 
 const sha256 = (data: string | Uint8Array) => createHash('sha256').update(data).digest('hex')
 
@@ -146,7 +146,7 @@ describe('zip', () => {
     })
 })
 
-describe('env file', () => {
+describe('variables file', () => {
     it('reads NAME=value lines, keeping every = after the first and any quotes', () => {
         const text = [
             'BRIDGE_CONFIG={"issuer":"https://id.acme.example","tag":"a=b"}',
@@ -582,7 +582,7 @@ describe('deploy-esa', () => {
             ['no option', []],
             ['no --name', ARGS.slice(2)],
             ['no --bundle', [...ARGS.slice(0, 2), ...ARGS.slice(4)]],
-            ['no --env-file', ARGS.slice(0, 4)],
+            ['no --vars', ARGS.slice(0, 4)],
             ['a name in capitals', ['--name', 'Bridge', ...ARGS.slice(2)]],
             ['a name with _', ['--name', 'bridge_test', ...ARGS.slice(2)]],
             ['a name starting with a digit', ['--name', '1bridge', ...ARGS.slice(2)]],
@@ -590,13 +590,14 @@ describe('deploy-esa', () => {
             ['another environment', [...ARGS, '--env', 'prod']],
             ['an endpoint that is a URL', [...ARGS, '--endpoint', 'https://esa.cn-hangzhou.aliyuncs.com']],
             ['an unknown option', [...ARGS, '--force']],
+            ['--env-file, which Node takes as its own', [...ARGS.slice(0, 4), '--env-file', VARS_FILE]],
             ['an argument', [...ARGS, 'extra']],
         ])('prints the usage for %s', async (_, args) => {
             const esa = fakeEsa()
             const ran = await deploy(esa, args)
 
             expect(ran.code).toBe(2)
-            expect(ran.stderr).toMatch(/usage: node scripts\/deploy-esa\.ts --name <routine> --bundle <esa\.js> --env-file <file>/)
+            expect(ran.stderr).toMatch(/usage: node scripts\/deploy-esa\.ts --name <routine> --bundle <esa\.js> --vars <file>/)
             expect(ran.stdout).toBe('')
             expect(esa.calls).toEqual([])
         })
@@ -614,10 +615,10 @@ describe('deploy-esa', () => {
             expect(esa.calls).toEqual([])
         })
 
-        it('stops at an env file with a name the bridge does not read, quoting none of its values', async () => {
-            const envFile = file('other.env', `BRIDGE_CONFIG=${VALUES.BRIDGE_CONFIG}\nNODE_OPTIONS=--require ${marker()}\n`)
+        it('stops at a variables file with a name the bridge does not read, quoting none of its values', async () => {
+            const varsFile = file('other.env', `BRIDGE_CONFIG=${VALUES.BRIDGE_CONFIG}\nNODE_OPTIONS=--require ${marker()}\n`)
             const esa = fakeEsa()
-            const ran = await deploy(esa, ['--name', NAME, '--bundle', BUNDLE_FILE, '--env-file', envFile])
+            const ran = await deploy(esa, ['--name', NAME, '--bundle', BUNDLE_FILE, '--vars', varsFile])
 
             expect(ran.code).toBe(1)
             expect(ran.stderr).toMatch(/other\.env: line 2: not BRIDGE_CONFIG, SIGNING_KEYS or a WEBHOOK_SECRET_ name\n/)
@@ -627,8 +628,8 @@ describe('deploy-esa', () => {
         })
 
         it.each([
-            ['bundle', ['--name', NAME, '--bundle', join(dir, 'missing.js'), '--env-file', ENV_FILE]],
-            ['env file', ['--name', NAME, '--bundle', BUNDLE_FILE, '--env-file', join(dir, 'missing.env')]],
+            ['bundle', ['--name', NAME, '--bundle', join(dir, 'missing.js'), '--vars', VARS_FILE]],
+            ['variables file', ['--name', NAME, '--bundle', BUNDLE_FILE, '--vars', join(dir, 'missing.env')]],
         ])('stops at a %s it cannot read', async (_, args) => {
             const esa = fakeEsa()
             const ran = await deploy(esa, args)
@@ -639,20 +640,34 @@ describe('deploy-esa', () => {
         })
     })
 
-    // As deployers run it: plain node, which strips the types itself
-    it('runs with plain node, printing its usage without arguments', async () => {
-        const { code, stdout, stderr } = await new Promise<{ code: number | null; stdout: string; stderr: string }>((resolve, reject) => {
-            const child = spawn(process.execPath, [SCRIPT], { env: {} })
-            let out = ''
-            let err = ''
-            child.stdout.on('data', (chunk) => (out += String(chunk)))
-            child.stderr.on('data', (chunk) => (err += String(chunk)))
-            child.on('error', reject)
-            child.on('close', (exit) => resolve({ code: exit, stdout: out, stderr: err }))
+    describe('with plain node, as deployers run it', () => {
+        function run(script: string, args: string[] = [], env: Record<string, string> = {}): Promise<{ code: number | null; stdout: string; stderr: string }> {
+            return new Promise((resolve, reject) => {
+                const child = spawn(process.execPath, [script, ...args], { env })
+                let stdout = ''
+                let stderr = ''
+                child.stdout.on('data', (chunk) => (stdout += String(chunk)))
+                child.stderr.on('data', (chunk) => (stderr += String(chunk)))
+                child.on('error', reject)
+                child.on('close', (code) => resolve({ code, stdout, stderr }))
+            })
+        }
+
+        it('prints its usage without arguments', async () => {
+            const { code, stdout, stderr } = await run(SCRIPT)
+
+            expect(code).toBe(2)
+            expect(stdout).toBe('')
+            expect(stderr).toMatch(/^usage: node scripts\/deploy-esa\.ts /m)
         })
 
-        expect(code).toBe(2)
-        expect(stdout).toBe('')
-        expect(stderr).toMatch(/^usage: node scripts\/deploy-esa\.ts /m)
+        // Node reads an --env-file option even after the script's name, and exits before the script for a missing file
+        it('reports a variables file it cannot read itself', async () => {
+            const missing = join(dir, 'missing.env')
+            const { code, stderr } = await run(SCRIPT, ['--name', NAME, '--bundle', BUNDLE_FILE, '--vars', missing], CREDENTIALS)
+
+            expect(code).toBe(1)
+            expect(stderr).toBe(`deploy failed: cannot read the variables file ${missing}: ENOENT\n`)
+        })
     })
 })
