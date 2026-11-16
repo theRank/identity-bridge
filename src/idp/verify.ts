@@ -92,8 +92,6 @@ async function verifySignature(token: string, idp: IdpConfig, deps: Deps): Promi
     }
 }
 
-// Rows in order: several outcomes share a class and differ only in claim or reason, and the row for a time
-// claim that is not a number comes before the nbf and iat rows
 function failureCode(error: unknown, keyFetched: () => boolean): LogCode | undefined {
     if (error instanceof errors.JWTInvalid || error instanceof errors.JWSInvalid) return 'malformed_token'
     // Only an unsupported crit extension reaches it: the algorithm allowlist holds algorithms jose supports

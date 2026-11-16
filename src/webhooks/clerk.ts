@@ -63,7 +63,6 @@ function profile(user: JsonObject): Profile {
     })
 }
 
-// The entry the primary id names, if Clerk verified it
 function verifiedPrimary(user: JsonObject, list: string, primaryKey: string): JsonObject | undefined {
     const id = own(user, primaryKey)
     const entries = own(user, list)

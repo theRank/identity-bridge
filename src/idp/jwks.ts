@@ -2,9 +2,8 @@ import { createRemoteJWKSet, customFetch, type RemoteJWKSet } from 'jose'
 import type { Deps, IdpConfig } from '../types'
 import { JWKS_TIMEOUT_MS, jwksFetch } from './fetch'
 
-// One key set per parsed IdP record, so fetched keys and the refetch cooldown carry across requests for as long
-// as the runtime holding the configuration lives, and each parsed configuration starts with sets of its own.
-// jose keeps the fetch a set is created with, so each set uses the first deps.fetch it was given.
+// One key set per parsed IdP record, so fetched keys and the refetch cooldown last as long as the runtime holding
+// the configuration. jose keeps the fetch a set is created with, so each set uses the first deps.fetch it was given.
 let sets = new WeakMap<IdpConfig, RemoteJWKSet>()
 let cooldownDuration: number | undefined
 

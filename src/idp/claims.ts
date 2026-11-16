@@ -10,8 +10,7 @@ export interface MappedClaims {
     profile: RawProfile
 }
 
-// Claim names come from configuration, where __proto__ or constructor is a valid name, so only a member of the
-// payload itself counts, never one its prototype answers for
+// Claim names come from configuration, where __proto__ and constructor are valid names, so only own members count
 export function claim(payload: Payload, name: string): unknown {
     return Object.hasOwn(payload, name) ? payload[name] : undefined
 }
