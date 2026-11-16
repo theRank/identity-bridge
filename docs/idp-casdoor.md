@@ -121,7 +121,7 @@ and `"uidField": "uid"` on the webhook source ([user ids](api.md#user-ids)).
 One Casdoor webhook per organization, each relayed by one bridge source that names that organization. Casdoor's
 [webhook documentation][casdoor-webhooks] shows a payload that differs from what Casdoor sends: Casdoor sends
 the [record][casdoor-records] of the API call. Those docs also leave out the extended user option, the token
-fields and the names of the retry fields. This guide follows Casdoor's source for them.
+fields and the names of the retry fields.
 
 | Setting | Value |
 |---|---|

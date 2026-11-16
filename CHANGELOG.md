@@ -5,8 +5,6 @@ breaking change to the [wire contract](docs/api.md) is a new major version of al
 
 ## 1.0.0 (unreleased)
 
-The first release.
-
 ### Service
 
 - `POST /token`: [RFC 8693](https://www.rfc-editor.org/rfc/rfc8693) token exchange of a Clerk or Casdoor JWT

@@ -1,7 +1,6 @@
 # API
 
-The bridge's wire contract: what clients send to `/token`, what product backends verify, what identity
-providers (IdPs) post to `/webhooks/{source}` and what products receive as events. The
+The bridge's wire contract with clients, product backends and identity providers (IdPs). The
 [SDKs](integrate.md) implement the client and backend sides; read this to integrate without them or to check
 what they do. Configuration keys named here are described in [configuration.md](configuration.md).
 
@@ -22,9 +21,7 @@ MAY are used as in [RFC 2119](https://www.rfc-editor.org/rfc/rfc2119).
 - A known path with another method is `405` with an empty body and the `Allow` header above. `HEAD` is not
   supported: on the `GET` routes it is `405`.
 - `{source}` is exactly one non-empty path segment, compared literally with the configured source ids, neither
-  decoded nor case-folded. `/webhooks/`, `/webhooks/a/b` and `/webhooks/a/` are unknown paths. On this route
-  the method is checked before the source.
-- `404` and `405` are answered the same way in [failure mode](#failure-mode).
+  decoded nor case-folded. `/webhooks/`, `/webhooks/a/b` and `/webhooks/a/` are unknown paths.
 
 ## Issuer
 
@@ -92,8 +89,7 @@ The age check bounds revocation. The bridge cannot see that an IdP banned a user
 refuses IdP tokens older than `maxTokenAgeSeconds`, so a client must get a fresh IdP token before each
 exchange, and the IdP checks the user again when it issues one. A user cut off at the IdP keeps access for at
 most `maxTokenAgeSeconds + clockToleranceSeconds + tokenTtlSeconds`, plus the verifier's own leeway on `exp`
-(at most 60 seconds, as below): 900 + 60 + 900 + 60 seconds, 32 minutes, with the defaults. Lower both
-durations for a faster cut-off.
+(at most 60 seconds, as below): 900 + 60 + 900 + 60 seconds, 32 minutes, with the defaults.
 
 ### Success
 
@@ -351,8 +347,7 @@ configured to send a secret header ([Casdoor][casdoor-webhooks]).
   present, as an object or `null` (a user without properties, so no override), else `bad_payload`: a body
   without it cannot tell "no override" from "override not sent".
 - **Profile**, for `user-created` only: `email` if `emailVerified` is `true`; `displayName`; `avatar`. No phone
-  number: Casdoor stores a number apart from its country code and has no verification flag for it
-  ([source][casdoor-user-fields]).
+  number ([why](idp-casdoor.md#token-format)).
 
 What this leaves out, and why, is listed in [idp-casdoor.md](idp-casdoor.md#what-is-not-relayed).
 
@@ -413,12 +408,11 @@ An example payload, for the Clerk source `clerk-acme`, the `svix-id` `msg_2pVYk0
 `exp`.
 
 **Answering.** A product answers `202`
-([RFC 8935 §2.2](https://www.rfc-editor.org/rfc/rfc8935#section-2.2)) once the event is durably accepted;
-the bridge accepts any `2xx`. A rejection SHOULD use the
-[RFC 8935 §2.3](https://www.rfc-editor.org/rfc/rfc8935#section-2.3) error body; the bridge treats any answer
-other than `2xx` as a failed delivery. A product MUST treat a repeated `jti` as already processed: the same
-event arrives again whenever the IdP redelivers a webhook. [integrate.md](integrate.md#consuming-events) shows
-how.
+([RFC 8935 §2.2](https://www.rfc-editor.org/rfc/rfc8935#section-2.2)) once the event is durably accepted. A
+rejection SHOULD use the [RFC 8935 §2.3](https://www.rfc-editor.org/rfc/rfc8935#section-2.3) error body; the
+bridge counts any `2xx` as delivered and anything else as failed ([fan-out](#fan-out)). A product MUST treat a
+repeated `jti` as already processed: the same event arrives again whenever the IdP redelivers a webhook.
+[integrate.md](integrate.md#consuming-events) shows how.
 
 ## Failure mode
 
@@ -437,7 +431,8 @@ logs a `runtime_load_failed` line that says what failed
 caught by `/healthz` and the smoke test rather than by the first user.
 
 An exception that escapes a route gets the answer failure mode gives that route, `503` on `/healthz`, and is
-logged as `internal_error`.
+logged as `internal_error`; on `/token`, once the product is resolved, that `500` also carries the
+[CORS](#cors) headers.
 
 [clerk-webhooks]: https://clerk.com/docs/guides/development/webhooks/overview
 [svix-verify]: https://docs.svix.com/receiving/verifying-payloads/how-manual
@@ -452,5 +447,4 @@ logged as `internal_error`.
 [casdoor-object]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/object/record.go#L165-L172
 [casdoor-extended-user]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/object/record.go#L440-L453
 [casdoor-self-apis]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/authz/authz.go#L278-L305
-[casdoor-user-fields]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/object/user.go#L83-L85
 [wx-network]: https://developers.weixin.qq.com/miniprogram/dev/framework/ability/network.html

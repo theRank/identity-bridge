@@ -85,9 +85,8 @@ ids users had before a migration to Clerk, write each user's previous bridge use
 The override lives in `external_id` rather than in metadata because it must reach the bridge in every user
 event, deletions included. Clerk's `user.created` and `user.updated` events carry the whole user
 ([webhooks][clerk-webhooks]), with `external_id` ([source][clerk-user-json]), but `user.deleted` carries only
-the user's id and, if one is set,
-`external_id` ([source][clerk-deleted-json]). An override kept in `public_metadata` would be missing from the
-deletion, which would then carry the wrong user id.
+the user's id and, if one is set, `external_id` ([source][clerk-deleted-json]). An override kept in
+`public_metadata` would be missing from the deletion, which would then carry the wrong user id.
 
 ## Webhooks
 
@@ -98,11 +97,8 @@ On the **Webhooks** page of the Clerk Dashboard, select **Add Endpoint** ([setti
   to them only adds requests.
 
 Copy the endpoint's signing secret, `whsec_...` ([webhooks][clerk-webhooks]), into the source's
-[webhook secret](configuration.md#webhook-secrets), `WEBHOOK_SECRET_CLERK_ACME` for the source `clerk-acme`.
-To rotate the secret, rotate it in Clerk first, then deploy the new value within about 24 hours: Svix signs each
-delivery with both the old and the new secret for that long ([Svix][svix-rotation],
-[Svix API][svix-rotate-api]), and the bridge accepts a delivery when any `v1` signature matches its secret,
-so no delivery fails.
+[webhook secret](configuration.md#webhook-secrets), `WEBHOOK_SECRET_CLERK_ACME` for the source `clerk-acme`;
+that section also gives the rotation that loses no delivery.
 
 Clerk delivers webhooks through Svix ([webhooks][clerk-webhooks]), which signs each one
 ([verifying][svix-verify]) and retries a delivery not answered with a `2xx`, on a schedule that runs for more
@@ -130,8 +126,6 @@ Clients pass a fresh session token to the bridge: [integrate.md](integrate.md#cl
 [clerk-webhook-setup]: https://clerk.com/docs/guides/development/webhooks/syncing#set-up-a-webhook-endpoint
 [svix-verify]: https://docs.svix.com/receiving/verifying-payloads/how-manual
 [svix-retries]: https://docs.svix.com/retries
-[svix-rotation]: https://www.svix.com/blog/svix-update-december-2021-part-1/
-[svix-rotate-api]: https://pkg.go.dev/github.com/svix/svix-webhooks/go#Endpoint.RotateSecret
 [mdn-origin]: https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Origin
 [clerk-user-json]: https://github.com/clerk/javascript/blob/c9bdae3b0aef91699a73824fecc6726959196ab4/packages/backend/src/api/resources/JSON.ts#L695
 [clerk-deleted-json]: https://github.com/clerk/javascript/blob/c9bdae3b0aef91699a73824fecc6726959196ab4/packages/backend/src/api/resources/JSON.ts#L747-L764

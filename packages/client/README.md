@@ -5,7 +5,7 @@ provider's token for the bridge's short-lived access token, keeps that token in 
 shortly before it expires. Your backend verifies the bridge token, for example with
 [`@therank/identity-bridge-server`](https://www.npmjs.com/package/@therank/identity-bridge-server).
 
-No dependencies. Runs in browsers, Node.js 22 or newer, and WeChat mini programs.
+No dependencies. Runs in browsers with ES2017 and `fetch`, Node.js 22 or newer, and WeChat mini programs.
 
 ## Install
 
@@ -68,8 +68,8 @@ const bridge = createBridgeClient({
 
 `casdoorMiniProgramIdpToken` calls `wx.login` for a code and exchanges it at Casdoor for a Casdoor access
 token. The WeChat app secret stays in Casdoor's WeChat mini program provider; the mini program needs only the
-client id of the Casdoor application. Only the access token is read from Casdoor's answer. Nothing else in it,
-including WeChat's session key, is read, kept or logged.
+client id of the Casdoor application. Of Casdoor's answer only the access token or the error is read; nothing
+else, WeChat's session key included, is read, kept or logged.
 
 A mini program must meet these constraints:
 
@@ -191,10 +191,6 @@ The package ships ES modules in `dist/` and CommonJS in `dist/cjs/`, compiled to
 but each build has its own `BridgeError` class: see [`BridgeError`](#bridgeerror). A root `wechat.d.ts` gives
 TypeScript projects on `moduleResolution: node`, which ignores the package's `exports`, the types of the
 `wechat` subpath.
-
-## Support
-
-Browsers with ES2017 and `fetch`, Node.js 22 or newer, and WeChat mini programs as described above.
 
 ## License
 

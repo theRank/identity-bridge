@@ -122,8 +122,6 @@ A record does not repeat its id as a member: `id` is an unknown key. Durations a
 | `webhookSources.*.uidField` | exactly when the IdP's `claims.uid` is set | The field behind the IdP's `uid` claim: for `clerk`, `external_id`; for `casdoor`, a non-empty `Properties` key | |
 | `webhookSources.*.products` | yes | A non-empty array of product ids, without repeats. Each exists, has `events`, and binds the source's `idp` | |
 
-A source's secret is named after its id, so the source `casdoor-acme` needs `WEBHOOK_SECRET_CASDOOR_ACME`.
-
 ### Claim mapping
 
 `idps.*.claims` names the IdP's claims the bridge reads. Every key is optional.
@@ -149,11 +147,9 @@ A source's secret is named after its id, so the source `casdoor-acme` needs `WEB
 
 ### Choosing the durations
 
-`maxTokenAgeSeconds` and `tokenTtlSeconds` bound how long a user the IdP cut off keeps access:
-`maxTokenAgeSeconds + clockToleranceSeconds + tokenTtlSeconds`, plus the verifier's own leeway on `exp`, up to
-60 seconds with the server SDK; about 32 minutes with the defaults ([why](api.md#processing)). Lower them for
-a faster cut-off. Each client exchanges about once per
-`tokenTtlSeconds`, so a shorter lifetime means more exchanges.
+`maxTokenAgeSeconds` and `tokenTtlSeconds` bound how long a user the IdP cut off keeps access, about 32 minutes
+with the defaults ([revocation bound](api.md#processing)). Lower them for a faster cut-off; each client
+exchanges about once per `tokenTtlSeconds`, so a shorter lifetime means more exchanges.
 
 ## Signing keys
 
@@ -237,10 +233,9 @@ To rotate a webhook secret:
 
 ## Sizes
 
-Some runtimes limit the total size of their variables. Function Compute documents 4 KB of names and values
-together, though it accepted 32 KiB in 2026-11; keep within the documented 4 KB
-([Function Compute](deploy-fc.md#configuration-and-secrets)). ESA's free plan allows 16 KiB (16,384
-characters of names and values) ([ESA](deploy-esa.md#variables)). For scale, minified:
+Function Compute and ESA limit the total size of a function's variables: keep within 4 KB on
+[Function Compute](deploy-fc.md#configuration-and-secrets) and 16 KiB on ESA's free plan
+([ESA](deploy-esa.md#variables)). For scale, minified:
 
 - the two examples above take 631 and 780 bytes. A further Clerk product, with its IdP record and webhook
   source, adds about 500; a further Casdoor product 70 to 230, plus about 100 for a webhook source;
@@ -263,7 +258,7 @@ The bridge writes one JSON line per request:
 | `route` | `token`, `jwks`, `health`, `webhook`, or `other` for unknown paths |
 | `status` | The status answered |
 | `ms` | Time taken, in milliseconds |
-| `outcome` | `ok` for `2xx`, `rejected` for `4xx` and for `499`, `error` for `5xx` |
+| `outcome` | `ok` for `2xx`, `rejected` for `4xx`, `error` for `5xx` |
 | `code` | The log code below, when there is one |
 | `product` | The product id, once `audience` resolved |
 | `idp` | The IdP id, once known |
