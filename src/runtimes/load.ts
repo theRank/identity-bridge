@@ -33,7 +33,8 @@ async function load(source: RuntimeSource): Promise<Runtime> {
     if (!source.signingKeys) throw new LoadFailure('missing SIGNING_KEYS')
     const keys = await importSigningKeys(source.signingKeys)
     // Fails the load rather than every delivery: an empty secret never authenticates, and neither does a Casdoor
-    // secret padded with whitespace, such as the newline a secret read from a file often ends in
+    // secret padded with whitespace, such as the newline a secret read from a file often ends in. Every source is
+    // held to the same rule, though Clerk's decoding would ignore the whitespace.
     const secrets = new Map<string, string>()
     for (const id of Object.keys(config.webhookSources)) {
         const secret = source.webhookSecret(id)
