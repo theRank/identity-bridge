@@ -96,7 +96,6 @@ function clerkToken(overrides: Record<string, unknown> = {}): Promise<string> {
     return signToken(keys.clerk, clerkClaims(overrides))
 }
 
-// Signed by another key under the kid the Clerk JWKS publishes
 function forgedClerkToken(overrides: Record<string, unknown> = {}): Promise<string> {
     return signToken(keys.other, clerkClaims(overrides), { kid: keys.clerk.kid })
 }

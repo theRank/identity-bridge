@@ -5,8 +5,7 @@ export type Send = (path: string, init?: RequestInit) => Promise<Response>
 
 export const FORM = { 'content-type': 'application/x-www-form-urlencoded' }
 
-// What a runtime that failed to load answers: the 404 and 405 checks unchanged, /healthz 503, /token 500
-// server_error with its usual headers, and an empty 500 everywhere else
+// What a runtime that failed to load answers
 export async function expectFailureMode(send: Send): Promise<void> {
     const health = await send('/healthz')
     expect(health.status).toBe(503)

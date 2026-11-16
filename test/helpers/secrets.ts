@@ -26,7 +26,7 @@ function parseMessage(text: string): string {
     }
 }
 
-// Runs this short also occur by chance in fixed English text; longer ones would mean the value was quoted
+// Shorter runs could occur by chance in fixed English text; a run of six would mean the value was quoted
 export function runsOf(value: string, length = 6): string[] {
     return Array.from({ length: Math.max(value.length - length + 1, 0) }, (_, index) => value.slice(index, index + length))
 }

@@ -21,7 +21,7 @@ async function rejection(json: string): Promise<KeyError> {
     return error as KeyError
 }
 
-// Runs this short also occur by chance in fixed English text; longer ones would mean the value was quoted
+// Shorter runs could occur by chance in fixed English text; a run of six would mean the value was quoted
 function runsOf(value: string, length = 6): string[] {
     return Array.from({ length: Math.max(value.length - length + 1, 0) }, (_, index) => value.slice(index, index + length))
 }
@@ -267,7 +267,7 @@ describe('importSigningKeys faults', () => {
         vi.restoreAllMocks()
     })
 
-    // A runtime that imports a private JWK without checking d against x and y, as workerd does
+    // Unlike workerd, a runtime that imports a private JWK without checking d against x and y
     function acceptMismatchedImports(owner: JsonWebKey) {
         const importKey = subtle.importKey.bind(subtle)
         vi.spyOn(subtle, 'importKey').mockImplementation(((format: any, keyData: any, ...rest: any[]) => {

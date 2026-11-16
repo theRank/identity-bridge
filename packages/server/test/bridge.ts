@@ -115,8 +115,7 @@ export interface Edit {
     payload?: string
 }
 
-// The token's header and claims edited, signed again with the bridge's active key. Signed with crypto.subtle, as jose
-// refuses to sign some of the headers tests need, such as an unknown crit extension.
+// Signed with crypto.subtle, as jose refuses to sign some headers tests need, such as an unknown crit extension
 export async function resign(keys: Keys, token: string, edit: Edit): Promise<string> {
     const header = withEdits({ ...decodeProtectedHeader(token) }, edit.header)
     const payload = edit.payload ?? JSON.stringify(withEdits({ ...decodeJwt(token) }, edit.claims))

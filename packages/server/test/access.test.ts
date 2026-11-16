@@ -47,7 +47,6 @@ describe('createVerifier', () => {
         expect(() => createVerifier({ issuer: ISSUER, audience: 'acme', clockToleranceSeconds })).toThrow(RangeError)
     })
 
-    // What a value read from the environment without parsing looks like
     it.each(['30', null, true])('rejects clockToleranceSeconds %j that is not a number', (clockToleranceSeconds) => {
         expect(() => createVerifier({ issuer: ISSUER, audience: 'acme', clockToleranceSeconds: clockToleranceSeconds as unknown as number })).toThrow(TypeError)
     })

@@ -49,7 +49,6 @@ async function serve(env: Record<string, string | undefined>, deps: Partial<Deps
     return { origin, server, logs, lines, logged }
 }
 
-// Sends the headers and the start of a body, then leaves
 function leaveMidBody(origin: string, path: string, headers: Record<string, string | number>): Promise<void> {
     const { hostname, port } = new URL(origin)
     return new Promise<void>((resolve) => {

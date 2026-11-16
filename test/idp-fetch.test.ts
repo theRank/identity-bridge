@@ -28,7 +28,6 @@ async function load(respond: Responder, options: { ignoreSignal?: boolean } = {}
     return jwksFetch(fakeFetch(respond, options).fetch)(JWKS_URI, init())
 }
 
-// A body that sends nothing and never ends
 function stalledBody(): ReadableStream<Uint8Array> {
     return new ReadableStream({ start() {} })
 }
