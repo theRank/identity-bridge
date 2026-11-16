@@ -1,5 +1,4 @@
-// Configuration documents for parseConfig, shaped like a Clerk and a Casdoor deployment. Each call returns a
-// fresh object, so a test can change it before serializing.
+// Each call returns a fresh object, so a test can change it before serializing
 
 export function clerkConfig() {
     return {

@@ -124,7 +124,7 @@ export type OAuthErrorCode =
     | 'temporarily_unavailable'
     | 'server_error'
 
-// Filled by route handlers as facts become known; `handle` turns it into the request's LogLine
+// Filled in by the router and the route handlers as facts become known; dispatch turns it into the request's LogLine
 export interface RouteContext {
     product?: string
     idp?: string

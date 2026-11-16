@@ -1,11 +1,7 @@
 name: Test
 
-# Runs on PRs and main: typecheck, tests inside the Workers runtime and in plain Node, a dry-run Workers
-# bundle, the single-file Node and ESA bundles and the SDK package builds, then the packages' plain-Node
-# checks against what was built. The image job builds the container image, runs it with throwaway values as a
-# deployment would and smoke tests it. The typecheck is a separate step because wrangler and esbuild strip
-# types without checking them. Nothing here deploys or publishes; deployments pick a commit or a release and
-# run it themselves.
+# The typecheck is a separate step because wrangler and esbuild strip types without checking them. Nothing here
+# deploys or publishes.
 
 on:
   pull_request:
@@ -71,7 +67,6 @@ jobs:
       - name: Build image
         run: docker build --build-arg REVISION="$GITHUB_SHA" --tag "$IMAGE" .
 
-      # A configuration on .example hosts and a key generated for this run, through the environment only
       - name: Start the image
         run: |
           node scripts/dev-env.ts > "$RUNNER_TEMP/dev.env"

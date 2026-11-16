@@ -11,7 +11,8 @@ Adding or replacing an IdP is a configuration change, not a change to any produc
 code, the release artifacts and TypeScript SDKs for clients and backends; each deployer keeps its own
 configuration and deployment.
 
-**Status:** 1.0.0 is in preparation and not yet tagged; see the [changelog](CHANGELOG.md).
+**Status:** 1.0.0 is in preparation and not yet tagged; v0.0.1 and v0.0.2 are test releases. See the
+[changelog](CHANGELOG.md).
 
 ```text
                     1 sign in
@@ -33,17 +34,15 @@ configuration and deployment.
   key and the request itself. Replicas share nothing, and it runs wherever a Web-standard fetch handler runs.
 - **Bounded revocation.** The bridge cannot see that an IdP banned a user or ended a session. It refuses IdP
   tokens older than `maxTokenAgeSeconds`, so every exchange needs a fresh IdP token, which the IdP issues only
-  to a user it still accepts. A user cut off at the IdP keeps access for at most
-  `maxTokenAgeSeconds + clockToleranceSeconds + tokenTtlSeconds`, plus the verifier's own leeway on `exp`, up to
-  60 seconds with the server SDK: about 32 minutes with the defaults.
+  to a user it still accepts. A user cut off at the IdP keeps access for at most about 32 minutes with the
+  defaults ([why](docs/api.md#processing)).
 - **Stable user ids.** A user's id is the UUIDv5 of the IdP's issuer and subject under a fixed namespace, or an
   id set by an administrator in the IdP. The token and the webhook paths give the same id for the same person,
   and the override keeps ids across a migration to another IdP.
 - **One format.** Access tokens follow RFC 9068, signed with ES256 only, and carry the user id and, when the IdP
   verified them, the email and phone number, whatever the IdP.
 - **Uniform errors, no personal data in logs.** Every rejected IdP token gets the same error; the precise reason
-  goes to a log code.
-  Logs never hold tokens, emails, phone numbers or payloads.
+  goes to a log code. Logs never hold tokens, emails, phone numbers or payloads.
 
 The bridge does not provide sign-in screens, sessions, refresh tokens, a user directory, roles or permissions,
 or linking one person's accounts across IdPs, and it is not an OpenID Provider. IdPs sign users in; products
@@ -78,13 +77,13 @@ inside mainland China runs two: one trusting Clerk, one trusting Casdoor.
 | Runtime | Where | Notes |
 |---|---|---|
 | [Cloudflare Workers](docs/deploy-workers.md) | Outside mainland China | The Free plan allows 100,000 requests a day and 10 ms of CPU time per request ([limits](https://developers.cloudflare.com/workers/platform/limits/#account-plan-limits)) |
-| [Alibaba Cloud ESA](docs/deploy-esa.md) | Mainland China, on an ICP-filed domain | No cold start observed. A request may make 10 fetches on the free plan, 100 on Advanced, so a webhook source relays to at most that many products; 16 KiB (16,384 characters of names and values) of variables on the free plan ([billing](https://help.aliyun.com/en/edge-security-acceleration/esa/user-guide/functions-and-pages-billing)) |
-| [Alibaba Cloud Function Compute](docs/deploy-fc.md) | Mainland China, on an ICP-filed domain | The Node bundle as a code package. No fan-out limit. Observed: cold starts after idle minutes, unless an instance is kept. Variables documented as 4 KB in total ([environment variables](https://www.alibabacloud.com/help/en/functioncompute/environment-variables)); 32 KiB accepted in 2026-11 |
+| [Alibaba Cloud ESA](docs/deploy-esa.md) | Mainland China, on an ICP-filed domain | No cold start observed. A request may make 10 fetches on the free plan, 100 on Advanced, so a webhook source relays to at most that many products; 16 KiB of variables on the free plan ([billing](https://help.aliyun.com/en/edge-security-acceleration/esa/user-guide/functions-and-pages-billing)) |
+| [Alibaba Cloud Function Compute](docs/deploy-fc.md) | Mainland China, on an ICP-filed domain | The Node bundle as a code package. No fan-out limit. Observed: cold starts after idle minutes, unless an instance is kept. Variables documented as 4 KB in total ([environment variables](https://www.alibabacloud.com/help/en/functioncompute/environment-variables)) |
 | [Node](docs/deploy-node.md) | Any host | The Node bundle or the container image, on a host you run |
 
-In mainland China, choose ESA when every webhook source relays to at most 10 products, or 100 on Advanced, and
-cold starts matter; Function Compute otherwise; and the container when you already run the host of a
-self-hosted Casdoor, beside it.
+In mainland China, choose ESA when cold starts matter and every webhook source's products fit within ESA's
+fetch limit; Function Compute otherwise; and the container when you already run the host of a self-hosted
+Casdoor, beside it.
 
 ## Releases
 
@@ -93,15 +92,15 @@ Releases are tagged `vX.Y.Z`. Deployments pin a tag. Each release has:
 - on its [GitHub release](https://github.com/theRank/identity-bridge/releases), `server.mjs`, the single-file
   Node bundle, and `esa.js`, the single-file ESA bundle, each with a `.sha256` file;
 - the image `ghcr.io/therank/identity-bridge:X.Y.Z`, for `linux/amd64` and `linux/arm64`; the highest release
-  also gets `X.Y` and `latest`;
+  that is not a prerelease also gets `X.Y` and `latest`;
 - both npm packages at version `X.Y.Z`.
 
 Workers deployments build from the tag's source.
 
 ## Smoke test
 
-`scripts/smoke.ts` checks a running deployment from outside, with Node 24 or later and nothing installed. It
-needs no secret and no IdP token:
+`scripts/smoke.ts` checks a running deployment from outside; run it after every deploy. It needs Node 24 or
+later, nothing installed, no secret and no IdP token:
 
 ```sh
 node scripts/smoke.ts https://id.acme.example acme
@@ -113,8 +112,6 @@ no private key; that `/token` gives the expected error for a junk subject token,
 grant type and a scope; and that an unknown path is `404`. It exits with `1` on any mismatch. Each
 `--header 'name: value'` is sent with every request, such as the cookie an
 [ESA default domain](docs/deploy-esa.md#default-domain-and-staging) needs; header values are never printed.
-
-Run it after every deploy.
 
 ## Development
 

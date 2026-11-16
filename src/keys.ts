@@ -84,8 +84,7 @@ async function readKey(value: unknown, member: string, isPrivate: boolean): Prom
 }
 
 // Only the key members are imported, so ext and key_ops in the secret cannot make the key exportable or take
-// away its sign usage. workerd already refuses a d that does not belong to x and y; the signature round trip is
-// for runtimes that do not check, where the JWKS would publish a key that verifies none of the tokens.
+// away its sign usage. The round trip rejects a d that does not belong to x and y, which not every runtime does.
 async function importPrivateKey({ jwk, publicKey, secret }: CheckedKey, member: string): Promise<CryptoKey> {
     const { kty, crv, x, y } = jwk
     const privateKey = await importKey({ kty, crv, x, y, ...secret })

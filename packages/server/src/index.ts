@@ -32,7 +32,7 @@ export interface BridgeProfile {
 
 /** The user of a verified access token. */
 export interface BridgeUser extends BridgeProfile {
-    /** The user's id in the bridge, a lowercase UUID, the same whichever identity provider they sign in with. */
+    /** The user's id in the bridge, a lowercase UUID, the same in every access token and event for the user. */
     userId: string
     /** The bridge deployment's region label, when it has one. */
     region?: string
@@ -115,7 +115,6 @@ export function createVerifier(options: VerifierOptions): Verifier {
     if (!(clockToleranceSeconds >= 0 && clockToleranceSeconds <= MAX_CLOCK_TOLERANCE_SECONDS)) {
         throw new RangeError(`clockToleranceSeconds must be between 0 and ${MAX_CLOCK_TOLERANCE_SECONDS}`)
     }
-    // One key set per verifier, so its keys and refetch cooldown carry across calls
     const jwks = createRemoteJWKSet(new URL(`${issuer}/.well-known/jwks.json`), {
         [customFetch]: jwksFetch(options.fetch),
         timeoutDuration: JWKS_TIMEOUT_MS,
@@ -236,8 +235,8 @@ function isDomException(error: unknown): boolean {
 }
 
 // jose throws a generic JOSEError for a non-200 or non-JSON answer, which could not be told apart from other
-// failures, so every failure here is a JwksFetchError. The timer races jose's abort signal because a runtime
-// without AbortController cannot abort the fetch; it covers reading the body too.
+// failures, so every failure here is a JwksFetchError. The timer races jose's abort signal, which not every
+// runtime's fetch honours, and covers reading the body too.
 function jwksFetch(given: typeof fetch | undefined): FetchImplementation {
     return (url, init) => withTimeout(load(given ?? fetch, url, init), JWKS_TIMEOUT_MS)
 }

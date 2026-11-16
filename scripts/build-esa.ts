@@ -1,6 +1,5 @@
-// Bundles the ESA entry into dist/esa/esa.js, the single file an ESA Functions and Pages routine runs: ESM for a
-// Workers-like platform, with jose built in and opening with the licence banner of scripts/licence.ts. Fails if the
-// bundle would import anything, which ESA cannot resolve, or exceed ESA's code package limit.
+// Bundles the ESA entry into dist/esa/esa.js, the single file an ESA Functions and Pages routine runs, with jose
+// built in. Fails if the bundle would import anything, which ESA cannot resolve, or exceed ESA's code package limit.
 //
 //     node scripts/build-esa.ts
 
@@ -22,7 +21,7 @@ const result = await build({
     platform: 'browser',
     conditions: ['workerd', 'worker', 'browser'],
     format: 'esm',
-    // The target a bundle was verified with on a staging routine
+    // A target known to run on ESA
     target: 'es2022',
     outfile: OUTFILE,
     metafile: true,

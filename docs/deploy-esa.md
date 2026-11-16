@@ -1,9 +1,8 @@
 # Deploying on Alibaba Cloud ESA
 
-The bridge as an ESA Functions and Pages routine, for mainland China. It suits deployments where every webhook
-source relays to at most 10 products, or 100 on the Advanced plan, and where cold starts matter: observed in
-2026-11, a routine showed no cold start after a deployment.
-[Choosing a runtime](../README.md#choosing-a-runtime) compares the options.
+The bridge as an ESA Functions and Pages routine, for mainland China. Observed in 2026-11, a routine showed no
+cold start after a deployment; the [fetch limit](#fetch-limit-and-fan-out) caps the products a webhook source
+relays to. [Choosing a runtime](../README.md#choosing-a-runtime) compares the options.
 
 ESA's documentation does not describe all of what a deployment meets. What it leaves out or contradicts is
 given here as observed on the free plan in 2026-11.
@@ -65,7 +64,7 @@ default domain: https://identity-bridge-acme-<account id>.debug.er.aliyun-esa.ne
 
 It exits with `0` once deployed, `1` when a step fails, and `2` for a usage error. It never prints a variable's
 value or the AccessKey: an error gives the API's code and message, and for the call that carries the values only
-its code. With `--print-access-token` it does print a credential, the default domain's access token.
+its code.
 
 ### The AccessKey
 
@@ -90,8 +89,6 @@ ESA's own CLI is not used for two reasons, observed in 2026-11:
   failure mode. ESA's documentation says only that variables take effect once a new version is generated and
   released ([variables][esa-variables]).
 
-The script always creates the version bound to the target environment.
-
 ## Variables
 
 The variables file holds one `NAME=value` per line, as `node scripts/dev-env.ts` prints them:
@@ -109,8 +106,7 @@ WEBHOOK_SECRET_CASDOOR_ACME=...
 - Keep the file out of version control. Write it under `umask 077`, so only you can read it, and delete it
   once deployed.
 
-ESA stores secret variables encrypted and passes all variables to the routine ([variables][esa-variables]). The
-bridge reads each webhook secret by its computed name, which works on ESA.
+ESA stores secret variables encrypted and passes all variables to the routine ([variables][esa-variables]).
 
 **Capacity.** The free plan allows 16 KiB of function variables, and the Advanced plan 64 KiB
 ([billing][esa-billing]). Observed in 2026-11: the free plan's limit is 16 KiB (16,384 characters of names and

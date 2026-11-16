@@ -1,7 +1,6 @@
 # syntax=docker/dockerfile:1.27@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
-# The Dockerfile frontend, docker/dockerfile:1.27 (1.27.1), pinned by digest like the base image.
 
-# Both stages use node:24-slim (Node 24 LTS on Debian bookworm), pinned by digest; dependabot proposes new digests.
+# Both stages pin node:24-slim by digest; dependabot proposes new digests.
 
 # The bundle is plain JavaScript, so it is built once on the builder's own platform for every target, and an image
 # for another architecture needs no emulation
@@ -19,11 +18,9 @@ COPY scripts/build-node.ts scripts/licence.ts scripts/
 COPY src ./src
 RUN npm run build:node
 
-# Node and the bundle, which has jose built in and its licence in its banner, so there is nothing to install and
-# no source; LICENSE is the bridge's own
+# Only Node and the bundle, which has jose and its licence built in; LICENSE is the bridge's own
 FROM node:24-slim@sha256:dc26ae92c9fb15cf6b1d63e20f0944b2efe0f115b20e00be48fb23fceb061c54
 ARG VERSION=dev
-# The commit the image is built from, passed by the workflows
 ARG REVISION=
 LABEL org.opencontainers.image.source="https://github.com/theRank/identity-bridge" \
       org.opencontainers.image.version="$VERSION" \

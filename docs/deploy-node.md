@@ -12,7 +12,7 @@ Each release provides the same server three ways. Pin a release version, never `
 |---|---|
 | `server.mjs` | A single file with its one dependency, jose, built in, attached to the [GitHub release](https://github.com/theRank/identity-bridge/releases) with its SHA-256. It runs with plain `node`, such as on the official `node:24-slim` image |
 | `Dockerfile` | The repository's image definition: `node:24-slim`, pinned by digest, with only `server.mjs` and `LICENSE`, running as the base image's `node` user, uid 1000 ([Node.js images][node-image-user]) |
-| `ghcr.io/therank/identity-bridge` | That image, built for `linux/amd64` and `linux/arm64`, tagged `X.Y.Z` for every release, plus `X.Y` and `latest` for the highest release |
+| `ghcr.io/therank/identity-bridge` | That image, built for `linux/amd64` and `linux/arm64`, tagged `X.Y.Z` for every release, plus `X.Y` and `latest` for the highest release that is not a prerelease |
 
 Pulling from `ghcr.io` can be slow or fail inside mainland China. There, mirror the image into a registry in
 the mainland, such as Alibaba Cloud Container Registry, or run the bundle on a `node:24-slim` image that a
@@ -150,9 +150,8 @@ The server writes JSON lines to stdout, one per request and a few events ([logs]
 
 Collect stdout with the container runtime's logging, such as `docker logs` or the orchestrator's log driver.
 
-A line with `status` 499 and `code` `client_closed` means the connection ended before the request was read
-completely: the client went away, or the 30-second request timeout fired. The client got no answer. Only the
-Node entry logs this code.
+Only the Node entry logs [`client_closed`](configuration.md#log-codes), with `status` 499: the connection
+ended before the request was read completely, as when the 30-second request timeout fires.
 
 ## Stopping
 

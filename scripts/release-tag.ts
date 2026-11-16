@@ -52,8 +52,7 @@ export function isLatest(version: Version, tags: string[]): boolean {
     })
 }
 
-// latest for the highest release, as for the image; release-X.Y for a patch to an older line, the prefix because
-// npm refuses a dist-tag that is a valid semver range, such as 1.4; next for a prerelease
+// The release- prefix, as npm refuses a dist-tag that is a valid semver range, such as 1.4
 export function distTag(version: Version, tags: string[]): string {
     if (version.prerelease.length > 0) return 'next'
     if (isLatest(version, tags)) return 'latest'

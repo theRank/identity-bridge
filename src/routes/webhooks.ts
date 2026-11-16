@@ -28,7 +28,7 @@ interface Failure {
 }
 
 export const webhooksRoute: RouteHandler = async (request, runtime, deps, ctx) => {
-    // Set by handle on this route. Records have no prototype, so any path segment is safe to index with.
+    // Set by the router for this route. Records have no prototype, so any path segment is safe to index with.
     const source = ctx.source === undefined ? undefined : runtime.config.webhookSources[ctx.source]
     if (source === undefined) return refuse(ctx, 404, 'unknown_source')
     ctx.idp = source.idp

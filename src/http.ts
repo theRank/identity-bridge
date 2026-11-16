@@ -1,8 +1,7 @@
 import type { LogCode, OAuthErrorCode } from './types'
 
-// null when over the limit. A declared Content-Length over it is refused unread, but the header is not
-// trusted: the bytes actually read are counted, and reading stops at the first chunk that crosses the limit.
-// A leading BOM is kept, so valid UTF-8 comes back exactly as sent, as a signature over the raw body needs.
+// null when over the limit. Content-Length is not trusted: the bytes read are counted too. A leading BOM is kept,
+// so valid UTF-8 comes back exactly as sent, as a signature over the raw body needs.
 export async function readBody(request: Request, maxBytes: number): Promise<string | null> {
     if (Number(request.headers.get('content-length')) > maxBytes) return null
     if (!request.body) return ''
@@ -58,8 +57,7 @@ const DESCRIPTIONS: [status: number, error: OAuthErrorCode, codes: LogCode[], de
     [500, 'server_error', ['runtime_unavailable', 'internal_error'], 'The service failed.'],
 ]
 
-// A combination outside the table is a bug in the caller: throwing turns it into a 500 rather than a wrong
-// description. The no-store headers and Vary win over extra headers of the same name.
+// A combination outside the table is a caller bug: throwing makes it a 500 rather than a wrong description
 export function oauthError(status: number, error: OAuthErrorCode, code: LogCode, headers?: HeadersInit): Response {
     const row = DESCRIPTIONS.find(([s, e, codes]) => s === status && e === error && codes.includes(code))
     if (!row) throw new Error(`no error description for ${status} ${error} ${code}`)

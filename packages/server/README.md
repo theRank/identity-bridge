@@ -45,9 +45,9 @@ async function me(request: Request): Promise<Response> {
 
 `verifyAccessToken(token)` does the same for a token you already hold.
 
-`userId` is the user's id in the bridge, the same whichever identity provider they sign in with: key your own
-data by it. The token carries no roles or permissions; authorization stays in your product. The identity
-provider the user signed in with is deliberately not exposed, so that no product logic depends on it.
+`userId` is the user's id in the bridge, the same from every client and in every event: key your own data by
+it. The token carries no roles or permissions; authorization stays in your product. The identity provider the
+user signed in with is deliberately not exposed, so that no product logic depends on it.
 
 ### Events
 
@@ -67,10 +67,10 @@ async function events(request: Request): Promise<Response> {
 }
 ```
 
-Answer `202` once the event is stored. The bridge counts any `2xx` answer as delivered, and any other answer,
-a redirect included, as a failed delivery, which it sends again later. A delivery can also be repeated after
-it succeeded, so the same event can arrive more than once, always with the same `jti`: process each `jti`
-once. An event can also arrive after the user's first request with an access token.
+Answer `202` once the event is stored. The bridge counts any `2xx` answer as delivered; any other, a redirect
+included, fails the delivery, and the identity provider then sends its webhook again. So the same event can
+arrive more than once, even after you answered `202`, always with the same `jti`: process each `jti` once. An
+event can also arrive after the user's first request with an access token.
 
 ## API
 
@@ -161,12 +161,6 @@ The package is an ES module only; `import` it. From CommonJS:
   statements; TypeScript 5.8 or newer turns them into `require()` calls. With `module` set to `node16`,
   TypeScript refuses to load an ES module from CommonJS. When a bundler builds your code, `moduleResolution`
   `bundler` works too.
-
-## Support
-
-Node.js 22.12 or newer, Cloudflare Workers, Deno and Bun. jose 6 needs Node.js 20 or newer, Node.js 20 reached
-its end of life in April 2026, and 22.12 is the first Node.js 22 that loads ES modules through `require()`
-without a flag.
 
 ## License
 

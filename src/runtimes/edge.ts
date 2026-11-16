@@ -2,8 +2,7 @@ import { handle } from '../app'
 import type { Deps, Runtime, RuntimeFailure } from '../types'
 import { loadRuntime, webhookSecretName } from './load'
 
-// What the Workers and ESA entries share: each hands its fetch handler the deployment's variables as one env object,
-// which stays the same across the requests of an isolate, though each passes it in another argument
+// Shared by the Workers and ESA entries, which pass the deployment's env object in different arguments
 
 // Declared here rather than generated: each deployment names its own webhook sources, so their secrets cannot be
 // declared in this repository
@@ -22,8 +21,8 @@ const deps: Deps = {
     log: (line) => console.log(JSON.stringify(line)),
 }
 
-// Keyed by env, one object for the life of an isolate. The IdP key sets are cached by the parsed configuration and
-// keep the fetch they were first given, so the runtime must live as long as the isolate rather than a request.
+// Keyed by env, one object for the life of an isolate, so the parsed configuration and the IdP key sets cached by
+// it last as long as the isolate rather than a request
 const runtimes = new WeakMap<Env, Promise<Runtime | RuntimeFailure>>()
 
 function runtimeFor(env: Env): Promise<Runtime | RuntimeFailure> {

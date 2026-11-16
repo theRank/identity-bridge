@@ -16,7 +16,7 @@ const bindings = env as unknown as Bindings
 const active = JSON.parse(bindings.SIGNING_KEYS).active as JsonWebKey
 const kid = await calculateJwkThumbprint({ kty: active.kty!, crv: active.crv!, x: active.x!, y: active.y! })
 
-// All a staging routine found on ESA's context
+// ESA's context has only waitUntil
 const context = { waitUntil: () => {} }
 
 type Handler = (request: Request, ...rest: unknown[]) => Promise<Response>
@@ -32,7 +32,6 @@ afterEach(() => {
     vi.restoreAllMocks()
 })
 
-// The arguments after the request, as ESA would pass them
 function via(...rest: unknown[]): Send {
     return (path, init) => handler(new Request(`${BASE}${path}`, init), ...rest)
 }

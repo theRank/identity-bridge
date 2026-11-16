@@ -115,8 +115,7 @@ function setup(deployment: Deployment = 'clerk', options: SetupOptions = {}): Se
     return { logs, calls, send: (request) => handle(request, runtime, deps) }
 }
 
-// A second product binding the source's IdP and receiving its events. Products sharing an IdP each name their
-// clients.
+// A second product on the source's IdP, receiving its events; products sharing an IdP each name their clients
 function twoProducts(deployment: Deployment): (doc: Doc) => void {
     return (doc) => {
         if (deployment === 'clerk') {
@@ -163,7 +162,6 @@ async function verifyEvent(token: string, deployment: Deployment, audience: stri
     return jwtVerify(token, jwks, { issuer: SOURCES[deployment].issuer, audience, typ: 'secevent+jwt', algorithms: ['ES256'], currentDate: new Date(CLERK_NOW_MS) })
 }
 
-// The sub of the single event token delivered for the request
 async function deliveredSub(deployment: Deployment, request: Request, edit?: (doc: Doc) => void): Promise<unknown> {
     const { send, calls } = setup(deployment, edit === undefined ? {} : { edit })
     await expectBody(await send(request), 200, { delivered: ['acme'], failed: [] })
@@ -488,7 +486,6 @@ describe('/webhooks/{source}', () => {
 
     describe('fan-out', () => {
         it('starts every delivery before any is answered', async () => {
-            // Each delivery waits for its own answer, given only once every delivery has started
             const answers: (() => void)[] = []
             const { send, calls } = setup('casdoor', {
                 edit: twoProducts('casdoor'),
@@ -631,7 +628,6 @@ describe('/webhooks/{source}', () => {
                 expect(calls).toHaveLength(count)
             }
 
-            // globex never answers; acme accepts at once
             function stalled(ignoreSignal: boolean): Setup {
                 return setup('clerk', {
                     edit: twoProducts('clerk'),

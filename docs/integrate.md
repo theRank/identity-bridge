@@ -10,17 +10,14 @@ SDKs cover the first two in a few lines; other languages use a standard JWT libr
 | [`@therank/identity-bridge-client`](https://www.npmjs.com/package/@therank/identity-bridge-client) | Browsers, Node.js 22 or later, JavaScript apps, WeChat mini programs | [README](../packages/client/README.md) |
 | [`@therank/identity-bridge-server`](https://www.npmjs.com/package/@therank/identity-bridge-server) | Backends on Node.js 22.12 or later, Workers, Deno, Bun | [README](../packages/server/README.md) |
 
-The packages share the bridge's release version.
-
 ## Clients
 
 A client signs the user in with the IdP, then asks the bridge for an access token before calling its backend.
 The bridge refuses an IdP token older than `maxTokenAgeSeconds`, 15 minutes by default, so the client gets a
 fresh IdP token for every exchange ([why](api.md#processing)).
 
-`createBridgeClient` does the exchange, keeps the bridge token in memory, and exchanges again shortly before it
-expires. Concurrent calls share one exchange, and a `503` from the bridge is retried. It needs only a function
-that returns a fresh IdP token:
+`createBridgeClient` does the exchange, keeps the bridge token in memory and refreshes it before it expires
+([how](../packages/client/README.md#how-it-works)). It needs only a function that returns a fresh IdP token:
 
 ```ts
 import { createBridgeClient } from '@therank/identity-bridge-client'
@@ -184,9 +181,8 @@ Use a JWT library that supports ES256 and a JWKS, and check, for an access token
 - `exp` is present and in the future, allowing at most 60 seconds of clock skew;
 - `sub` is a user id: a lowercase UUID ([user ids](api.md#user-ids)).
 
-The `typ` check is the one libraries do not make for you, and it matters: event tokens are signed with the same
-key, name the product as `aud` and the user as `sub`, and have no `exp`. Without the check, an event delivered
-to the product, or one read from its logs, would pass as an access token that never expires.
+The `typ` check is the one libraries do not make for you: without it, an event token would pass as an access
+token that never expires ([why](api.md#access-token)).
 
 #### Go
 

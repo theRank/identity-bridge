@@ -1,7 +1,6 @@
 import type { ClaimMapping, Config, IdpAlgorithm, IdpBinding, IdpConfig, ProductConfig, WebhookSourceConfig } from './types'
 
-// The message starts with the JSON path of the offending value, for example products.acme.idps[0].idp, and
-// quotes only short configuration values, never the raw input
+// Prefixed with the JSON path of the offending value; quotes only short configuration values, never the raw input
 export class ConfigError extends Error {
     override name = 'ConfigError'
 
@@ -13,9 +12,9 @@ export class ConfigError extends Error {
 const ID = /^[a-z0-9][a-z0-9-]{0,62}$/
 const REGION = /^[a-z][a-z0-9-]{0,31}$/
 const SCHEME = /^([a-z][a-z0-9+.-]*):/i
-// new URL() gives URLs of schemes other than http and https the origin "null", so those are checked by shape
+// new URL() gives most other schemes, such as capacitor:, the origin "null", so those are checked by shape
 const OTHER_ORIGIN = /^[a-z][a-z0-9+.-]*:\/\/[^/?#]+$/
-// The URL parser strips these silently, so a raw string holding them is not the URL it parses to
+// The URL parser strips or escapes these silently, so a raw string holding them is not the URL it parses to
 const SPACE_OR_CONTROL = /[\x00-\x20\x7f]/
 const PLAIN_KEY = /^[\w-]{1,64}$/
 const MAX_QUOTED = 64
@@ -283,7 +282,6 @@ class At {
         return typeof this.value === 'string' && this.value !== '' ? this.value : this.fail('must be a non-empty string')
     }
 
-    // A claim name, or literal true to trust the IdP's verification policy
     nameOrTrue(): string | true {
         const value = this.value
         return value === true || (typeof value === 'string' && value !== '') ? value : this.fail('must be a non-empty string or true')

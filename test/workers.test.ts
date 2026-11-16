@@ -15,8 +15,7 @@ const BASE = 'https://id.acme.example'
 const JWKS_URI = 'https://clerk.acme.example/.well-known/jwks.json'
 const EVENTS_URL = 'https://api.acme.example/identity/events'
 
-// The bindings of vitest.config.ts: a test configuration with one Clerk webhook source, its secret and a
-// signing key generated for the run
+// The bindings of vitest.config.ts: the Clerk test configuration, its webhook secret and a per-run signing key
 interface Bindings extends Env {
     BRIDGE_CONFIG: string
     SIGNING_KEYS: string
@@ -31,7 +30,7 @@ afterEach(() => {
     resetJwksCache()
 })
 
-// Through the Worker's own entry point, with the bindings it is deployed with
+// Through the Worker's own entry point, with the bindings of vitest.config.ts
 const viaSelf: Send = (path, init) => exports.default.fetch(`${BASE}${path}`, init)
 
 // Straight to the handler, with bindings of the test's choosing

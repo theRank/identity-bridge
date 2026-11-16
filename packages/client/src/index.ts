@@ -79,8 +79,8 @@ export function createBridgeClient(options: BridgeClientOptions): BridgeClient {
     let cached: Issued | undefined
     let pending: Promise<string> | undefined
 
-    // A refresh that cannot reach the bridge, even after its retries, keeps the token it was refreshing while that
-    // token is valid and was neither cleared nor replaced meanwhile. A failure of getIdpToken is passed on as it is.
+    // A refresh that still gets no answer or temporarily_unavailable after its retries keeps the token it was
+    // refreshing, if still valid and neither cleared nor replaced. A getIdpToken failure is passed on as it is.
     async function refresh(current: Issued | undefined): Promise<Issued> {
         const subjectToken = await options.getIdpToken()
         try {

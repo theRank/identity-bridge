@@ -404,7 +404,7 @@ describe('createBridgeClient', () => {
             vi.useRealTimers()
         })
 
-        // A client whose first token was issued, now inside its refresh window, with the bridge out of reach
+        // A client `advance` ms past its first token, in its refresh window by default, with the bridge out of reach
         async function refreshing(advance = 840_000) {
             const outage = { on: false }
             const attempts: unknown[] = []

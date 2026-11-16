@@ -3,7 +3,7 @@ import { dispatch, handle, type Routes } from '../src/app'
 import type { Deps, RouteContext, RouteHandler, Runtime, RuntimeFailure } from '../src/types'
 import { fakeDeps } from './helpers/deps'
 
-// Handlers here are fakes, so the runtime's content is never read
+// Never read: each case either uses fake handlers or is answered before any handler runs
 const runtime = { config: {}, keys: {}, webhookSecret: () => 'unused' } as unknown as Runtime
 const failure: RuntimeFailure = { reason: 'missing webhook secret for source clerk-acme' }
 
@@ -128,7 +128,7 @@ describe('routing', () => {
         } satisfies Runtime
         const { deps, logs } = fakeDeps()
         const response = await handle(request(method, path), loaded, deps)
-        // Status not pinned, so real handlers can replace the stubs: only a 404 or 405 means unwired
+        // Status not pinned, as each real handler answers in its own way: only a 404 or 405 means unwired
         expect([404, 405]).not.toContain(response.status)
         expect(logs.map((line) => line.route)).toEqual([route])
     })

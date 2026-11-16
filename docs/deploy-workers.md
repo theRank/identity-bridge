@@ -17,7 +17,8 @@ npm ci
 
 The repository's `wrangler.jsonc` names the entry, `src/runtimes/workers.ts`, and the compatibility date, and
 holds nothing deployment-specific: no routes, and `workers_dev` and preview URLs off
-([configuration][cf-wrangler-config]). Every command below passes the Worker's name with `--name`.
+([configuration][cf-wrangler-config]). Every `wrangler deploy` and `wrangler secret`
+command below passes the Worker's name with `--name`.
 
 ## Configuration and secrets
 

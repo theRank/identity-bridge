@@ -115,8 +115,7 @@ function mediaType(contentType: string | null): string {
     return (contentType ?? '').split(';', 1)[0]!.trim().toLowerCase()
 }
 
-// Only the recognized parameters, each with its values in order. A parameter sent without a value is treated as
-// omitted (RFC 6749 §3.2), so it neither counts as a repeat nor satisfies a required one.
+// An empty value counts as omitted (RFC 6749 §3.2): it neither makes a repeat nor satisfies a required parameter
 function formParams(body: string): Map<string, string[]> {
     const params = new Map<string, string[]>()
     for (const [name, value] of new URLSearchParams(body)) {

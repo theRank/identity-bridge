@@ -6,8 +6,7 @@ import { casdoorConfigJson, clerkConfig, clerkConfigJson } from './helpers/confi
 
 type Doc = Record<string, any>
 
-// The mapping as parseConfig resolves it, from the claims member of an IdP, or its defaults when absent. The
-// webhook source goes, as its uidField requires a mapped uid.
+// The webhook source goes, as its uidField requires a mapped uid
 function mapping(claims?: Doc): ClaimMapping {
     const doc: Doc = clerkConfig()
     delete doc.webhookSources

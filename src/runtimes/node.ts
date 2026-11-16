@@ -8,8 +8,7 @@ import { loadRuntime, webhookSecretName } from './load'
 // The router reads only the path, so the origin is fixed rather than taken from Host, which the client controls
 const BASE = 'http://bridge.invalid'
 
-// Fetch refuses to build a Request with these methods. Under a method no route allows, the router answers them as
-// it answers any other wrong method: 405 with Allow on a known path, 404 elsewhere.
+// new Request() refuses these, so they reach the router as a method no route allows: 405 on a known path, else 404
 const REFUSED_METHODS = ['CONNECT', 'TRACE', 'TRACK']
 const UNSUPPORTED_METHOD = 'X-UNSUPPORTED'
 

@@ -9,7 +9,7 @@ export interface RuntimeSource {
     webhookSecret(sourceId: string): string | undefined
 }
 
-// A message built only from fixed words, configuration paths and source ids
+// A message built only from fixed words and source ids
 class LoadFailure extends Error {}
 
 // Source ids are lowercase letters, digits and -, so no two ids share a name
@@ -32,9 +32,9 @@ async function load(source: RuntimeSource): Promise<Runtime> {
     const config = parseConfig(source.config)
     if (!source.signingKeys) throw new LoadFailure('missing SIGNING_KEYS')
     const keys = await importSigningKeys(source.signingKeys)
-    // An empty secret is refused too: an empty Clerk key could never authenticate, and an empty bearer secret
-    // would be a deployment error. So is one padded with whitespace, such as the newline a secret mounted from a
-    // file often ends in, which would fail every authentication instead of the load.
+    // Fails the load rather than every delivery: an empty secret never authenticates, and neither does a Casdoor
+    // secret padded with whitespace, such as the newline a secret read from a file often ends in. Every source is
+    // held to the same rule, though Clerk's decoding would ignore the whitespace.
     const secrets = new Map<string, string>()
     for (const id of Object.keys(config.webhookSources)) {
         const secret = source.webhookSecret(id)

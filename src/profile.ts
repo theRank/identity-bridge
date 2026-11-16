@@ -1,7 +1,7 @@
 import type { Profile, RawProfile } from './types'
 
 const E164 = /^\+[1-9]\d{6,14}$/
-// The URL parser strips C0 controls and spaces silently and reads a backslash as a slash, so a raw string
+// The URL parser strips or escapes controls and spaces silently and reads a backslash as a slash, so a raw string
 // holding them is not the URL it parses to; C1 controls include line breaks such as NEL
 const UNSAFE_IN_URL = /[\x00-\x20\x7f-\x9f\\]/
 // Userinfo makes the string read as one host while it points at another; an empty one parses to no username

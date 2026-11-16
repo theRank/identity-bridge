@@ -1,5 +1,4 @@
 // Bundles the Node entry into dist/node/server.mjs, with jose built in, so that it runs alone with plain node.
-// The bundle opens with the licence banner of scripts/licence.ts.
 //
 //     node scripts/build-node.ts
 

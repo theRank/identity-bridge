@@ -1,5 +1,4 @@
-// Webhook deliveries for tests. The Clerk fixtures under test/fixtures/clerk are signed with CLERK_SECRET, and the
-// Casdoor fixtures under test/fixtures/casdoor carry CASDOOR_SECRET as their bearer.
+// The Clerk fixtures are signed with CLERK_SECRET, and the Casdoor fixtures carry CASDOOR_SECRET as their bearer
 
 // Cases edit payloads into any shape
 export type Doc = Record<string, any>

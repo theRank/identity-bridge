@@ -36,8 +36,7 @@ export function base64url(data: string | Uint8Array): string {
 }
 
 // Signs with crypto.subtle rather than jose, so a token can carry any header and claims and be signed by a key
-// jose refuses, such as RSA under 2048 bits. The header defaults to the pair's alg and kid; a member set to
-// undefined is left out, as JSON.stringify drops it.
+// jose refuses, such as RSA under 2048 bits. A header member set to undefined is left out.
 export async function signToken(pair: SigningKeyPair, claims: object, header: Record<string, unknown> = {}): Promise<string> {
     const input = `${base64url(JSON.stringify({ alg: pair.alg, typ: 'JWT', kid: pair.kid, ...header }))}.${base64url(JSON.stringify(claims))}`
     const signature = await crypto.subtle.sign(SIGNING[pair.alg], pair.privateKey, new TextEncoder().encode(input))
