@@ -32,5 +32,10 @@
         "typescript": "7.0.2",
         "vitest": "5.1.0",
         "wrangler": "4.160.1"
+    },
+    "allowScripts": {
+        "esbuild": false,
+        "workerd": false,
+        "fsevents": false
     }
 }
