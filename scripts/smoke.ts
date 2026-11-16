@@ -102,7 +102,7 @@ const checks: [name: string, check: () => Promise<void>][] = [
     [
         'GET /.well-known/jwks.json has an ES256 key with a kid, and no private key',
         async () => {
-            // The answer is never quoted, in case it holds a private key
+            // The answer is quoted only once no key in it is found to hold a private member
             const response = await get('/.well-known/jwks.json')
             const keys = field(await body(response), 'keys')
             if (response.status !== 200) throw new Mismatch(`got ${response.status}`)

@@ -3,23 +3,12 @@
 //     node scripts/deploy-esa.ts --name <routine> --bundle <esa.js> --vars <file> [--env staging|production] [--endpoint <host>]
 //                                [--print-access-token]
 //
-// In order, it:
-// - creates the routine unless it exists;
-// - sets the variables of the --vars file in the environment, BRIDGE_CONFIG as plain text and the rest as secrets,
-//   and warns of bridge variables the environment holds that the file lacks, deleting none;
-// - creates a code version bound to the environment, the only way the variables reach a version, uploads the bundle
-//   into it and waits until it is available;
-// - deploys that version to all requests and prints the routine's default domain;
-// - for staging, prints the addresses staging answers on: the default domain resolves to production;
-// - with --print-access-token, prints the token the default domain needs as its esa_er_token cookie.
-// ESA's own CLI cannot set the variables: it refuses values over 200 characters, which a configuration or a
-// rotation's SIGNING_KEYS exceed, though ESA takes them.
+// docs/deploy-esa.md gives its steps, options and variables file. ESA's own CLI cannot set the variables: it refuses
+// values over 200 characters, which a configuration or a rotation's SIGNING_KEYS exceed, though ESA takes them.
 //
-// The variables file holds NAME=value lines, as scripts/dev-env.ts prints them, for BRIDGE_CONFIG, SIGNING_KEYS and
-// WEBHOOK_SECRET_* only. The AccessKey comes from ALIBABA_CLOUD_ACCESS_KEY_ID and ALIBABA_CLOUD_ACCESS_KEY_SECRET.
-// --env defaults to production and --endpoint to esa.cn-hangzhou.aliyuncs.com. Nothing printed holds a variable's
-// value or the AccessKey: an error gives the API's code and message only, and for the call that carries the values
-// only its code.
+// The AccessKey comes from ALIBABA_CLOUD_ACCESS_KEY_ID and ALIBABA_CLOUD_ACCESS_KEY_SECRET. Nothing printed holds a
+// variable's value or the AccessKey: an error gives the API's code and message only, and for the call that carries
+// the values only its code.
 //
 // Self-contained, like scripts/smoke.ts, so that Node runs it by stripping its types.
 
@@ -77,7 +66,6 @@ class ApiError extends DeployError {
     }
 }
 
-// What may pass on its own: no answer, a server error or throttling
 function transient(error: unknown): boolean {
     if (error instanceof Unanswered) return true
     return error instanceof ApiError && (error.status >= 500 || error.status === 429 || (error.code?.startsWith('Throttling') ?? false))
@@ -451,8 +439,7 @@ async function createVersion(api: Api, io: Io, name: string, env: string, bundle
 }
 
 // A version is Init until its upload is unpacked, then Available. Any other status is a failed build, as ESA's CLI
-// reads it. A check that fails in a way that may pass is tried again, up to RETRIES times in a row. The wait is
-// bounded by the time spent, the checks' own included, rather than by their number.
+// reads it. The wait is bounded by the time spent, the checks' own included, rather than by their number.
 async function waitUntilAvailable(api: Api, io: Io, name: string, version: string): Promise<void> {
     const start = io.now()
     let failures = 0

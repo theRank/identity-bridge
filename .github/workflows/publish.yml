@@ -1,17 +1,15 @@
 name: Publish
 
-# Publishes @therank/identity-bridge-client and @therank/identity-bridge-server to npm when a v* tag is pushed,
-# both at the tag's version; the version change is not committed. The dist-tag follows the release workflow's rule
-# for the image's latest: latest only for the highest version that is not a prerelease, among all v* tags,
-# release-X.Y for a patch to an older line, and next for a prerelease. Started by hand (workflow_dispatch), it
-# always stops at a dry run under a placeholder version, so the workflow can be exercised without a tag.
+# On a v* tag, publishes both packages at the tag's version; the version change is not committed. The dist-tag
+# follows the release workflow's rule: latest only for the highest version that is not a prerelease among all
+# v* tags, release-X.Y for a patch to an older line, next for a prerelease. A manual run (workflow_dispatch) is a
+# dry run under a placeholder version.
 #
-# Two jobs, so install scripts and test code never run where an OIDC token can be minted: check installs, typechecks,
-# tests and builds with read-only permissions; publish installs without scripts, builds the packages and publishes.
-# npm authenticates the publish through trusted publishing (OIDC, hence id-token: write), configured on npmjs.com for
-# each package with this repository, this workflow file and the npm environment, where protection rules can be
-# added. npm can configure it only for a package that already exists, so the first version of each package is
-# published by hand. Provenance is added automatically once the repository is public.
+# Two jobs, so install scripts and test code never run where an OIDC token can be minted: check runs both with
+# read-only permissions; publish installs without scripts. npm authenticates the publish through trusted publishing
+# (hence id-token: write), configured on npmjs.com for each package with this workflow file and the npm environment,
+# where protection rules can be added. npm can configure it only for a package that exists, so a new package's
+# first version must be published by hand. Provenance is added automatically once the repository is public.
 
 on:
   push:
@@ -86,7 +84,7 @@ jobs:
       - name: Install without scripts
         run: npm ci --ignore-scripts
 
-      # The packages only: the root build runs wrangler, which needs install scripts
+      # The packages only, so wrangler and esbuild never run in the job that can mint an OIDC token
       - name: Build the packages
         run: npm run build --workspaces
 
@@ -99,8 +97,7 @@ jobs:
             exit 1
           fi
 
-      # The same strict check of the tag as the release workflow's, refusing build metadata, and the same lookup of
-      # the v* tags through the API, which contents: read allows, to choose the dist-tag
+      # Listing the v* tags through the API needs only contents: read
       - name: Version
         id: version
         env:
@@ -122,8 +119,8 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "dist_tag=$dist_tag" >> "$GITHUB_OUTPUT"
 
-      # The packages were built above, so no lifecycle script runs here. The dist-tag is always given: without one,
-      # npm would move latest to any version it publishes.
+      # The packages were built above, so no lifecycle script runs here. The dist-tag is always given: without one, npm
+      # would tag latest, or refuse a prerelease or a version below the highest published.
       - name: Publish
         env:
           DIST_TAG: ${{ steps.version.outputs.dist_tag }}

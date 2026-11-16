@@ -1,18 +1,14 @@
 name: Release
 
-# Releases the service when a v* tag is pushed: the container image for linux/amd64 and linux/arm64 on GitHub
-# Container Registry, tagged X.Y.Z, then the GitHub release for the tag, with the single-file Node bundle server.mjs,
-# the single-file ESA bundle esa.js and their SHA-256 sums attached, so a release is never announced before its image
-# exists. A version with a - is a prerelease. Only the highest version that is not a prerelease, among all v* tags,
-# gets the image tags X.Y and latest and is marked as the latest release, so a patch to an older line moves neither.
-# Started by hand (workflow_dispatch), it checks, builds the image and the bundles under a placeholder version, and
-# publishes nothing.
+# On a v* tag: the multi-arch image on GHCR, tagged X.Y.Z, then the GitHub release with server.mjs, esa.js and their
+# SHA-256 sums, so a release is never announced before its image exists. A version with a - is a prerelease. Only
+# the highest version that is not a prerelease, among all v* tags, gets the image tags X.Y and latest and is marked
+# the latest release, so a patch to an older line moves neither. A manual run (workflow_dispatch) builds everything
+# and publishes nothing.
 #
-# Three jobs, so install scripts and test code never run where anything can be published: check installs,
-# typechecks, tests and builds with read-only permissions; image builds the Dockerfile, whose build stage installs
-# without scripts, and pushes it; release installs without scripts, bundles and creates the release. image and
-# release run in the release environment, where protection rules can be added. The tag is checked by
-# scripts/release-tag.ts, as in the publish workflow.
+# Three jobs, so install scripts and test code never run where anything can be published: check runs both with
+# read-only permissions; image, in the Dockerfile's build stage, and release install without scripts, and both run
+# in the release environment, where protection rules can be added.
 
 on:
   push:
@@ -22,8 +18,7 @@ on:
 permissions:
   contents: read
 
-# One release at a time, so latest is decided and pushed in tag order; a run in progress is never cancelled. Dry
-# runs queue apart, so they never hold a release up.
+# One release at a time, so latest is decided and pushed in tag order; dry runs queue apart, never holding one up
 concurrency:
   group: release-${{ github.event_name }}
   cancel-in-progress: false
@@ -93,7 +88,6 @@ jobs:
         with:
           node-version: 24
 
-      # The existing v* tags, through the API, decide whether this version is the latest
       - name: Version
         id: version
         env:
