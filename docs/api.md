@@ -85,11 +85,11 @@ grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Atoken-exchange&subject_tok
    is derived ([user ids](#user-ids)).
 9. The access token is signed and returned. Nothing is stored.
 
-The age check bounds revocation. The bridge cannot see that an IdP banned a user or ended a session, but it
-refuses IdP tokens older than `maxTokenAgeSeconds`, so a client must get a fresh IdP token before each
-exchange, and the IdP checks the user again when it issues one. A user cut off at the IdP keeps access for at
-most `maxTokenAgeSeconds + clockToleranceSeconds + tokenTtlSeconds`, plus the verifier's own leeway on `exp`
-(at most 60 seconds, as below): 900 + 60 + 900 + 60 seconds, 32 minutes, with the defaults.
+The bridge does not check session or account status at the IdP. Once the IdP stops issuing tokens to a user,
+the remaining access window is at most `maxTokenAgeSeconds + clockToleranceSeconds + tokenTtlSeconds`, plus
+the verifier's leeway on `exp` (at most 60 seconds, as below): 900 + 60 + 900 + 60 seconds, or 32 minutes with
+the defaults. An unexpired IdP token can be exchanged repeatedly within its allowed age; clients should
+request a fresh token before each exchange.
 
 ### Success
 
@@ -141,7 +141,7 @@ A client may retry `503 temporarily_unavailable` with the same IdP token. Other 
 
 ### CORS
 
-Every `/token` response, to `POST` and `OPTIONS` alike, carries `Vary: Origin`.
+Every `POST` and `OPTIONS` response from `/token` carries `Vary: Origin`; a `405` does not.
 
 - **Preflight.** `OPTIONS /token` answers `204`. When the request's `Origin` is in the `allowedOrigins` of any
   product, the answer carries `Access-Control-Allow-Origin: <origin>`, `Access-Control-Allow-Methods: POST`,
@@ -222,7 +222,7 @@ when the override below is used.
    source's IdP, the IdP's user id from the payload, and the override read from the source's `uidField`, with
    the same rules.
 
-Both namespaces on this page are fixed forever: changing one would change every id ever issued. A derived id is
+Both namespaces on this page are fixed: changing one changes the ids derived under it. A derived user id is
 as distinct as the IdP's `sub` under its issuer: per Clerk application, and per Casdoor instance, where it
 depends on the organization's sign-in providers ([idp-casdoor.md](idp-casdoor.md#sign-in-providers)).
 
@@ -251,8 +251,8 @@ fetch the set again, as jose and the server SDK do.
 so no cache between the bridge and a monitor hides a failure or a recovery.
 
 The self-test runs once per isolate or process and is cached: ES256 signing and verification with an
-ephemeral key, RS256 verification of a built-in token, a SHA-1 digest and HMAC-SHA256. It needs no IdP and no
-secret, which is what makes the [smoke test](../README.md#smoke-test) meaningful on any runtime.
+ephemeral key, RS256 verification of a built-in token, a SHA-1 digest and HMAC-SHA256. It makes no network
+requests and does not test IdP availability, webhook authentication or delivery to products.
 
 ## Webhooks
 
@@ -358,8 +358,9 @@ For each product in the source's `products`, the bridge POSTs one [event token](
 concurrently, each with a 5-second timeout, and redirects are not followed. A `2xx` answer is a success; any
 other answer, a `3xx` included, is a failure (`status <n>`).
 
-If every delivery succeeds, the webhook is answered `200`; otherwise `502`, so the IdP sends the whole webhook
-again. Products already served then receive the same `jti` again and drop it as a repeat.
+If every delivery succeeds, the webhook is answered `200`; otherwise `502`. The IdP may redeliver the whole
+webhook according to its retry policy; the bridge has no retry queue. Products already served must discard
+repeated `jti` values.
 
 ## Event token
 

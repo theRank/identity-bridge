@@ -13,9 +13,10 @@ Each runtime takes them as environment variables or bindings: see
 [ESA](deploy-esa.md#variables) and [Node](deploy-node.md#configuration-and-secrets). The repository holds no
 deployment values; keep yours with your deployment.
 
-The bridge reads all of them once per isolate or process. If any is missing or invalid, it serves in
-[failure mode](api.md#failure-mode): `/healthz` answers `503`, and one
-[`runtime_load_failed`](#runtime-load-failures) line says what is wrong.
+The bridge loads these values once per isolate or process. Invalid configuration or signing keys, or a
+missing, empty or whitespace-padded webhook secret, cause [failure mode](api.md#failure-mode): `/healthz`
+answers `503`, and a [`runtime_load_failed`](#runtime-load-failures) line identifies the problem. Webhook
+secret contents are checked during authentication, not at startup.
 
 ## The configuration document
 
@@ -201,8 +202,10 @@ rotation needs only the public keys, which the bridge publishes.
 2. Deploy `signing-keys.next.json` as `SIGNING_KEYS` and run the smoke test. New tokens carry the new `kid`;
    verifiers that cached the old JWKS fetch it again when they meet the unknown `kid`, as jose and the server
    SDK do.
-3. Wait at least `tokenTtlSeconds` plus the verifiers' clock tolerance (60 seconds at most), so that every token
-   signed with the old keys has expired. Then deploy `signing-keys.final.json`, and delete both files.
+3. After all replicas have switched keys, wait at least `tokenTtlSeconds` plus the verifiers' clock tolerance
+   (60 seconds at most), so access tokens signed with the old keys have expired. If a product queues signed
+   event tokens for later verification, retain the old public keys until those events are processed: events
+   have no expiry. Then deploy `signing-keys.final.json`, and delete both files.
 
 If an HTTP cache sits between verifiers and the bridge, it may serve the previous JWKS for up to 300 seconds
 (`max-age`), and verifiers would not find the new key in it until then. Purge the cache's copy of
@@ -220,6 +223,9 @@ the source `clerk-acme` reads `WEBHOOK_SECRET_CLERK_ACME`.
 A missing or empty secret, or one with leading or trailing whitespace, fails the runtime load, with a reason
 naming the source. A secret read from a file that ends with a newline is the usual cause: strip it.
 
+Loading does not verify that the secret matches the IdP. A mismatched secret fails webhook authentication;
+malformed Clerk base64 can cause `500 internal_error`. Neither is detected by `/healthz`.
+
 To rotate a webhook secret:
 
 - **Clerk**: rotate the endpoint's secret in Clerk first. For about 24 hours afterwards, Svix signs each
@@ -235,12 +241,8 @@ To rotate a webhook secret:
 
 Function Compute and ESA limit the total size of a function's variables: keep within 4 KB on
 [Function Compute](deploy-fc.md#configuration-and-secrets) and 16 KiB on ESA's free plan
-([ESA](deploy-esa.md#variables)). For scale, minified:
-
-- the two examples above take 631 and 780 bytes. A further Clerk product, with its IdP record and webhook
-  source, adds about 500; a further Casdoor product 70 to 230, plus about 100 for a webhook source;
-- `SIGNING_KEYS` takes about 190 bytes for one key and 330 during a rotation;
-- a webhook secret takes its name plus 35 to 70 bytes.
+([ESA](deploy-esa.md#variables)). Count all variable names and values, including webhook secrets, and leave
+room for retired public keys during rotation.
 
 Minify `BRIDGE_CONFIG`, for example with `node -e 'process.stdout.write(JSON.stringify(require("./bridge-config.json")))'`.
 

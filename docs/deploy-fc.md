@@ -1,8 +1,9 @@
 # Deploying on Alibaba Cloud Function Compute
 
 The bridge as a Function Compute 3.0 function, running the release's Node bundle as a code package, for
-mainland China. It is plain Node 24, the same artifact a deployer can run locally, and it has no limit on
-webhook fan-out. [Choosing a runtime](../README.md#choosing-a-runtime) compares the options.
+mainland China. It uses the same Node 24 bundle as a local deployment. The bridge sets no product-count
+limit on webhook fan-out; function resources and timeouts still apply.
+[Choosing a runtime](../README.md#choosing-a-runtime) compares the options.
 
 Function Compute's documentation does not describe all of what a deployment meets. What it leaves out is given
 here as observed on Function Compute 3.0 in cn-hangzhou in 2026-11; Function Compute's source is not public.
@@ -75,7 +76,7 @@ encrypted at rest ([environment variables][fc-env]).
 ([environment variables][fc-env]). Observed on Function Compute 3.0 in 2026-11, `UpdateFunction` accepted up
 to 32 KiB and refused 33 KiB with `Environment variable size is too large (max: 32768, actual: '33792')`.
 Keep the minified configuration, the keys and the secrets within the documented 4 KB;
-[sizes](configuration.md#sizes) gives typical lengths. A deployment that does not fit needs another runtime:
+[sizes](configuration.md#sizes) covers what to count. A deployment that does not fit needs another runtime:
 the bridge reads its configuration only from the environment.
 
 **Who can read them.** `GetFunction` returns the function's environment variables, the keys and secrets

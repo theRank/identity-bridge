@@ -2,7 +2,6 @@ import { ConfigError, parseConfig } from '../config'
 import { importSigningKeys, KeyError } from '../keys'
 import type { Runtime, RuntimeFailure } from '../types'
 
-// What an entry reads from its environment. Each entry decides where a source's secret comes from.
 export interface RuntimeSource {
     config?: string | undefined
     signingKeys?: string | undefined
@@ -17,8 +16,7 @@ export function webhookSecretName(sourceId: string): `WEBHOOK_SECRET_${string}` 
     return `WEBHOOK_SECRET_${sourceId.toUpperCase().replaceAll('-', '_')}`
 }
 
-// Never rejects. The reason is logged, so it takes only messages known to quote no secret: other errors, from a
-// JSON parser or a crypto library, can quote the key they failed on.
+// Convert failures to safe log messages; parser and crypto errors may contain secrets.
 export async function loadRuntime(source: RuntimeSource): Promise<Runtime | RuntimeFailure> {
     try {
         return await load(source)
@@ -32,9 +30,8 @@ async function load(source: RuntimeSource): Promise<Runtime> {
     const config = parseConfig(source.config)
     if (!source.signingKeys) throw new LoadFailure('missing SIGNING_KEYS')
     const keys = await importSigningKeys(source.signingKeys)
-    // Fails the load rather than every delivery: an empty secret never authenticates, and neither does a Casdoor
-    // secret padded with whitespace, such as the newline a secret read from a file often ends in. Every source is
-    // held to the same rule, though Clerk's decoding would ignore the whitespace.
+    // Reject surrounding whitespace before headers can trim it and break Casdoor authentication.
+    // Apply the same rule to Clerk; format and signature checks happen during authentication.
     const secrets = new Map<string, string>()
     for (const id of Object.keys(config.webhookSources)) {
         const secret = source.webhookSecret(id)

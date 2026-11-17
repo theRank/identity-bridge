@@ -1,5 +1,4 @@
-// The configuration types describe what the parser returns, with every default applied, so consumers never
-// re-apply defaults. Records are built with a null prototype: indexing any key is safe.
+// Parsed configuration has defaults applied and record maps with null prototypes.
 
 export type IdpAlgorithm = 'RS256' | 'RS384' | 'RS512' | 'PS256' | 'ES256' | 'ES384' | 'EdDSA'
 
@@ -48,8 +47,7 @@ export interface IdpBinding {
     authorizedParties?: string[]
 }
 
-// A union, so the organization can only be read after narrowing on type: no source can pass an organization
-// check by lacking one
+// Casdoor sources must carry an organization for tenant filtering.
 export type WebhookSourceConfig = ClerkSourceConfig | CasdoorSourceConfig
 
 interface SourceConfigFields {

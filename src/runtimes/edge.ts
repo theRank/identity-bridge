@@ -2,10 +2,7 @@ import { handle } from '../app'
 import type { Deps, Runtime, RuntimeFailure } from '../types'
 import { loadRuntime, webhookSecretName } from './load'
 
-// Shared by the Workers and ESA entries, which pass the deployment's env object in different arguments
-
-// Declared here rather than generated: each deployment names its own webhook sources, so their secrets cannot be
-// declared in this repository
+// Webhook secret names depend on deployment configuration, so generated bindings cannot enumerate them.
 export interface Env {
     // A string, or the JSON value wrangler gives for a configuration written as an object under vars
     BRIDGE_CONFIG?: string | object | undefined
@@ -21,8 +18,7 @@ const deps: Deps = {
     log: (line) => console.log(JSON.stringify(line)),
 }
 
-// Keyed by env, one object for the life of an isolate, so the parsed configuration and the IdP key sets cached by
-// it last as long as the isolate rather than a request
+// Reuse the runtime and its IdP key cache across requests sharing an env object.
 const runtimes = new WeakMap<Env, Promise<Runtime | RuntimeFailure>>()
 
 function runtimeFor(env: Env): Promise<Runtime | RuntimeFailure> {

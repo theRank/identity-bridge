@@ -68,8 +68,7 @@ export type BridgeTokenErrorReason =
     | 'jwks_unavailable'
 
 /**
- * A verification failure, with its `reason`. It has no `cause`, and its message holds the reason alone, never the
- * token or its claims, so it is safe to log.
+ * A verification failure with a fixed message and no `cause`, safe to log without exposing token claims.
  */
 export class BridgeTokenError extends Error {
     override name = 'BridgeTokenError'
@@ -107,8 +106,7 @@ class InvalidClaims extends Error {}
  */
 export function createVerifier(options: VerifierOptions): Verifier {
     const { issuer, audience, clockToleranceSeconds = MAX_CLOCK_TOLERANCE_SECONDS } = options
-    // jose skips the aud check when audience is undefined, as from an unset environment variable, which would accept
-    // every product's tokens
+    // jose skips checks for undefined issuer/audience, which could allow another product's tokens.
     if (typeof issuer !== 'string' || issuer === '') throw new TypeError('issuer must be a non-empty string')
     if (typeof audience !== 'string' || audience === '') throw new TypeError('audience must be a non-empty string')
     if (typeof clockToleranceSeconds !== 'number') throw new TypeError('clockToleranceSeconds must be a number')
@@ -170,7 +168,6 @@ function bridgeUser(payload: JWTPayload): BridgeUser {
     return user
 }
 
-// Exactly one event, of a known type, whose payload is an object; a deletion carries no profile
 function bridgeEvent(payload: JWTPayload): BridgeEvent {
     const { jti, events } = payload
     if (typeof jti !== 'string' || jti === '' || !isRecord(events)) throw new InvalidClaims()
@@ -234,9 +231,7 @@ function isDomException(error: unknown): boolean {
     return typeof DOMException !== 'undefined' && error instanceof DOMException
 }
 
-// jose throws a generic JOSEError for a non-200 or non-JSON answer, which could not be told apart from other
-// failures, so every failure here is a JwksFetchError. The timer races jose's abort signal, which not every
-// runtime's fetch honours, and covers reading the body too.
+// Distinguish fetch failures from other jose errors. Bound the body read even if fetch ignores abort signals.
 function jwksFetch(given: typeof fetch | undefined): FetchImplementation {
     return (url, init) => withTimeout(load(given ?? fetch, url, init), JWKS_TIMEOUT_MS)
 }

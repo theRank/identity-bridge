@@ -1,4 +1,4 @@
-// Both namespaces are fixed forever: changing either changes every id the bridge has ever issued
+// Keep these stable: changing a namespace changes every id derived under it, but not uid overrides.
 export const USER_ID_NAMESPACE = '95c1f512-a23b-48f7-8328-199bb33cc0b4'
 export const EVENT_ID_NAMESPACE = '73c4ff75-fed7-4a0c-8541-3ff240e8f331'
 
@@ -30,8 +30,7 @@ export async function uuidV5(namespace: string, name: string): Promise<string> {
     return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
 }
 
-// A malformed override fails rather than falling back, which would give one person two ids. The callers check
-// the subject too; checking again here means a missing one can never hash into an id shared by everyone.
+// Reject malformed overrides to avoid assigning a second id; reject empty subjects to avoid shared ids.
 export async function deriveUserId(idpIssuer: string, idpSubject: string, uid?: unknown): Promise<string> {
     if (!isNonEmptyString(idpIssuer) || !isNonEmptyString(idpSubject)) {
         throw new TypeError('idpIssuer and idpSubject must be non-empty strings')

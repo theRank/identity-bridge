@@ -1,16 +1,10 @@
-// Deploys the bridge to an ESA Functions and Pages routine through the ESA OpenAPI, with the deployer's AccessKey:
+// Deploy through ESA OpenAPI with ALIBABA_CLOUD_ACCESS_KEY_ID and ALIBABA_CLOUD_ACCESS_KEY_SECRET:
 //
 //     node scripts/deploy-esa.ts --name <routine> --bundle <esa.js> --vars <file> [--env staging|production] [--endpoint <host>]
 //                                [--print-access-token]
 //
-// docs/deploy-esa.md gives its steps, options and variables file. ESA's own CLI cannot set the variables: it refuses
-// values over 200 characters, which a configuration or a rotation's SIGNING_KEYS exceed, though ESA takes them.
-//
-// The AccessKey comes from ALIBABA_CLOUD_ACCESS_KEY_ID and ALIBABA_CLOUD_ACCESS_KEY_SECRET. Nothing printed holds a
-// variable's value or the AccessKey: an error gives the API's code and message only, and for the call that carries
-// the values only its code.
-//
-// Self-contained, like scripts/smoke.ts, so that Node runs it by stripping its types.
+// See docs/deploy-esa.md for setup and the CLI limitations this avoids. Runs without installed dependencies.
+// Never print variable values or AccessKeys; API errors from setting variables expose only their code.
 
 import { createHash, createHmac, randomUUID } from 'node:crypto'
 import { readFileSync, realpathSync } from 'node:fs'
@@ -151,10 +145,8 @@ export function zip(name: string, data: Uint8Array): Buffer {
     return Buffer.concat([local, compressed, central, end])
 }
 
-// NAME=value lines, read much as docker run --env-file reads them: blank lines, the spaces before a name, a byte
-// order mark among them, and lines starting with # are skipped, and the value is everything after the first =, quotes
-// and all, so a JSON value needs no escaping. A refused line is named by its number alone, since a secret pasted on a
-// line of its own can look like NAME=value; only a bridge variable's name, which is no secret, is quoted.
+// Preserve everything after the first '='; trim only before names and skip blank/comment lines.
+// Report invalid lines by number: even a plausible NAME=value may be a pasted secret.
 export function parseVarsFile(text: string): Map<string, string> {
     const variables = new Map<string, string>()
     for (const [index, raw] of text.split('\n').entries()) {

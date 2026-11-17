@@ -6,8 +6,7 @@ const ACTIVE = `${SECRET}.active`
 const ECDSA = { name: 'ECDSA', hash: 'SHA-256' }
 const KEY_CHECK = new TextEncoder().encode('identity-bridge signing key check')
 
-// The message names the member in fixed words. JSON.parse and jose error text can quote the input, which holds
-// the private key, and the message reaches the runtime load log line, so neither is ever passed on.
+// Load errors reach logs; never forward parser or jose messages that may contain private key material.
 export class KeyError extends Error {
     override name = 'KeyError'
 
@@ -71,8 +70,7 @@ async function readKey(value: unknown, member: string, isPrivate: boolean): Prom
     if (alg !== undefined && alg !== 'ES256') throw new KeyError(member, 'alg must be ES256')
     if (use !== undefined && use !== 'sig') throw new KeyError(member, 'use must be sig')
 
-    // RFC 7638 over the JWK members: jose imports a private JWK as non-extractable, and refuses to
-    // thumbprint such a key
+    // Thumbprint the JWK before import: the private CryptoKey is non-extractable.
     const thumbprint = await calculateJwkThumbprint({ kty, crv, x, y }).catch(() => undefined)
     if (thumbprint === undefined) throw new KeyError(member, 'not a valid P-256 key')
     if (kid !== undefined && kid !== thumbprint) throw new KeyError(member, 'kid must equal the key thumbprint')

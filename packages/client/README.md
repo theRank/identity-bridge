@@ -1,8 +1,8 @@
 # @therank/identity-bridge-client
 
 Client SDK for [identity-bridge](https://github.com/theRank/identity-bridge). It exchanges your identity
-provider's token for the bridge's short-lived access token, keeps that token in memory and exchanges again
-shortly before it expires. Your backend verifies the bridge token, for example with
+provider's token for a bridge access token and caches it in memory. `getToken()` refreshes it when needed;
+there is no background refresh. Your backend verifies the bridge token, for example with
 [`@therank/identity-bridge-server`](https://www.npmjs.com/package/@therank/identity-bridge-server).
 
 No dependencies. Runs in browsers with ES2017 and `fetch`, Node.js 22 or newer, and WeChat mini programs.
@@ -94,11 +94,9 @@ A mini program must meet these constraints:
 - **One exchange at a time.** Calls made while an exchange is in flight wait for that exchange.
 - **Retries.** When no answer arrives, or the bridge answers `503 temporarily_unavailable`, the request is
   sent again twice, after 250 ms and then 1 s, with the same IdP token. Other errors are thrown at once.
-- **Keeping a valid token.** When a refresh still finds no answer, or `503 temporarily_unavailable`, after
-  its retries, and the cached token has not expired yet, `getToken()` returns the cached token, to every call
-  waiting on that refresh, instead of throwing; the next call tries to refresh again. Any other failure is
-  thrown, including one of `getIdpToken`, and an expired token is never returned. After `clear()` there is
-  no token to fall back to.
+- **Fallback.** If a refresh fails with `network` or `temporarily_unavailable`, callers receive the cached
+  token only while it remains valid by the client's clock and has not been cleared. The next call retries
+  the refresh. Other failures, including `getIdpToken()` failures, are thrown.
 - **Failures are not cached.** After a failed exchange, the next call starts a new one.
 
 ## API
@@ -177,7 +175,7 @@ function isBridgeError(error: unknown): error is BridgeError {
 | `invalid_request` | 400 | The bridge did not accept the IdP token, for example because it expired or comes from an identity provider the product does not trust, or the request was malformed, as with an empty IdP token. The bridge's logs say why. |
 | `invalid_request` | 413 | The request was too large. |
 | `invalid_target` | 400 | The bridge has no product with this `audience`. |
-| `temporarily_unavailable` | 503 | The bridge could not reach the identity provider, even after two retries. |
+| `temporarily_unavailable` | 503 | The IdP's JWKS could not be fetched or used. The SDK retried the exchange twice. |
 | `server_error` | 500 | The bridge failed. |
 | `network` | 0 | No answer arrived. The exchange with the bridge first retries twice; `casdoorMiniProgramIdpToken` never retries, since a `wx.login` code can be used only once. |
 | `bad_response` | any | The answer was not one the bridge or Casdoor gives, such as an HTML error page from a proxy. |
@@ -186,11 +184,9 @@ function isBridgeError(error: unknown): error is BridgeError {
 
 ## Module formats
 
-The package ships ES modules in `dist/` and CommonJS in `dist/cjs/`, compiled to ES2017; `import` and
-`require` both resolve. It keeps no module-level state, so loading both builds in one process shares nothing,
-but each build has its own `BridgeError` class: see [`BridgeError`](#bridgeerror). A root `wechat.d.ts` gives
-TypeScript projects on `moduleResolution: node`, which ignores the package's `exports`, the types of the
-`wechat` subpath.
+ES modules in `dist/` and CommonJS in `dist/cjs/` both target ES2017. See [`BridgeError`](#bridgeerror) when
+mixing builds. The root `wechat.d.ts` supports the `wechat` subpath under `moduleResolution: node`, which
+does not read package `exports`.
 
 ## License
 

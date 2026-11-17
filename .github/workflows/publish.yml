@@ -1,15 +1,11 @@
 name: Publish
 
-# On a v* tag, publishes both packages at the tag's version; the version change is not committed. The dist-tag
-# follows the release workflow's rule: latest only for the highest version that is not a prerelease among all
-# v* tags, release-X.Y for a patch to an older line, next for a prerelease. A manual run (workflow_dispatch) is a
-# dry run under a placeholder version.
+# Tags publish both packages; manual runs are dry runs. scripts/release-tag.ts chooses the npm dist-tag.
+# Package versions are set for publishing without a version commit.
 #
-# Two jobs, so install scripts and test code never run where an OIDC token can be minted: check runs both with
-# read-only permissions; publish installs without scripts. npm authenticates the publish through trusted publishing
-# (hence id-token: write), configured on npmjs.com for each package with this workflow file and the npm environment,
-# where protection rules can be added. npm can configure it only for a package that exists, so a new package's
-# first version must be published by hand. Provenance is added automatically once the repository is public.
+# Tests run in the read-only job; publishing disables install scripts and receives OIDC permission.
+# Configure npm trusted publishing for each package with this workflow and the npm environment.
+# The first version of a new package must be published manually before configuring trusted publishing.
 
 on:
   push:

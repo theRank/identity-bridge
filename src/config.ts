@@ -14,7 +14,7 @@ const REGION = /^[a-z][a-z0-9-]{0,31}$/
 const SCHEME = /^([a-z][a-z0-9+.-]*):/i
 // new URL() gives most other schemes, such as capacitor:, the origin "null", so those are checked by shape
 const OTHER_ORIGIN = /^[a-z][a-z0-9+.-]*:\/\/[^/?#]+$/
-// The URL parser strips or escapes these silently, so a raw string holding them is not the URL it parses to
+// Reject characters URL parsing would silently strip or escape.
 const SPACE_OR_CONTROL = /[\x00-\x20\x7f]/
 const PLAIN_KEY = /^[\w-]{1,64}$/
 const MAX_QUOTED = 64
@@ -67,7 +67,7 @@ function parseIdp(at: At, id: string, issuers: Map<string, string>): IdpConfig {
     }
 }
 
-// One issuer has one claim mapping, so each person has one user id
+// One claim mapping per issuer keeps user ids consistent across products.
 function distinctIssuer(at: At, id: string, issuers: Map<string, string>): string {
     const issuer = at.issuer()
     const first = issuers.get(issuer)
@@ -132,13 +132,11 @@ function parseProduct(at: At, id: string, idps: Idps, allBound: Bound[]): Produc
     }
 }
 
-// Products sharing an IdP, as on one Casdoor instance, accept each other's tokens unless every binding names
-// clients of its own. Each product binds an IdP at most once, so the count per IdP is a count of products.
+// Shared IdPs need disjoint client bindings to prevent exchanges across products.
 function requireClientBinding(bound: Bound[]): void {
     const products = new Map<string, number>()
     for (const { binding } of bound) products.set(binding.idp, (products.get(binding.idp) ?? 0) + 1)
-    // Per IdP, the product that first listed each value. A Casdoor token carries its client id as both aud and
-    // azp, so a value names one client whichever of the two lists holds it.
+    // Casdoor repeats its client id in aud and azp, so ownership spans both lists.
     const owners = new Map<string, Map<string, string>>()
     for (const { at, product, binding, clients } of bound) {
         if ((products.get(binding.idp) ?? 0) < 2) continue
@@ -209,8 +207,7 @@ function parseSourceFields(
 ): Pick<WebhookSourceConfig, 'idp' | 'uidField' | 'products'> {
     const idp = reference(source.required('idp'), idps, 'idp')
     const uidField = parseUidField(source, type, idp)
-    // Event sub values come from this IdP, so they match only the token sub values of products that bind it.
-    // A repeat would deliver each event to the product twice, concurrently.
+    // Recipients must trust the event's IdP; duplicate entries would send duplicate deliveries.
     const targets: string[] = []
     for (const item of source.required('products').items(true)) {
         const product = reference(item, products, 'product')
@@ -241,7 +238,7 @@ function reference<T>(at: At, record: Record<string, T>, kind: string): T {
     return record[key] ?? at.fail(`unknown ${kind} ${quote(key)}`)
 }
 
-// A value in the document with its JSON path, so that every check can say where it failed
+// Carries the JSON path into validation errors.
 class At {
     readonly value: unknown
     readonly path: string
@@ -261,7 +258,6 @@ class At {
         return Object.entries(value).map(([key, item]) => [key, new At(item, childPath(this.path, key))])
     }
 
-    // Unknown keys fail, so a misspelled key stops the deploy rather than being ignored
     fields(keys: readonly string[]): Fields {
         const entries = this.entries()
         for (const [key, at] of entries) if (!keys.includes(key)) at.fail('unknown key')
@@ -301,12 +297,11 @@ class At {
         return this.httpsUrl().raw
     }
 
-    // Consumers use the raw string as written, so it is returned with its parse
     httpsUrl(): { raw: string; url: URL } {
         const raw = this.value
         const url = typeof raw === 'string' && !SPACE_OR_CONTROL.test(raw) ? parseUrl(raw) : undefined
         if (typeof raw !== 'string' || url?.protocol !== 'https:') return this.fail('must be an https URL')
-        // new Request() refuses URLs with credentials, and the configuration is not secret
+        // new Request() refuses URLs with credentials.
         if (url.username !== '' || url.password !== '') this.fail('must not have a username or password')
         return { raw, url }
     }

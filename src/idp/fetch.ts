@@ -8,9 +8,7 @@ export class JwksFetchError extends Error {
     override name = 'JwksFetchError'
 }
 
-// jose throws a generic JOSEError for a non-200 or non-JSON answer, which could not be told apart from other
-// failures, so every failure here is a JwksFetchError. The timer races jose's abort signal, which not every
-// runtime's fetch honours, and covers reading the body too.
+// Distinguish fetch failures from other jose errors. Bound the body read even if fetch ignores abort signals.
 export function jwksFetch(fetch: Deps['fetch']): FetchImplementation {
     return (url, init) => withTimeout(load(fetch, url, init), JWKS_TIMEOUT_MS)
 }
