@@ -81,11 +81,11 @@ async function getIdpToken(): Promise<string> {
 ```
 
 A client that got its token through PKCE refreshes without a client secret
-([source](https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/object/token_oauth_util.go#L799-L803)),
+([source](https://github.com/casdoor/casdoor/blob/3d81f45bc98be0fe379b3a21973c783060066af5/object/token_oauth_util.go#L800-L804)),
 and Casdoor answers with a new refresh token, since it rotates them by default
 ([Casdoor](https://casdoor.ai/docs/how-to-connect/oauth/)). Casdoor's documentation shows the refresh at
 `/api/login/oauth/refresh_token`; the token endpoint above takes the same grant
-([source](https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/object/token_oauth.go#L136-L141)).
+([source](https://github.com/casdoor/casdoor/blob/3d81f45bc98be0fe379b3a21973c783060066af5/object/token_oauth.go#L148-L153)).
 Store the refresh token as the platform's secure storage allows; never in the bridge client, which keeps
 nothing outside memory.
 

@@ -313,10 +313,10 @@ configured to send a secret header ([Casdoor][casdoor-webhooks]).
 
 - **Authentication.** `Authorization: Bearer <secret>`, compared in constant time.
 - **Body.** A Casdoor record ([records][casdoor-records]), with the members `name`, `action`, `organization`,
-  `user`, `object` (a JSON string), `response` and `extendedUser`, among others. Casdoor sends the webhook
-  before it stores the record ([source][casdoor-add-record]), so the record's numeric `id` is always `0` and is
-  not used. A record whose `name`, `action`, `organization` or `response` is not a string, or whose `name` is
-  empty, is `bad_payload`.
+  `user`, `object` (a JSON string), `response` and `extendedUser`, among others. The record's numeric `id` is
+  not used: Casdoor 4.28 and later send the stored record's ([source][casdoor-add-record]), while earlier
+  releases sent the webhook before they stored the record, so with `0`. A record whose `name`, `action`,
+  `organization` or `response` is not a string, or whose `name` is empty, is `bad_payload`.
 - **Event id.** `<action>:<name>`. `name` is generated per request ([source][casdoor-new-record]), and a
   `new-user` record copies the `name` of the request that created the user ([source][casdoor-new-user]), so the
   action is part of the id.
@@ -442,11 +442,11 @@ logged as `internal_error`; on `/token`, once the product is resolved, that `500
 [clerk-deleted-json]: https://github.com/clerk/javascript/blob/c9bdae3b0aef91699a73824fecc6726959196ab4/packages/backend/src/api/resources/JSON.ts#L747-L764
 [casdoor-webhooks]: https://casdoor.ai/docs/webhooks/overview/
 [casdoor-records]: https://casdoor.ai/docs/organization/records/
-[casdoor-add-record]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/object/record.go#L248-L277
-[casdoor-new-record]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/object/record.go#L200-L213
-[casdoor-new-user]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/routers/record.go#L166-L191
-[casdoor-unaffected]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/controllers/base.go#L423-L431
-[casdoor-object]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/object/record.go#L165-L172
-[casdoor-extended-user]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/object/record.go#L440-L453
-[casdoor-self-apis]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/authz/authz.go#L278-L305
+[casdoor-add-record]: https://github.com/casdoor/casdoor/blob/3d81f45bc98be0fe379b3a21973c783060066af5/object/record.go#L248-L281
+[casdoor-new-record]: https://github.com/casdoor/casdoor/blob/3d81f45bc98be0fe379b3a21973c783060066af5/object/record.go#L200-L213
+[casdoor-new-user]: https://github.com/casdoor/casdoor/blob/3d81f45bc98be0fe379b3a21973c783060066af5/routers/record.go#L166-L191
+[casdoor-unaffected]: https://github.com/casdoor/casdoor/blob/3d81f45bc98be0fe379b3a21973c783060066af5/controllers/base.go#L423-L431
+[casdoor-object]: https://github.com/casdoor/casdoor/blob/3d81f45bc98be0fe379b3a21973c783060066af5/object/record.go#L165-L172
+[casdoor-extended-user]: https://github.com/casdoor/casdoor/blob/3d81f45bc98be0fe379b3a21973c783060066af5/object/record.go#L444-L457
+[casdoor-self-apis]: https://github.com/casdoor/casdoor/blob/3d81f45bc98be0fe379b3a21973c783060066af5/authz/authz.go#L279-L306
 [wx-network]: https://developers.weixin.qq.com/miniprogram/dev/framework/ability/network.html

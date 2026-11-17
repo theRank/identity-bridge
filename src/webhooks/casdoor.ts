@@ -39,7 +39,7 @@ export const casdoor: WebhookAdapter = {
         if (type === 'user-deleted' && own(user, 'owner') !== source.organization) return []
         const subject = own(user, 'id')
         if (typeof subject !== 'string' || subject === '') throw new BadPayloadError('user id is not a non-empty string')
-        // The record's own id is always 0, as Casdoor sends the webhook before storing the record
+        // Not the record's own id, which Casdoor before 4.28 sends as 0, the webhook going out before the record is stored
         const event: LifecycleEvent = { idpEventId: `${action}:${name}`, type, subject, profile: type === 'user-created' ? profile(user, idp) : {} }
         if (source.uidField !== undefined) {
             // Without properties, "no override" and "override not sent" look the same

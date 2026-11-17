@@ -5,8 +5,10 @@ sign-in. One Casdoor instance can serve several products. The matching bridge co
 [Casdoor example](configuration.md#a-casdoor-deployment).
 
 Casdoor's documentation does not describe all of what the bridge relies on, and in places differs from what
-Casdoor does. Where it does, this guide links to Casdoor's source at commit
-[`66b51ee`][casdoor-commit], the version this release was checked against.
+Casdoor does. Where it does, this guide links to Casdoor's source at release
+[4.29.0][casdoor-commit], the version this release was checked against. The repository's
+[`scripts/e2e-casdoor.ts`](../scripts/e2e-casdoor.ts) runs the bridge against a Casdoor set up this way, and
+its CI repeats that weekly with Casdoor's newest release.
 
 ## Instance
 
@@ -155,7 +157,7 @@ MFA ([source][casdoor-phone-mfa]), and it does not let users write the number th
 Administrators, application credentials, syncers and uploads write numbers without a code. They are trusted
 here as they are for the [user id override](#user-id-override).
 
-These paths were also exercised against Casdoor 4.27.1: a sign-up and a change of number were refused without
+These paths were also exercised against Casdoor 4.29.0: a sign-up and a change of number were refused without
 the code, a user's `update-user` left the number alone, their change of region was refused under `Admin` and
 accepted without the account item, and an administrator's `0212345678` was stored as `212345678`.
 
@@ -227,7 +229,9 @@ Set these webhook fields through Casdoor's API, since the console does not show 
 | `useExponentialBackoff` | Double the wait after each attempt, up to an hour | `true` |
 
 With the suggested values the attempts spread over about four hours. Casdoor's worker checks for due
-deliveries every 30 seconds, so attempts are never closer than that ([source][casdoor-worker]).
+deliveries every 30 seconds, so attempts are never closer than that ([source][casdoor-worker]). After an
+attempt that gets a `5xx` answer, as the bridge's `502` is, or none, the webhook's later events wait for the
+worker's next round ([source][casdoor-worker-order]).
 
 `maxRetries` is copied into each delivery when Casdoor queues it ([source][casdoor-queue]); the interval, the
 backoff and the headers are read from the webhook at each attempt ([source][casdoor-attempt]). Raising
@@ -308,59 +312,60 @@ program call only the HTTPS domains listed there, and those domains need ICP fil
 [wx-login]: https://developers.weixin.qq.com/miniprogram/dev/api/open-api/login/wx.login.html
 [wx-login-flow]: https://developers.weixin.qq.com/miniprogram/dev/framework/open-ability/login.html
 [wx-network]: https://developers.weixin.qq.com/miniprogram/dev/framework/ability/network.html
-[casdoor-commit]: https://github.com/casdoor/casdoor/tree/66b51eef9422bdd8f2f215f37ea29858548fb918
-[casdoor-origin]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/object/wellknown_oidc_discovery.go#L96-L119
-[casdoor-signing-method]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/object/token_jwt.go#L822-L837
-[casdoor-org-issuer]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/object/wellknown_oidc_discovery.go#L137-L165
-[casdoor-claims]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/object/token_jwt.go#L685-L704
-[casdoor-aud]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/object/token_jwt.go#L710-L727
-[casdoor-oauth-id]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/controllers/auth.go#L1335-L1344
-[casdoor-sub]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/object/token_jwt.go#L695-L698
-[casdoor-id-index]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/object/user.go#L70
-[casdoor-user-fields]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/object/user.go#L83-L85
-[casdoor-phone-integer]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/util/validation.go#L90-L106
-[casdoor-phone-signup]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/controllers/account.go#L192-L200
-[casdoor-phone-code-signup]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/object/token_verification_code.go#L151-L172
-[casdoor-phone-reset]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/controllers/verification.go#L664-L684
-[casdoor-phone-mfa]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/controllers/mfa.go#L199-L212
-[casdoor-self-columns]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/object/user.go#L900-L930
-[casdoor-region-item]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/object/user_util.go#L783-L790
-[casdoor-modify-rule-nil]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/object/organization.go#L482-L485
-[casdoor-region-default]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/object/init.go#L72
-[casdoor-phone-oauth]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/controllers/auth.go#L1351-L1352
-[casdoor-phone-mapping]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/object/user_util.go#L536-L545
-[casdoor-phone-miniprogram]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/object/token_oauth.go#L714-L722
-[casdoor-incremental]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/object/user.go#L1951-L1971
-[casdoor-custom-claims]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/object/token_jwt.go#L489-L520
-[casdoor-token-types]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/object/token_jwt.go#L715-L735
-[casdoor-grant-types]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/object/token_oauth_util.go#L253-L265
-[casdoor-refresh-expiry]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/object/token_jwt.go#L666-L670
-[casdoor-refresh-user]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/object/token_oauth_util.go#L678-L699
-[casdoor-properties-default]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/object/init.go#L108
-[casdoor-modify-rule]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/object/user_util.go#L988-L1000
-[casdoor-public-only]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/object/webhook_util.go#L27-L33
-[casdoor-console-default]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/web/src/pages/defaults.ts#L669-L684
-[casdoor-mask]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/object/record.go#L40-L46
-[casdoor-extended-user]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/object/record.go#L440-L453
-[casdoor-token-fields]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/object/webhook_util.go#L37-L58
-[casdoor-object-fields]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/object/record.go#L436-L438
-[casdoor-single-org]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/object/record.go#L348-L352
-[casdoor-single-org-admin]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/controllers/webhook.go#L117-L121
-[casdoor-webhook-struct]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/object/webhook.go#L49-L52
-[casdoor-worker]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/object/webhook_worker.go#L31
-[casdoor-queue]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/object/webhook_event.go#L250-L267
-[casdoor-attempt]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/object/webhook_worker.go#L114-L201
-[casdoor-get-webhook]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/controllers/webhook.go#L79-L89
-[casdoor-get-webhook-org]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/object/webhook.go#L127-L138
-[casdoor-webhook-api]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/controllers/webhook.go#L71-L125
-[casdoor-worker-start]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/object/webhook_worker.go#L36-L44
-[casdoor-new-user]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/routers/record.go#L166-L191
-[casdoor-signup-record]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/controllers/account.go#L323-L350
-[casdoor-delete-own]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/routers/router.go#L101
-[casdoor-record-actor]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/object/record.go#L217-L241
-[casdoor-after-request]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/routers/record.go#L187-L191
-[casdoor-soft-delete]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/object/user.go#L1469-L1480
-[casdoor-unaffected]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/controllers/base.go#L423-L431
-[casdoor-mfa]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/controllers/auth.go#L1418-L1425
-[casdoor-miniprogram-provider]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/object/provider.go#L272-L280
-[casdoor-miniprogram-tag]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/object/token_oauth.go#L65-L75
+[casdoor-commit]: https://github.com/casdoor/casdoor/tree/3d81f45bc98be0fe379b3a21973c783060066af5
+[casdoor-origin]: https://github.com/casdoor/casdoor/blob/3d81f45bc98be0fe379b3a21973c783060066af5/object/wellknown_oidc_discovery.go#L96-L119
+[casdoor-signing-method]: https://github.com/casdoor/casdoor/blob/3d81f45bc98be0fe379b3a21973c783060066af5/object/token_jwt.go#L820-L835
+[casdoor-org-issuer]: https://github.com/casdoor/casdoor/blob/3d81f45bc98be0fe379b3a21973c783060066af5/object/wellknown_oidc_discovery.go#L137-L165
+[casdoor-claims]: https://github.com/casdoor/casdoor/blob/3d81f45bc98be0fe379b3a21973c783060066af5/object/token_jwt.go#L678-L697
+[casdoor-aud]: https://github.com/casdoor/casdoor/blob/3d81f45bc98be0fe379b3a21973c783060066af5/object/token_jwt.go#L703-L720
+[casdoor-oauth-id]: https://github.com/casdoor/casdoor/blob/3d81f45bc98be0fe379b3a21973c783060066af5/controllers/auth.go#L1335-L1344
+[casdoor-sub]: https://github.com/casdoor/casdoor/blob/3d81f45bc98be0fe379b3a21973c783060066af5/object/token_jwt.go#L688-L691
+[casdoor-id-index]: https://github.com/casdoor/casdoor/blob/3d81f45bc98be0fe379b3a21973c783060066af5/object/user.go#L70
+[casdoor-user-fields]: https://github.com/casdoor/casdoor/blob/3d81f45bc98be0fe379b3a21973c783060066af5/object/user.go#L83-L85
+[casdoor-phone-integer]: https://github.com/casdoor/casdoor/blob/3d81f45bc98be0fe379b3a21973c783060066af5/util/validation.go#L90-L106
+[casdoor-phone-signup]: https://github.com/casdoor/casdoor/blob/3d81f45bc98be0fe379b3a21973c783060066af5/controllers/account.go#L192-L200
+[casdoor-phone-code-signup]: https://github.com/casdoor/casdoor/blob/3d81f45bc98be0fe379b3a21973c783060066af5/object/token_verification_code.go#L151-L172
+[casdoor-phone-reset]: https://github.com/casdoor/casdoor/blob/3d81f45bc98be0fe379b3a21973c783060066af5/controllers/verification.go#L664-L684
+[casdoor-phone-mfa]: https://github.com/casdoor/casdoor/blob/3d81f45bc98be0fe379b3a21973c783060066af5/controllers/mfa.go#L199-L212
+[casdoor-self-columns]: https://github.com/casdoor/casdoor/blob/3d81f45bc98be0fe379b3a21973c783060066af5/object/user.go#L900-L930
+[casdoor-region-item]: https://github.com/casdoor/casdoor/blob/3d81f45bc98be0fe379b3a21973c783060066af5/object/user_util.go#L783-L790
+[casdoor-modify-rule-nil]: https://github.com/casdoor/casdoor/blob/3d81f45bc98be0fe379b3a21973c783060066af5/object/organization.go#L482-L485
+[casdoor-region-default]: https://github.com/casdoor/casdoor/blob/3d81f45bc98be0fe379b3a21973c783060066af5/object/init.go#L72
+[casdoor-phone-oauth]: https://github.com/casdoor/casdoor/blob/3d81f45bc98be0fe379b3a21973c783060066af5/controllers/auth.go#L1351-L1352
+[casdoor-phone-mapping]: https://github.com/casdoor/casdoor/blob/3d81f45bc98be0fe379b3a21973c783060066af5/object/user_util.go#L536-L545
+[casdoor-phone-miniprogram]: https://github.com/casdoor/casdoor/blob/3d81f45bc98be0fe379b3a21973c783060066af5/object/token_oauth.go#L723-L731
+[casdoor-incremental]: https://github.com/casdoor/casdoor/blob/3d81f45bc98be0fe379b3a21973c783060066af5/object/user.go#L1951-L1971
+[casdoor-custom-claims]: https://github.com/casdoor/casdoor/blob/3d81f45bc98be0fe379b3a21973c783060066af5/object/token_jwt.go#L480-L511
+[casdoor-token-types]: https://github.com/casdoor/casdoor/blob/3d81f45bc98be0fe379b3a21973c783060066af5/object/token_jwt.go#L708-L728
+[casdoor-grant-types]: https://github.com/casdoor/casdoor/blob/3d81f45bc98be0fe379b3a21973c783060066af5/object/token_oauth_util.go#L253-L265
+[casdoor-refresh-expiry]: https://github.com/casdoor/casdoor/blob/3d81f45bc98be0fe379b3a21973c783060066af5/object/token_jwt.go#L659-L663
+[casdoor-refresh-user]: https://github.com/casdoor/casdoor/blob/3d81f45bc98be0fe379b3a21973c783060066af5/object/token_oauth_util.go#L679-L700
+[casdoor-properties-default]: https://github.com/casdoor/casdoor/blob/3d81f45bc98be0fe379b3a21973c783060066af5/object/init.go#L108
+[casdoor-modify-rule]: https://github.com/casdoor/casdoor/blob/3d81f45bc98be0fe379b3a21973c783060066af5/object/user_util.go#L988-L1000
+[casdoor-public-only]: https://github.com/casdoor/casdoor/blob/3d81f45bc98be0fe379b3a21973c783060066af5/object/webhook_util.go#L27-L38
+[casdoor-console-default]: https://github.com/casdoor/casdoor/blob/3d81f45bc98be0fe379b3a21973c783060066af5/web/src/pages/defaults.ts#L669-L684
+[casdoor-mask]: https://github.com/casdoor/casdoor/blob/3d81f45bc98be0fe379b3a21973c783060066af5/object/record.go#L40-L46
+[casdoor-extended-user]: https://github.com/casdoor/casdoor/blob/3d81f45bc98be0fe379b3a21973c783060066af5/object/record.go#L444-L457
+[casdoor-token-fields]: https://github.com/casdoor/casdoor/blob/3d81f45bc98be0fe379b3a21973c783060066af5/object/webhook_util.go#L42-L63
+[casdoor-object-fields]: https://github.com/casdoor/casdoor/blob/3d81f45bc98be0fe379b3a21973c783060066af5/object/record.go#L440-L442
+[casdoor-single-org]: https://github.com/casdoor/casdoor/blob/3d81f45bc98be0fe379b3a21973c783060066af5/object/record.go#L352-L356
+[casdoor-single-org-admin]: https://github.com/casdoor/casdoor/blob/3d81f45bc98be0fe379b3a21973c783060066af5/controllers/webhook.go#L117-L121
+[casdoor-webhook-struct]: https://github.com/casdoor/casdoor/blob/3d81f45bc98be0fe379b3a21973c783060066af5/object/webhook.go#L49-L52
+[casdoor-worker]: https://github.com/casdoor/casdoor/blob/3d81f45bc98be0fe379b3a21973c783060066af5/object/webhook_worker.go#L32
+[casdoor-worker-order]: https://github.com/casdoor/casdoor/blob/3d81f45bc98be0fe379b3a21973c783060066af5/object/webhook_worker.go#L151-L156
+[casdoor-queue]: https://github.com/casdoor/casdoor/blob/3d81f45bc98be0fe379b3a21973c783060066af5/object/webhook_event.go#L255-L272
+[casdoor-attempt]: https://github.com/casdoor/casdoor/blob/3d81f45bc98be0fe379b3a21973c783060066af5/object/webhook_worker.go#L162-L251
+[casdoor-get-webhook]: https://github.com/casdoor/casdoor/blob/3d81f45bc98be0fe379b3a21973c783060066af5/controllers/webhook.go#L79-L89
+[casdoor-get-webhook-org]: https://github.com/casdoor/casdoor/blob/3d81f45bc98be0fe379b3a21973c783060066af5/object/webhook.go#L127-L138
+[casdoor-webhook-api]: https://github.com/casdoor/casdoor/blob/3d81f45bc98be0fe379b3a21973c783060066af5/controllers/webhook.go#L71-L125
+[casdoor-worker-start]: https://github.com/casdoor/casdoor/blob/3d81f45bc98be0fe379b3a21973c783060066af5/object/webhook_worker.go#L41-L49
+[casdoor-new-user]: https://github.com/casdoor/casdoor/blob/3d81f45bc98be0fe379b3a21973c783060066af5/routers/record.go#L166-L191
+[casdoor-signup-record]: https://github.com/casdoor/casdoor/blob/3d81f45bc98be0fe379b3a21973c783060066af5/controllers/account.go#L323-L350
+[casdoor-delete-own]: https://github.com/casdoor/casdoor/blob/3d81f45bc98be0fe379b3a21973c783060066af5/routers/router.go#L101
+[casdoor-record-actor]: https://github.com/casdoor/casdoor/blob/3d81f45bc98be0fe379b3a21973c783060066af5/object/record.go#L217-L241
+[casdoor-after-request]: https://github.com/casdoor/casdoor/blob/3d81f45bc98be0fe379b3a21973c783060066af5/routers/record.go#L187-L191
+[casdoor-soft-delete]: https://github.com/casdoor/casdoor/blob/3d81f45bc98be0fe379b3a21973c783060066af5/object/user.go#L1469-L1480
+[casdoor-unaffected]: https://github.com/casdoor/casdoor/blob/3d81f45bc98be0fe379b3a21973c783060066af5/controllers/base.go#L423-L431
+[casdoor-mfa]: https://github.com/casdoor/casdoor/blob/3d81f45bc98be0fe379b3a21973c783060066af5/controllers/auth.go#L1418-L1425
+[casdoor-miniprogram-provider]: https://github.com/casdoor/casdoor/blob/3d81f45bc98be0fe379b3a21973c783060066af5/object/provider.go#L272-L280
+[casdoor-miniprogram-tag]: https://github.com/casdoor/casdoor/blob/3d81f45bc98be0fe379b3a21973c783060066af5/object/token_oauth.go#L65-L75
