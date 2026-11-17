@@ -37,18 +37,19 @@ export const webhooksRoute: RouteHandler = async (request, runtime, deps, ctx) =
     const adapter = ADAPTERS[source.type]
     if (!(await adapter.authenticate(request, body, runtime.webhookSecret(source.id), deps.now()))) return refuse(ctx, 401, 'bad_webhook_auth')
 
+    const idp = runtime.config.idps[source.idp]
+    if (idp === undefined) throw new Error('webhook source names an unknown idp')
     // The IdP would redeliver the same bytes, so an unprocessable payload is answered 200 and the log code is the alert
     let events: LifecycleEvent[]
     try {
-        events = adapter.parse(request, body, source)
+        events = adapter.parse(request, body, source, idp)
     } catch (error) {
         if (!(error instanceof BadPayloadError)) throw error
         return answer(ctx, [], [], 'bad_payload')
     }
     if (events.length === 0) return answer(ctx, [], [], 'ignored')
 
-    const issuer = runtime.config.idps[source.idp]?.issuer
-    if (issuer === undefined) throw new Error('webhook source names an unknown idp')
+    const issuer = idp.issuer
     let userIds: string[]
     try {
         userIds = await Promise.all(events.map((event) => deriveUserId(issuer, event.subject, event.uid)))

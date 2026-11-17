@@ -11,7 +11,9 @@ import deletedWithoutExternalId from './fixtures/clerk/user-deleted-without-exte
 import deleted from './fixtures/clerk/user-deleted.json'
 import updated from './fixtures/clerk/user-updated.json'
 
-const SOURCE = parseConfig(JSON.stringify(clerkConfig())).webhookSources['clerk-acme']!
+const CONFIG = parseConfig(JSON.stringify(clerkConfig()))
+const SOURCE = CONFIG.webhookSources['clerk-acme']!
+const IDP = CONFIG.idps['clerk-acme']!
 
 // The same source for an IdP that maps no uid claim, which therefore has no uidField
 function sourceWithoutUid(): WebhookSourceConfig {
@@ -43,7 +45,7 @@ function authenticate(delivery: Delivery, options: AuthOptions = {}): Promise<bo
 }
 
 function parse(delivery: Delivery, source: WebhookSourceConfig = SOURCE): LifecycleEvent[] {
-    return clerk.parse(deliveryRequest('clerk-acme', delivery), delivery.body, source)
+    return clerk.parse(deliveryRequest('clerk-acme', delivery), delivery.body, source, IDP)
 }
 
 function parseEdited(edit: (event: Doc) => void, fixture: Delivery = created): Promise<LifecycleEvent[]> {

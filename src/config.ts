@@ -20,7 +20,7 @@ const PLAIN_KEY = /^[\w-]{1,64}$/
 const MAX_QUOTED = 64
 
 const ALGORITHMS: readonly IdpAlgorithm[] = ['RS256', 'RS384', 'RS512', 'PS256', 'ES256', 'ES384', 'EdDSA']
-const CLAIM_KEYS = ['clientId', 'uid', 'email', 'emailVerified', 'phone', 'phoneVerified', 'name', 'picture']
+const CLAIM_KEYS = ['clientId', 'uid', 'email', 'emailVerified', 'phone', 'phoneRegion', 'phoneVerified', 'name', 'picture']
 
 type Idps = Record<string, IdpConfig>
 type Products = Record<string, ProductConfig>
@@ -100,6 +100,7 @@ function parseClaims(at: At | undefined): ClaimMapping {
         email: name('email', 'email'),
         emailVerified: flag('emailVerified', 'email_verified'),
         phone: name('phone', 'phone_number'),
+        ...present('phoneRegion', claims?.optional('phoneRegion')?.nonEmptyString()),
         phoneVerified: flag('phoneVerified', 'phone_number_verified'),
         name: name('name', 'name'),
         picture: name('picture', 'picture'),

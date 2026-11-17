@@ -144,6 +144,41 @@ describe('mapClaims', () => {
         })
     })
 
+    describe('phone region', () => {
+        // What a Casdoor JWT-Custom token carries for the fields Phone and CountryCode
+        const REGIONAL = mapping({ phone: 'phone', phoneRegion: 'countryCode', phoneVerified: true })
+
+        it('joins a national number and its region into an international number', () => {
+            const { profile } = mapClaims({ phone: '13800138000', countryCode: 'CN' }, REGIONAL)
+            expect(profile.phone).toBe('+8613800138000')
+            expect(profile.phoneVerified).toBe(true)
+        })
+
+        it('follows the region, for digits that are a number in two regions', () => {
+            expect(mapClaims({ phone: '2087654321', countryCode: 'US' }, REGIONAL).profile.phone).toBe('+12087654321')
+            expect(mapClaims({ phone: '2087654321', countryCode: 'CN' }, REGIONAL).profile.phone).toBe('+862087654321')
+        })
+
+        it('reads no phone from the empty strings of a user without one', () => {
+            expect(mapClaims({ phone: '', countryCode: '' }, REGIONAL).profile.phone).toBeUndefined()
+        })
+
+        it.each([
+            ['without a region', { phone: '13800138000' }],
+            ['with an unknown region', { phone: '13800138000', countryCode: 'ZZ' }],
+            ['already international', { phone: '+8613800138000', countryCode: 'CN' }],
+            ['already international, without a region', { phone: '+8613800138000' }],
+            ['that is not a string', { phone: 13800138000, countryCode: 'CN' }],
+        ])('reads no phone from a number %s', (_what, payload) => {
+            expect(mapClaims(payload, REGIONAL).profile.phone).toBeUndefined()
+        })
+
+        it('leaves the phone claim as it is when no region claim is mapped', () => {
+            const { profile } = mapClaims({ phone_number: '13800138000', countryCode: 'CN' }, DEFAULTS)
+            expect(profile.phone).toBe('13800138000')
+        })
+    })
+
     describe('uid', () => {
         it('is the raw value of the mapped claim, null included', () => {
             expect(mapClaims({ uid: null }, CLERK)).toHaveProperty('uid', null)
@@ -167,6 +202,7 @@ describe('mapClaims', () => {
                 email: name,
                 emailVerified: name,
                 phone: name,
+                phoneRegion: name,
                 phoneVerified: name,
                 name,
                 picture: name,

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { parseConfig } from '../src/config'
-import type { LifecycleEvent, WebhookSourceConfig } from '../src/types'
+import type { IdpConfig, LifecycleEvent, WebhookSourceConfig } from '../src/types'
 import { BadPayloadError } from '../src/webhooks/adapter'
 import { casdoor } from '../src/webhooks/casdoor'
 import { casdoorConfig } from './helpers/config'
@@ -41,23 +41,50 @@ function sourceWithoutUid(): WebhookSourceConfig {
 
 const SOURCE = source()
 
+type IdpEdit = (idp: Doc) => void
+
+function idp(edit: IdpEdit = () => {}): IdpConfig {
+    const doc = casdoorConfig()
+    edit(doc.idps.casdoor)
+    return parseConfig(JSON.stringify(doc)).idps.casdoor!
+}
+
+const IDP = idp()
+// The same IdP, trusted to hold only phone numbers it verified
+const PHONE_IDP = idp((record) => (record.claims.phoneVerified = true))
+
 const PICTURE = 'https://cdn.casbin.org/img/casbin.svg'
 // The deleted user, alice, and the organization admin who deleted her
 const ALICE = 'd75162f2-693a-408e-92d1-65d71d8697e0'
 const ALICE_UID = '39ca13d1-4dd9-4bdf-ad90-b2ae382c6b6c'
 const ACME_ADMIN = 'a4d62447-e463-419e-9ec7-963cdb979adc'
 
-function parse(fixture: CasdoorFixture, from: WebhookSourceConfig = SOURCE): LifecycleEvent[] {
+function parse(fixture: CasdoorFixture, from: WebhookSourceConfig = SOURCE, of: IdpConfig = IDP): LifecycleEvent[] {
     const delivery = casdoorDelivery(fixture)
-    return casdoor.parse(deliveryRequest('casdoor-acme', delivery), delivery.body, from)
+    return casdoor.parse(deliveryRequest('casdoor-acme', delivery), delivery.body, from, of)
 }
 
-function parseEdited(fixture: CasdoorFixture, edit: CasdoorEdit, from: WebhookSourceConfig = SOURCE): LifecycleEvent[] {
-    return parse(editCasdoor(fixture, edit), from)
+function parseEdited(fixture: CasdoorFixture, edit: CasdoorEdit, from: WebhookSourceConfig = SOURCE, of: IdpConfig = IDP): LifecycleEvent[] {
+    return parse(editCasdoor(fixture, edit), from, of)
 }
 
 function parseRaw(body: string): LifecycleEvent[] {
-    return casdoor.parse(deliveryRequest('casdoor-acme', { headers: signup.headers, body }), body, SOURCE)
+    return casdoor.parse(deliveryRequest('casdoor-acme', { headers: signup.headers, body }), body, SOURCE, IDP)
+}
+
+function withPhone(phone: unknown, countryCode: unknown, of: IdpConfig = PHONE_IDP): LifecycleEvent {
+    const [event] = parseEdited(
+        newUserOauthSignup,
+        {
+            object: (user) => {
+                user.phone = phone
+                user.countryCode = countryCode
+            },
+        },
+        SOURCE,
+        of,
+    )
+    return event!
 }
 
 function badPayload(run: () => unknown): unknown {
@@ -152,14 +179,42 @@ describe('Casdoor webhooks', () => {
                 }
             })
 
-            it('never takes a phone number, which Casdoor stores without verification', () => {
-                const [event] = parseEdited(newUserOauthSignup, {
-                    object: (user) => {
-                        user.phone = '+15555550100'
-                        user.countryCode = 'US'
-                    },
+            it('takes no phone number unless the IdP is trusted to verify them: Casdoor stores no flag', () => {
+                expect(withPhone('13800138000', 'CN', IDP).profile).not.toHaveProperty('phoneNumber')
+            })
+
+            it('takes no phone number on the word of a claim name, as the stored user has no such field', () => {
+                const named = idp((record) => (record.claims.phoneVerified = 'phoneVerified'))
+                expect(withPhone('13800138000', 'CN', named).profile).not.toHaveProperty('phoneNumber')
+            })
+
+            it('joins the stored number and region of a trusted IdP into an international number', () => {
+                expect(withPhone('13800138000', 'CN').profile).toStrictEqual({
+                    email: 'gus@globex.example',
+                    phoneNumber: '+8613800138000',
+                    name: 'Gus Example',
+                    picture: PICTURE,
                 })
-                expect(event!.profile).not.toHaveProperty('phoneNumber')
+            })
+
+            it('follows the stored region, for digits that are a number in two regions', () => {
+                expect(withPhone('2087654321', 'US').profile.phoneNumber).toBe('+12087654321')
+                expect(withPhone('2087654321', 'CN').profile.phoneNumber).toBe('+862087654321')
+            })
+
+            it('reads no phone from the empty strings of a user without one', () => {
+                expect(parse(newUserOauthSignup, SOURCE, PHONE_IDP)[0]!.profile).not.toHaveProperty('phoneNumber')
+            })
+
+            it.each([
+                ['in international form', '+8613800138000', 'CN'],
+                ['with its trunk prefix', '013800138000', 'CN'],
+                ['of an unknown region', '13800138000', 'ZZ'],
+                ['without a region', '13800138000', ''],
+                ['that is not a string', 13800138000, 'CN'],
+                ['too short to be one', '1234', 'CN'],
+            ])('takes no phone number %s', (_what, phone, countryCode) => {
+                expect(withPhone(phone, countryCode).profile).not.toHaveProperty('phoneNumber')
             })
 
             it('is not subject to the admin condition of deletions', () => {

@@ -1,6 +1,7 @@
 import { constantTimeEqual } from '../crypto/compare'
+import { internationalNumber } from '../phone'
 import { cleanProfile } from '../profile'
-import type { EventType, LifecycleEvent, Profile } from '../types'
+import type { EventType, IdpConfig, LifecycleEvent, Profile } from '../types'
 import { BadPayloadError, isObject, own, parseObject, type JsonObject, type WebhookAdapter } from './adapter'
 
 // Casdoor formats the outcome itself, not as JSON. ok also covers requests that changed nothing.
@@ -16,7 +17,7 @@ export const casdoor: WebhookAdapter = {
         return constantTimeEqual(encoder.encode(token), encoder.encode(secret))
     },
 
-    parse(_request, rawBody, source) {
+    parse(_request, rawBody, source, idp) {
         if (source.type !== 'casdoor') throw new TypeError('not a casdoor source')
         const record = parseObject(rawBody, 'body')
         const name = own(record, 'name')
@@ -39,7 +40,7 @@ export const casdoor: WebhookAdapter = {
         const subject = own(user, 'id')
         if (typeof subject !== 'string' || subject === '') throw new BadPayloadError('user id is not a non-empty string')
         // The record's own id is always 0, as Casdoor sends the webhook before storing the record
-        const event: LifecycleEvent = { idpEventId: `${action}:${name}`, type, subject, profile: type === 'user-created' ? profile(user) : {} }
+        const event: LifecycleEvent = { idpEventId: `${action}:${name}`, type, subject, profile: type === 'user-created' ? profile(user, idp) : {} }
         if (source.uidField !== undefined) {
             // Without properties, "no override" and "override not sent" look the same
             const properties = own(user, 'properties')
@@ -62,12 +63,14 @@ function eventType(action: string, actor: unknown, organization: string): EventT
     return undefined
 }
 
-// No phone: Casdoor stores numbers without the calling code and has no verification flag for them
-function profile(user: JsonObject): Profile {
+// Casdoor stores a number apart from its region and keeps no verification flag for it, so the phone counts as
+// verified only when the IdP's mapping trusts Casdoor's policy, as it does for the tokens of the same users
+function profile(user: JsonObject, idp: IdpConfig): Profile {
     return cleanProfile({
         email: own(user, 'email'),
         emailVerified: own(user, 'emailVerified') === true,
-        phoneVerified: false,
+        phone: internationalNumber(own(user, 'phone'), own(user, 'countryCode')),
+        phoneVerified: idp.claims.phoneVerified === true,
         name: own(user, 'displayName'),
         picture: own(user, 'avatar'),
     })

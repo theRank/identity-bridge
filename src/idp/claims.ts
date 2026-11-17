@@ -1,3 +1,4 @@
+import { internationalNumber } from '../phone'
 import type { ClaimMapping, RawProfile } from '../types'
 
 export type Payload = Record<string, unknown>
@@ -20,7 +21,7 @@ export function mapClaims(payload: Payload, mapping: ClaimMapping): MappedClaims
         profile: {
             email: claim(payload, mapping.email),
             emailVerified: verified(payload, mapping.emailVerified),
-            phone: claim(payload, mapping.phone),
+            phone: phone(payload, mapping),
             phoneVerified: verified(payload, mapping.phoneVerified),
             name: claim(payload, mapping.name),
             picture: claim(payload, mapping.picture),
@@ -28,6 +29,13 @@ export function mapClaims(payload: Payload, mapping: ClaimMapping): MappedClaims
     }
     if (mapping.uid !== undefined && Object.hasOwn(payload, mapping.uid)) mapped.uid = payload[mapping.uid]
     return mapped
+}
+
+// With a region claim mapped, the phone claim is a national number, and one that does not make an international
+// number with its region is no phone at all
+function phone(payload: Payload, mapping: ClaimMapping): unknown {
+    const value = claim(payload, mapping.phone)
+    return mapping.phoneRegion === undefined ? value : internationalNumber(value, claim(payload, mapping.phoneRegion))
 }
 
 function clientIds(value: unknown): string[] {

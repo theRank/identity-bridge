@@ -11,6 +11,8 @@ breaking change to the [wire contract](docs/api.md) is a new major version of al
   for a bridge access token, with an IdP binding per product, an algorithm allowlist, a maximum IdP token age,
   required claim values, client binding, claim mapping and CORS. One error for every rejected subject token,
   with the precise reason as a log code.
+- Phone numbers an IdP stores as a national number and a region, as Casdoor does, joined into E.164 through the
+  `phoneRegion` claim mapping, in access tokens and `user-created` events.
 - Access tokens following [RFC 9068](https://www.rfc-editor.org/rfc/rfc9068), signed with ES256 only.
 - User ids derived as UUIDv5 of the IdP issuer and subject, or taken from an administrator-set override.
 - `GET /.well-known/jwks.json`, with retired keys for rotation.
