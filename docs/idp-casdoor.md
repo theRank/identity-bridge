@@ -6,7 +6,9 @@ sign-in. One Casdoor instance can serve several products. The matching bridge co
 
 Casdoor's documentation does not describe all of what the bridge relies on, and in places differs from what
 Casdoor does. Where it does, this guide links to Casdoor's source at commit
-[`66b51ee`][casdoor-commit], the version this release was checked against.
+[`66b51ee`][casdoor-commit], the version this release was checked against. The repository's
+[`scripts/e2e-casdoor.ts`](../scripts/e2e-casdoor.ts) runs the bridge against a Casdoor set up this way, and
+its CI repeats that weekly with Casdoor's newest release.
 
 ## Instance
 

@@ -119,6 +119,12 @@ npm run dev         # a local Worker, reading .dev.vars
 `node scripts/dev-env.ts` prints throwaway values on `*.example` hosts for local runs; see
 [deploy-node.md](docs/deploy-node.md#trying-it-locally).
 
+`node scripts/e2e-casdoor.ts` runs the Node bundle against a throwaway Casdoor container, set up as
+[idp-casdoor.md](docs/idp-casdoor.md) says: token exchange, the webhook relay, and what that guide says Casdoor
+lets users write. It needs Docker and `openssl`, and `npm run build:node` first; an image name as its argument
+picks another Casdoor version. CI runs it on changes to the service, and weekly against Casdoor's newest
+release.
+
 ## Security
 
 See [SECURITY.md](SECURITY.md).
