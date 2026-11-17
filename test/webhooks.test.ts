@@ -399,7 +399,7 @@ describe('/webhooks/{source}', () => {
                 aud: 'acme',
                 iat: NOW_SEC,
                 jti: expect.any(String),
-                txn: `new-user:${newUserSignup.body.name}`,
+                txn: String(newUserSignup.body.id),
                 sub: await deriveUserId(SOURCES.casdoor.idpIssuer, '33d91987-4b7e-4c23-8097-01a93c1873aa'),
                 events: { 'urn:identity-bridge:event:user-created': { name: 'Nina Signup', picture: 'https://cdn.casbin.org/img/casbin.svg' } },
             })
@@ -426,7 +426,7 @@ describe('/webhooks/{source}', () => {
             await expectBody(await send(casdoorRequest(deleteByAdmin)), 200, { delivered: ['acme'], failed: [] })
             const { payload } = await verifyEvent(calls[0]!.body, 'casdoor', 'acme')
             expect(payload.sub).toBe(ALICE_UID)
-            expect(payload.txn).toBe(`delete-user:${deleteByAdmin.body.name}`)
+            expect(payload.txn).toBe(String(deleteByAdmin.body.id))
             expect(payload.events).toStrictEqual({ 'urn:identity-bridge:event:user-deleted': {} })
 
             const sub = await deliveredSub('casdoor', casdoorRequest(deleteByAdmin), withoutUid('casdoor'))
@@ -447,9 +447,9 @@ describe('/webhooks/{source}', () => {
             expect(calls).toHaveLength(0)
         })
 
-        it('answers a record with an empty name 200 with empty lists, logged as bad_payload', async () => {
+        it('answers a record with the id 0, as Casdoor before 4.28 sends, 200 with empty lists, logged as bad_payload', async () => {
             const { send, logs, calls } = setup('casdoor')
-            await expectBody(await send(casdoorRequest(editCasdoor(newUserSignup, { record: (record) => (record.name = '') }))), 200, NONE)
+            await expectBody(await send(casdoorRequest(editCasdoor(newUserSignup, { record: (record) => (record.id = 0) }))), 200, NONE)
             expect(logs).toEqual([line('casdoor', 200, { code: 'bad_payload', delivered: 0, failed: 0 })])
             expect(calls).toHaveLength(0)
         })
@@ -790,25 +790,20 @@ describe('/webhooks/{source}', () => {
             expect(claims.jti).toBe(goldenJti(fixture.headers['Svix-Id']))
         })
 
-        it('gives Casdoor records the golden jti of "<action>:<name>", so a sign-up and its new-user never collide', async () => {
+        it('gives Casdoor records the golden jti of their record id', async () => {
             const { send, calls, logs } = setup('casdoor')
-            const named = (fixture: CasdoorFixture, idpEventId: string) => {
-                const name = idpEventId.slice(idpEventId.indexOf(':') + 1)
-                return casdoorRequest(editCasdoor(fixture, { record: (record) => (record.name = name) }))
-            }
-            const newUser = 'new-user:5d1c3b7a-2e4f-4a6b-8c9d-0e1f2a3b4c5d'
-            const signupId = 'signup:5d1c3b7a-2e4f-4a6b-8c9d-0e1f2a3b4c5d'
-            const deletion = 'delete-user:9e8d7c6b-5a4f-4e3d-8c2b-1a0f9e8d7c6b'
-            await send(named(signup, signupId))
-            await send(named(newUserSignup, newUser))
-            await send(named(deleteByAdmin, deletion))
+            const numbered = (fixture: CasdoorFixture, idpEventId: string) => casdoorRequest(editCasdoor(fixture, { record: (record) => (record.id = Number(idpEventId)) }))
+            const newUser = '4102'
+            const deletion = '4117'
+            await send(numbered(signup, '4101'))
+            await send(numbered(newUserSignup, newUser))
+            await send(numbered(deleteByAdmin, deletion))
             expect(logs.map((logged) => logged.code)).toEqual(['ignored', undefined, undefined])
             const claims = calls.map((call) => decodeJwt(call.body))
             expect(claims.map((claim) => [claim.txn, claim.jti])).toEqual([
                 [newUser, goldenJti(newUser)],
                 [deletion, goldenJti(deletion)],
             ])
-            expect(goldenJti(newUser)).not.toBe(goldenJti(signupId))
         })
     })
 })

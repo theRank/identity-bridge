@@ -140,7 +140,7 @@ describe('Casdoor webhooks', () => {
             it('maps a sign-up to user-created for the stored user, without an unverified email', () => {
                 expect(parse(newUserSignup)).toStrictEqual([
                     {
-                        idpEventId: 'new-user:89f3dfae-084b-4f66-b7a9-a18011957965',
+                        idpEventId: '102',
                         type: 'user-created',
                         subject: '33d91987-4b7e-4c23-8097-01a93c1873aa',
                         profile: { name: 'Nina Signup', picture: PICTURE },
@@ -151,7 +151,7 @@ describe('Casdoor webhooks', () => {
             it('maps an OAuth sign-up to user-created with the provider-verified email', () => {
                 expect(parse(newUserOauthSignup)).toStrictEqual([
                     {
-                        idpEventId: 'new-user:4677bed3-d384-471f-b767-9f95d82f5e0c',
+                        idpEventId: '106',
                         type: 'user-created',
                         subject: '7219e2b2-93de-4e9d-9dd2-dc9b73b5f62b',
                         profile: { email: 'gus@globex.example', name: 'Gus Example', picture: PICTURE },
@@ -226,7 +226,7 @@ describe('Casdoor webhooks', () => {
             it('maps to user-deleted for the deleted user, not the admin, with the uid override', () => {
                 const events = parse(deleteByAdmin)
                 expect(events).toStrictEqual([
-                    { idpEventId: 'delete-user:7ef498bb-5664-4ec8-9fcd-62ee5f7f0d0f', type: 'user-deleted', subject: ALICE, uid: ALICE_UID, profile: {} },
+                    { idpEventId: '109', type: 'user-deleted', subject: ALICE, uid: ALICE_UID, profile: {} },
                 ])
                 expect(JSON.stringify(events)).not.toContain(ACME_ADMIN)
             })
@@ -234,7 +234,7 @@ describe('Casdoor webhooks', () => {
             it('gives no override for properties null, a user created without them', () => {
                 expect(parse(deleteByAdminNullProperties)).toStrictEqual([
                     {
-                        idpEventId: 'delete-user:80571e1e-3a10-4d49-89f2-46fd157ad5bd',
+                        idpEventId: '110',
                         type: 'user-deleted',
                         subject: '5df95c53-cddf-4d39-82e7-0b9f39b8e1f4',
                         profile: {},
@@ -245,7 +245,7 @@ describe('Casdoor webhooks', () => {
             it('relays a deletion that matched no user, which Casdoor answers ok', () => {
                 expect(parse(deleteNoSuchUser)).toStrictEqual([
                     {
-                        idpEventId: 'delete-user:e15d4514-c969-492d-adce-387c47ce8f9c',
+                        idpEventId: '128',
                         type: 'user-deleted',
                         subject: '4021c994-5bcd-472e-a39e-6c1b1552f44d',
                         profile: {},
@@ -262,7 +262,7 @@ describe('Casdoor webhooks', () => {
             it('needs no properties key when the source has no uidField', () => {
                 const events = parseEdited(deleteByAdmin, { object: (user) => delete user.properties }, sourceWithoutUid())
                 expect(events).toStrictEqual([
-                    { idpEventId: 'delete-user:7ef498bb-5664-4ec8-9fcd-62ee5f7f0d0f', type: 'user-deleted', subject: ALICE, profile: {} },
+                    { idpEventId: '109', type: 'user-deleted', subject: ALICE, profile: {} },
                 ])
             })
 
@@ -353,18 +353,33 @@ describe('Casdoor webhooks', () => {
                 expect(badPayload(() => parseRaw(body))).toBeInstanceOf(BadPayloadError)
             })
 
-            it.each(['name', 'action', 'organization', 'response'])('rejects a record without a string %s', (member) => {
+            it.each(['action', 'organization', 'response'])('rejects a record without a string %s', (member) => {
                 expect(badPayload(() => parseEdited(newUserSignup, { record: (record) => delete record[member] }))).toBeInstanceOf(BadPayloadError)
                 expect(badPayload(() => parseEdited(newUserSignup, { record: (record) => (record[member] = 0) }))).toBeInstanceOf(BadPayloadError)
             })
 
-            // An empty name would give every such record one event id
+            // 0 is what Casdoor before 4.28 sends for every record, which would give them all one event id
+            it.each([
+                ['0', 0],
+                ['a negative number', -7],
+                ['a fraction', 1.5],
+                ['a number too large to be exact', 2 ** 53],
+                ['a string of digits', '102'],
+                ['null', null],
+            ])('rejects a record whose id is %s', (_, id) => {
+                expect(badPayload(() => parseEdited(newUserSignup, { record: (record) => (record.id = id) }))).toBeInstanceOf(BadPayloadError)
+            })
+
             it.each([
                 ['a new-user record', newUserSignup],
                 ['an admin deletion', deleteByAdmin],
-                ['a signup record, before it would be ignored', signup],
-            ])('rejects an empty name on %s', (_, fixture) => {
-                expect(badPayload(() => parseEdited(fixture, { record: (record) => (record.name = '') }))).toBeInstanceOf(BadPayloadError)
+                ['a signup record, which would be ignored', signup],
+            ])('rejects %s without an id', (_, fixture) => {
+                expect(badPayload(() => parseEdited(fixture, { record: (record) => delete record.id }))).toBeInstanceOf(BadPayloadError)
+            })
+
+            it('reads a record without a name, which it does not use', () => {
+                expect(parseEdited(newUserSignup, { record: (record) => delete record.name })).toHaveLength(1)
             })
 
             it('rejects a record of another organization without a string action, as unprocessable before filtered', () => {
@@ -434,18 +449,17 @@ describe('Casdoor webhooks', () => {
         })
 
         describe('event id', () => {
-            it('is the action and the record name, so a sign-up and its new-user never share one', () => {
+            it('is the record id, which a sign-up and the new-user record copied from it do not share', () => {
                 expect(signup.body.name).toBe(newUserSignup.body.name)
-                expect(parse(newUserSignup)[0]!.idpEventId).toBe(`new-user:${signup.body.name}`)
-                expect(loginOauthSignup.body.name).toBe(newUserOauthSignup.body.name)
-                expect(parse(newUserOauthSignup)[0]!.idpEventId).toBe(`new-user:${loginOauthSignup.body.name}`)
+                expect(signup.body.id).not.toBe(newUserSignup.body.id)
+                expect(parse(newUserSignup)[0]!.idpEventId).toBe(String(newUserSignup.body.id))
+                expect(loginOauthSignup.body.id).not.toBe(newUserOauthSignup.body.id)
+                expect(parse(newUserOauthSignup)[0]!.idpEventId).toBe(String(newUserOauthSignup.body.id))
             })
 
-            // 0 from Casdoor before 4.28, as in the fixtures, and the stored record's id since
-            it.each([0, 36])('never uses the record id, such as %d', (id) => {
-                expect(deleteByAdmin.body.id).toBe(0)
-                const [event] = parseEdited(deleteByAdmin, { record: (record) => void (record.id = id) })
-                expect(event!.idpEventId).toBe(`delete-user:${deleteByAdmin.body.name}`)
+            it('follows the record id, not its name or action', () => {
+                const [event] = parseEdited(deleteByAdmin, { record: (record) => void (record.id = 36) })
+                expect(event!.idpEventId).toBe('36')
             })
         })
 

@@ -20,7 +20,7 @@ breaking change to the [wire contract](docs/api.md) is a new major version of al
 - `POST /webhooks/{source}`: Clerk (Svix-signed) and Casdoor (bearer secret) user lifecycle webhooks relayed
   to products as [RFC 8417](https://www.rfc-editor.org/rfc/rfc8417) security event tokens, pushed as in
   [RFC 8935](https://www.rfc-editor.org/rfc/rfc8935), with deterministic event ids. Casdoor webhooks relay
-  only new users and organization admins' deletions.
+  only new users and organization admins' deletions, and need Casdoor 4.28 or later.
 - One JSON configuration document, checked at load, and a failure mode that keeps answering `/healthz` with
   `503` when the configuration, the keys or a webhook secret cannot be loaded.
 - One JSON log line per request, without tokens or personal data.

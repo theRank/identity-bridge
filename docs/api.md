@@ -312,14 +312,13 @@ A source with `type: "casdoor"` receives a Casdoor webhook. Casdoor does not sig
 configured to send a secret header ([Casdoor][casdoor-webhooks]).
 
 - **Authentication.** `Authorization: Bearer <secret>`, compared in constant time.
-- **Body.** A Casdoor record ([records][casdoor-records]), with the members `name`, `action`, `organization`,
-  `user`, `object` (a JSON string), `response` and `extendedUser`, among others. The record's numeric `id` is
-  not used: Casdoor 4.28 and later send the stored record's ([source][casdoor-add-record]), while earlier
-  releases sent the webhook before they stored the record, so with `0`. A record whose `name`, `action`,
-  `organization` or `response` is not a string, or whose `name` is empty, is `bad_payload`.
-- **Event id.** `<action>:<name>`. `name` is generated per request ([source][casdoor-new-record]), and a
-  `new-user` record copies the `name` of the request that created the user ([source][casdoor-new-user]), so the
-  action is part of the id.
+- **Body.** A Casdoor record ([records][casdoor-records]), with the members `id`, `action`, `organization`,
+  `user`, `object` (a JSON string), `response` and `extendedUser`, among others. A record whose `id` is not a
+  positive integer, or whose `action`, `organization` or `response` is not a string, is `bad_payload`.
+- **Event id.** The record's `id`, in decimal, such as `4102`: the id Casdoor stored the record under
+  ([source][casdoor-add-record]). A `new-user` record is stored apart from the record of the request that
+  created the user ([source][casdoor-new-user]), so the two have different ids. Casdoor before 4.28 sent the
+  webhook before it stored the record, so with the `id` `0`: every webhook of such a release is `bad_payload`.
 - **Organization filter.** The record's `organization` must equal the source's `organization`, and for
   `delete-user` so must `object.owner`; otherwise the record is ignored. The bridge checks this itself rather
   than relying on the webhook's "single organization only" option, which it cannot see.
@@ -380,7 +379,7 @@ Header:
 | `aud` | The product id |
 | `iat` | When the bridge signed the event |
 | `jti` | UUIDv5 of `JSON.stringify([sourceId, idpEventId])` under the namespace `73c4ff75-fed7-4a0c-8541-3ff240e8f331` (`EVENT_ID_NAMESPACE`): the same on every delivery of the IdP's event |
-| `txn` | `idpEventId`: the `svix-id` for Clerk, `<action>:<name>` for Casdoor |
+| `txn` | `idpEventId`: the `svix-id` for Clerk, the record's `id` for Casdoor |
 | `sub` | The user id ([user ids](#user-ids)) |
 | `events` | Exactly one member, below |
 
@@ -443,7 +442,6 @@ logged as `internal_error`; on `/token`, once the product is resolved, that `500
 [casdoor-webhooks]: https://casdoor.ai/docs/webhooks/overview/
 [casdoor-records]: https://casdoor.ai/docs/organization/records/
 [casdoor-add-record]: https://github.com/casdoor/casdoor/blob/3d81f45bc98be0fe379b3a21973c783060066af5/object/record.go#L248-L281
-[casdoor-new-record]: https://github.com/casdoor/casdoor/blob/3d81f45bc98be0fe379b3a21973c783060066af5/object/record.go#L200-L213
 [casdoor-new-user]: https://github.com/casdoor/casdoor/blob/3d81f45bc98be0fe379b3a21973c783060066af5/routers/record.go#L166-L191
 [casdoor-unaffected]: https://github.com/casdoor/casdoor/blob/3d81f45bc98be0fe379b3a21973c783060066af5/controllers/base.go#L423-L431
 [casdoor-object]: https://github.com/casdoor/casdoor/blob/3d81f45bc98be0fe379b3a21973c783060066af5/object/record.go#L165-L172

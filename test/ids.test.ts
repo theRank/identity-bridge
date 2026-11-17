@@ -136,14 +136,6 @@ describe('eventId', () => {
         expect((error as TypeError).message).toBe('sourceId and idpEventId must be non-empty strings')
     })
 
-    it('gives Casdoor records that share a name different ids under different actions', () => {
-        const name = (idpEventId: string) => idpEventId.slice(idpEventId.indexOf(':') + 1)
-        const casdoor = golden.eventIds.filter((entry) => entry.sourceId === 'casdoor-acme')
-        const sharing = casdoor.filter((entry) => casdoor.some((other) => other !== entry && name(other.idpEventId) === name(entry.idpEventId)))
-        expect(new Set(sharing.map((entry) => entry.idpEventId.split(':')[0])).size).toBeGreaterThan(1)
-        expect(new Set(sharing.map((entry) => entry.expected)).size).toBe(sharing.length)
-    })
-
     it('has a distinct golden id for every event', () => {
         expect(new Set(golden.eventIds.map((entry) => entry.expected)).size).toBe(golden.eventIds.length)
     })
@@ -158,8 +150,8 @@ describe('eventId', () => {
         const ids = await Promise.all([
             eventId('clerk-acme', 'msg_1'),
             eventId('clerk-globex', 'msg_1'),
-            eventId('casdoor-acme', 'new-user:a'),
-            eventId('casdoor-acme', 'signup:a'),
+            eventId('casdoor-acme', '7'),
+            eventId('casdoor-globex', '7'),
             eventId('a', 'b,c'),
             eventId('a,b', 'c'),
         ])
