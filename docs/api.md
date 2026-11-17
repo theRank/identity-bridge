@@ -340,7 +340,9 @@ configured to send a secret header ([Casdoor][casdoor-webhooks]).
   ([source][casdoor-self-apis]), so a body from a user who is not an admin can name another user's `id` or
   `properties`. Only an admin of the source's own organization is trusted, since such an admin may write those
   fields anyway. `extendedUser` is `null` unless the webhook's extended user option is on and the caller is a
-  stored user.
+  stored user. This trust is only as strong as Casdoor's authorization on the record-producing APIs: on an
+  instance shared by several products, every administrator on the instance is inside each product's trust
+  boundary ([shared instance](idp-casdoor.md#trust-on-a-shared-instance)).
 - **Subject.** `object.id`, a non-empty string, else `bad_payload`.
 - **Override.** When the source has a `uidField`: `object.properties[uidField]`. `properties` must then be
   present, as an object or `null` (a user without properties, so no override), else `bad_payload`: a body
