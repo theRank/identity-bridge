@@ -20,13 +20,15 @@ export const casdoor: WebhookAdapter = {
     parse(_request, rawBody, source, idp) {
         if (source.type !== 'casdoor') throw new TypeError('not a casdoor source')
         const record = parseObject(rawBody, 'body')
-        const name = own(record, 'name')
+        const id = own(record, 'id')
         const action = own(record, 'action')
         const organization = own(record, 'organization')
         const response = own(record, 'response')
-        // An empty name would give every such record one event id
-        if (typeof name !== 'string' || name === '' || typeof action !== 'string' || typeof organization !== 'string' || typeof response !== 'string') {
-            throw new BadPayloadError('record lacks name, action, organization or response')
+        // The stored record's id. Casdoor before 4.28 sends the webhook before it stores the record, so with the id 0,
+        // which would give every record one event id.
+        if (typeof id !== 'number' || !Number.isSafeInteger(id) || id <= 0) throw new BadPayloadError('record id is not a positive integer')
+        if (typeof action !== 'string' || typeof organization !== 'string' || typeof response !== 'string') {
+            throw new BadPayloadError('record lacks action, organization or response')
         }
         // statusCode does not reflect the outcome: 200 on API records, 0 on new-user copies
         if (organization !== source.organization || !response.startsWith(OK)) return []
@@ -39,8 +41,7 @@ export const casdoor: WebhookAdapter = {
         if (type === 'user-deleted' && own(user, 'owner') !== source.organization) return []
         const subject = own(user, 'id')
         if (typeof subject !== 'string' || subject === '') throw new BadPayloadError('user id is not a non-empty string')
-        // Not the record's own id, which Casdoor before 4.28 sends as 0, the webhook going out before the record is stored
-        const event: LifecycleEvent = { idpEventId: `${action}:${name}`, type, subject, profile: type === 'user-created' ? profile(user, idp) : {} }
+        const event: LifecycleEvent = { idpEventId: String(id), type, subject, profile: type === 'user-created' ? profile(user, idp) : {} }
         if (source.uidField !== undefined) {
             // Without properties, "no override" and "override not sent" look the same
             const properties = own(user, 'properties')

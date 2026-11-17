@@ -168,6 +168,11 @@ One Casdoor webhook per organization, each relayed by one bridge source that nam
 the [record][casdoor-records] of the API call. Those docs also leave out the extended user option, the token
 fields and the names of the retry fields.
 
+Webhooks need Casdoor 4.28 or later. The bridge names each event by the id of its record
+([event id](api.md#casdoor-sources)), which earlier releases send as `0`. Those ids number the rows of one
+database: after a restore from a backup, or a move to a new database that does not carry the records over,
+Casdoor gives out ids it has used before, and products discard the events that carry them as repeats.
+
 | Setting | Value |
 |---|---|
 | URL | `https://<bridge>/webhooks/<source>`, such as `https://id.cn.acme.example/webhooks/casdoor-acme` |
