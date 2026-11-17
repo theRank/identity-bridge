@@ -165,6 +165,7 @@ describe('parseConfig documents', () => {
         })
         expect(Object.keys(config)).toEqual(['issuer', 'tokenTtlSeconds', 'idps', 'products', 'webhookSources'])
         expect(Object.keys(config.idps.idp!.claims)).not.toContain('uid')
+        expect(Object.keys(config.idps.idp!.claims)).not.toContain('phoneRegion')
         expect(Object.keys(config.products.app!)).toEqual(['id', 'idps', 'allowedOrigins'])
         expect(Object.keys(config.products.app!.idps[0]!)).toEqual(['idp'])
     })
@@ -194,6 +195,7 @@ describe('parseConfig documents', () => {
             (doc) => (doc.idps.casdoor.requiredClaims = { ver: 2, admin: false, tokenType: 'access-token' }),
         ],
         ['literal true for both verified flags', 'clerk', (doc) => (doc.idps['clerk-acme'].claims.phoneVerified = true)],
+        ['a phone region claim', 'casdoor', (doc) => Object.assign(doc.idps.casdoor.claims, { phone: 'phone', phoneRegion: 'countryCode', phoneVerified: true })],
         ['an id of 63 characters', 'minimal', (doc) => (doc.products = { ['a'.repeat(63)]: { idps: [{ idp: 'idp' }] } })],
         ['a one-digit id', 'minimal', (doc) => (doc.products = { '0': { idps: [{ idp: 'idp' }] } })],
         ['capacitor://localhost', 'clerk', (doc) => (doc.products.acme.allowedOrigins = ['capacitor://localhost'])],
@@ -211,11 +213,13 @@ describe('parseConfig documents', () => {
             edited('casdoor', (doc) => {
                 doc.idps.casdoor.requiredClaims = { ver: 2, admin: false }
                 doc.idps.casdoor.claims.phoneVerified = true
+                doc.idps.casdoor.claims.phoneRegion = 'countryCode'
                 doc.products.acme.allowedOrigins = ['capacitor://localhost', 'http://localhost:5173']
             }),
         )
         expect(config.idps.casdoor!.requiredClaims).toEqual({ ver: 2, admin: false })
         expect(config.idps.casdoor!.claims.phoneVerified).toBe(true)
+        expect(config.idps.casdoor!.claims.phoneRegion).toBe('countryCode')
         expect(config.products.acme!.allowedOrigins).toEqual(['capacitor://localhost', 'http://localhost:5173'])
     })
 })
@@ -536,6 +540,24 @@ describe('parseConfig field rules', () => {
             'clerk',
             (doc) => (doc.idps['clerk-acme'].claims.name = true),
             'idps.clerk-acme.claims.name: must be a non-empty string',
+        ],
+        [
+            'an empty phoneRegion claim',
+            'casdoor',
+            (doc) => (doc.idps.casdoor.claims.phoneRegion = ''),
+            'idps.casdoor.claims.phoneRegion: must be a non-empty string',
+        ],
+        [
+            'literal true for the phoneRegion claim',
+            'casdoor',
+            (doc) => (doc.idps.casdoor.claims.phoneRegion = true),
+            'idps.casdoor.claims.phoneRegion: must be a non-empty string',
+        ],
+        [
+            'a misspelled phoneRegion key',
+            'casdoor',
+            (doc) => (doc.idps.casdoor.claims.phoneregion = 'countryCode'),
+            'idps.casdoor.claims.phoneregion: unknown key',
         ],
         [
             'emailVerified false',

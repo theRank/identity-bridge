@@ -229,6 +229,19 @@ describe('/token', () => {
             })
         })
 
+        it('issues a Casdoor user a phone number from the stored number and region, once the IdP is trusted for it', async () => {
+            const trusted = (doc: Doc) => Object.assign(doc.idps.casdoor.claims, { phone: 'phone', phoneRegion: 'countryCode', phoneVerified: true })
+            const { send } = setup('casdoor', { edit: trusted })
+            const accessToken = await expectIssued(await send(post(form(await casdoorToken({ phone: '13800138000', countryCode: 'CN' })))))
+            expect(decodeJwt(accessToken).phone_number).toBe('+8613800138000')
+        })
+
+        it('issues a Casdoor user no phone number while the mapping does not trust the IdP for it', async () => {
+            const { send } = setup('casdoor')
+            const accessToken = await expectIssued(await send(post(form(await casdoorToken({ phone: '13800138000', countryCode: 'CN' })))))
+            expect(decodeJwt(accessToken)).not.toHaveProperty('phone_number')
+        })
+
         it('answers expires_in from tokenTtlSeconds', async () => {
             const { send } = setup('clerk', {
                 edit: (doc) => {

@@ -29,6 +29,8 @@ export interface ClaimMapping {
     email: string
     emailVerified: string | true
     phone: string
+    // Set when the phone claim holds a national number: the claim naming its region, such as CN
+    phoneRegion?: string
     phoneVerified: string | true
     name: string
     picture: string
