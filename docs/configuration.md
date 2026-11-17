@@ -134,6 +134,7 @@ A record does not repeat its id as a member: `id` is an unknown key. Durations a
 | `email` | `email` | The email claim |
 | `emailVerified` | `email_verified` | A claim name, or the literal `true` to trust the IdP's own verification policy |
 | `phone` | `phone_number` | The phone number claim |
+| `phoneRegion` | none | The claim naming the region of a national number in `phone`, such as `CN` |
 | `phoneVerified` | `phone_number_verified` | A claim name, or the literal `true` |
 | `name` | `name` | The display name |
 | `picture` | `picture` | The avatar URL |
@@ -142,6 +143,9 @@ A record does not repeat its id as a member: `id` is an unknown key. Durations a
 - An email is kept only when verified and containing `@`. A phone number is kept only when verified and
   matching `^\+[1-9]\d{6,14}$` (E.164). A name is trimmed and dropped when empty. A picture is kept only as an
   `https` URL without userinfo, spaces, control characters or backslashes.
+- With `phoneRegion`, the `phone` claim is a national number, digits without a trunk prefix, and its region is
+  an ISO 3166-1 code in capitals. The bridge joins them into E.164 by the region's calling code, and drops a
+  pair that makes no number ([Casdoor](idp-casdoor.md#phone-numbers)).
 - Claim names depend on the IdP. Casdoor's depend on the application's token format: with `JWT-Custom`, a
   selected field such as `EmailVerified` becomes the claim `emailVerified`, and `Properties.uid` becomes a
   top-level `uid` claim ([idp-casdoor.md](idp-casdoor.md#token-format)).

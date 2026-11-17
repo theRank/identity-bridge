@@ -183,7 +183,7 @@ Header:
 | `idp` | always | The IdP's id from configuration. Informational: products MUST NOT branch on it |
 | `region` | if configured | The deployment's label, such as `us` or `cn` |
 | `email` | if verified | Only an email the IdP marks verified; a string containing `@` |
-| `phone_number` | if verified and E.164 | Only a verified number already in E.164 form |
+| `phone_number` | if verified and E.164 | Only a verified number in E.164 form. One the IdP stores as a national number and a region is joined first ([Casdoor](idp-casdoor.md#phone-numbers)) |
 | `name` | if present | The display name, trimmed, not empty |
 | `picture` | if present and `https` | The avatar URL as given, without userinfo, spaces, control characters or backslashes |
 
@@ -346,8 +346,9 @@ configured to send a secret header ([Casdoor][casdoor-webhooks]).
 - **Override.** When the source has a `uidField`: `object.properties[uidField]`. `properties` must then be
   present, as an object or `null` (a user without properties, so no override), else `bad_payload`: a body
   without it cannot tell "no override" from "override not sent".
-- **Profile**, for `user-created` only: `email` if `emailVerified` is `true`; `displayName`; `avatar`. No phone
-  number ([why](idp-casdoor.md#token-format)).
+- **Profile**, for `user-created` only: `email` if `emailVerified` is `true`; `displayName`; `avatar`; the
+  phone number, joined from `phone` and `countryCode`, if the IdP's claims set `phoneVerified` to `true`
+  ([phone numbers](idp-casdoor.md#phone-numbers)).
 
 What this leaves out, and why, is listed in [idp-casdoor.md](idp-casdoor.md#what-is-not-relayed).
 

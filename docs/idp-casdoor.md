@@ -80,8 +80,7 @@ fields:
 
 With `JWT-Custom`, a selected field becomes a claim in camel case, and `Properties.<key>` becomes a top-level
 claim named `<key>` ([source][casdoor-custom-claims]). Fields that are not selected are not in the token.
-Phone numbers are not mapped: Casdoor stores a number apart from its country code and has no verification flag
-for it ([source][casdoor-user-fields]).
+Phone numbers take two more fields and a decision: see [Phone numbers](#phone-numbers).
 
 The IdP record sets `requiredClaims` to `{"tokenType": "access-token"}`. Casdoor's access, refresh and ID
 tokens are all JWTs signed with the same key, with the same `iss`; only `tokenType` tells them apart
@@ -115,6 +114,44 @@ and `"uidField": "uid"` on the webhook source ([user ids](api.md#user-ids)).
   ([account items][casdoor-account-items]). The override is only as safe as its write permission: a user who
   could edit `Properties` could set another user's id and sign in as them. `Admin` is the default
   ([source][casdoor-properties-default]), but each organization can change it ([source][casdoor-modify-rule]).
+
+## Phone numbers
+
+Casdoor stores a phone number as a national number and a region, such as `13800138000` and `CN`, and keeps no
+verification flag for it ([source][casdoor-user-fields]). The bridge therefore issues no phone number until the
+IdP's claims say to trust Casdoor's handling of it. Select the token fields `Phone` and `CountryCode`, and add:
+
+```json
+"claims": { "phone": "phone", "phoneRegion": "countryCode", "phoneVerified": true }
+```
+
+The bridge joins the two into an E.164 number, `+8613800138000`, in access tokens and in `user-created` events.
+A number that makes none with its region is left out: an unknown region, a trunk prefix (`013800138000`), a
+number already in international form.
+
+`"phoneVerified": true` is sound only while every number a user can store was confirmed by a code. Casdoor
+checks one when a user signs up with a phone ([source][casdoor-phone-signup]), signs up by a verification
+code ([source][casdoor-phone-code-signup]), changes their number ([source][casdoor-phone-reset]) or sets up SMS
+MFA ([source][casdoor-phone-mfa]), and it does not let users write the number through `update-user`
+([source][casdoor-self-columns]). Keep these settings, on which that rests:
+
+- **Sign-up item `Phone`: any rule but `No verification`**, which skips the code
+  ([source][casdoor-phone-signup]).
+- **Account item `Country code`: present, with the modify rule `Admin`.** Users may write their own region
+  when the item allows it, or when the organization has no such item ([source][casdoor-region-item],
+  [source][casdoor-modify-rule-nil]), and the same digits are another number in another region: `2087654321`
+  is a number in the United States and in China. `Admin` is the default ([source][casdoor-region-default]).
+- **Sign-in providers that report no phone number, or whose numbers you trust.** A user who signs up through
+  an OAuth provider gets the number the provider reports, unchecked ([source][casdoor-phone-oauth]), and a
+  Custom provider's user mapping can fill in a missing one ([source][casdoor-phone-mapping]). A mini program
+  user's number comes from WeChat's phone number authorization ([source][casdoor-phone-miniprogram]).
+
+Administrators, application credentials, syncers and uploads write numbers without a code. They are trusted
+here as they are for the [user id override](#user-id-override).
+
+These paths were also exercised against Casdoor 4.27.1: a sign-up and a change of number were refused without
+the code, a user's `update-user` left the number alone, and their change of region was refused under `Admin`
+and accepted without the account item.
 
 ## Webhook
 
@@ -275,6 +312,17 @@ program call only the HTTPS domains listed there, and those domains need ICP fil
 [casdoor-sub]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/object/token_jwt.go#L695-L698
 [casdoor-id-index]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/object/user.go#L70
 [casdoor-user-fields]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/object/user.go#L83-L85
+[casdoor-phone-signup]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/controllers/account.go#L192-L200
+[casdoor-phone-code-signup]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/object/token_verification_code.go#L151-L172
+[casdoor-phone-reset]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/controllers/verification.go#L664-L684
+[casdoor-phone-mfa]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/controllers/mfa.go#L199-L212
+[casdoor-self-columns]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/object/user.go#L900-L930
+[casdoor-region-item]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/object/user_util.go#L783-L790
+[casdoor-modify-rule-nil]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/object/organization.go#L482-L485
+[casdoor-region-default]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/object/init.go#L72
+[casdoor-phone-oauth]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/controllers/auth.go#L1351-L1352
+[casdoor-phone-mapping]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/object/user_util.go#L536-L545
+[casdoor-phone-miniprogram]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/object/token_oauth.go#L714-L722
 [casdoor-incremental]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/object/user.go#L1951-L1971
 [casdoor-custom-claims]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/object/token_jwt.go#L489-L520
 [casdoor-token-types]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/object/token_jwt.go#L715-L735
