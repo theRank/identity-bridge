@@ -31,6 +31,7 @@ breaking change to the [wire contract](docs/api.md) is a new major version of al
 - `server.mjs`, a single-file Node bundle, and `esa.js`, a single-file ESA bundle, attached to each GitHub
   release with their SHA-256.
 - A `Dockerfile` and a multi-architecture image on GitHub Container Registry.
+- Workers Logs turned on by the repository's `wrangler.jsonc`, for the bridge's own log lines only.
 - `scripts/smoke.ts`, a post-deploy smoke test; `scripts/deploy-esa.ts`, an ESA deploy through its OpenAPI;
   `scripts/dev-env.ts`, throwaway values for local runs.
 

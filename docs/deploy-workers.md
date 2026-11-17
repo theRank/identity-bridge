@@ -15,9 +15,9 @@ cd identity-bridge
 npm ci
 ```
 
-The repository's `wrangler.jsonc` names the entry, `src/runtimes/workers.ts`, and the compatibility date, and
-holds nothing deployment-specific: no routes, and `workers_dev` and preview URLs off
-([configuration][cf-wrangler-config]). Every `wrangler deploy` and `wrangler secret`
+The repository's `wrangler.jsonc` names the entry, `src/runtimes/workers.ts`, and the compatibility date, turns
+[Workers Logs](#logs) on, and holds nothing deployment-specific: no routes, and `workers_dev` and preview URLs
+off ([configuration][cf-wrangler-config]). Every `wrangler deploy` and `wrangler secret`
 command below passes the Worker's name with `--name`.
 
 ## Configuration and secrets
@@ -63,9 +63,18 @@ is where the SDKs reach the bridge ([issuer](api.md#issuer)).
 
 ## Logs
 
-The Worker writes each [log line](configuration.md#logs) with `console.log`. Workers Logs keeps them when the
-Worker's observability setting is on, which it is by default for new Workers ([Workers Logs][cf-logs]). Follow
-them live with `npx wrangler tail identity-bridge-acme` ([`wrangler tail`][cf-tail]).
+The Worker writes each [log line](configuration.md#logs) with `console.log`. Workers Logs keeps them only when
+the Worker's observability setting is on ([Workers Logs][cf-logs]), and a Worker that wrangler deploys without
+the setting has it off. The repository's `wrangler.jsonc` therefore turns it on, without invocation logs: those
+are Cloudflare's own record of each request, which the bridge's [promise about its logs](configuration.md#logs)
+does not cover. A wrangler configuration of your own needs the same lines:
+
+```jsonc
+"observability": { "enabled": true, "logs": { "invocation_logs": false } }
+```
+
+On the Free plan Workers Logs keeps 200,000 log events a day for three days ([Workers Logs][cf-logs]). Follow
+the lines live with `npx wrangler tail identity-bridge-acme` ([`wrangler tail`][cf-tail]).
 
 ## Smoke test
 

@@ -4,5 +4,11 @@
     "main": "src/runtimes/workers.ts",
     "compatibility_date": "2026-10-01",
     "workers_dev": false,
-    "preview_urls": false
+    "preview_urls": false,
+    // Keeps the line the bridge writes for each request; without it Workers Logs stores nothing. Not the
+    // invocation logs: what Cloudflare records there about a request is not the bridge's to vouch for.
+    "observability": {
+        "enabled": true,
+        "logs": { "invocation_logs": false }
+    }
 }
