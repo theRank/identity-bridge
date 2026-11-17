@@ -255,6 +255,23 @@ Casdoor reads them anyway ([source][casdoor-webhook-struct]).
 Casdoor starts its delivery worker at boot, and only when a webhook exists ([source][casdoor-worker-start]).
 After adding the instance's first webhook, restart Casdoor, or nothing is delivered.
 
+### Trust on a shared instance
+
+A webhook body is Casdoor's audit record of an API call, not a signed statement. The bridge relays a deletion
+only when the record's `extendedUser` is an admin of the source's organization, and a `new-user` only for
+Casdoor's sign-up flows ([what is relayed](api.md#casdoor-sources)). Both `extendedUser` and the record are
+filled in by Casdoor from the call it processed, so this filter is only as strong as Casdoor's own
+authorization on the APIs that produce such records. The bridge has nothing in the body it can verify against
+Casdoor independently.
+
+The consequence for a shared instance: every principal Casdoor's authorization lets act as an administrator on
+the instance is inside each product's trust boundary for lifecycle events, administrators of other
+organizations included. A product treats an event as it would its own user's creation or deletion, so an
+instance shared by products that must not trust one another's administrators is not safe to relay from. Give
+each such trust domain its own Casdoor instance, or do not configure a webhook source and let products rely on
+the [revocation bound](api.md#processing) alone (a deleted user's refresh is refused and their last tokens
+expire) rather than on events.
+
 ## What is not relayed
 
 Casdoor's webhook body is an audit record of an API call, and for most actions its `object` is whatever the
