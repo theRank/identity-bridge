@@ -1,10 +1,10 @@
-import type { LifecycleEvent, WebhookSourceConfig } from '../types'
+import type { IdpConfig, LifecycleEvent, WebhookSourceConfig } from '../types'
 
 // One per source type. The route reads the raw body once, authenticates it, then parses it.
 export interface WebhookAdapter {
     authenticate(request: Request, rawBody: string, secret: string, nowMs: number): Promise<boolean>
-    // An empty array means the delivery is authenticated but not relayed
-    parse(request: Request, rawBody: string, source: WebhookSourceConfig): LifecycleEvent[]
+    // An empty array means the delivery is authenticated but not relayed. idp is the source's IdP record.
+    parse(request: Request, rawBody: string, source: WebhookSourceConfig, idp: IdpConfig): LifecycleEvent[]
 }
 
 // Authenticated but unprocessable. The message is a fixed phrase and never quotes the payload.
