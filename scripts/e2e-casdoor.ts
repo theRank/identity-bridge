@@ -27,7 +27,7 @@ import { createRemoteJWKSet, jwtVerify, type JWTPayload } from 'jose'
 
 type Doc = Record<string, any>
 
-const IMAGE = process.argv[2] ?? 'casbin/casdoor-all-in-one:4.27.1'
+const IMAGE = process.argv[2] ?? 'casbin/casdoor-all-in-one:4.29.0'
 const BUNDLE = join(import.meta.dirname, '../dist/node/server.mjs')
 const CONTAINER = `identity-bridge-e2e-${randomBytes(4).toString('hex')}`
 const BRIDGE_ISSUER = 'https://id.e2e.example'

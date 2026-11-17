@@ -113,7 +113,7 @@ A record does not repeat its id as a member: `id` is an unknown key. Durations a
 | `idps.*.claims` | no | The [claim mapping](#claim-mapping) | see below |
 | `products` | yes | A non-empty object of product records | |
 | `products.*.idps` | yes | A non-empty array of bindings, `{ "idp": "<idp id>" }` plus the optional lists below. Each `idp` exists and is bound at most once per product | |
-| `products.*.idps[].clientIds`, `products.*.idps[].authorizedParties` | no | Non-empty arrays of non-empty strings, checked against the token's client id claim and its `azp`. When two or more products bind the same IdP, each of those bindings MUST list at least one of the two, and no value may appear in the bindings of two products, counting both lists together (a Casdoor token carries its client id as both `aud` and `azp`, [source](https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/object/token_jwt.go#L685-L704)): a shared value would let one product's token be exchanged for another's | |
+| `products.*.idps[].clientIds`, `products.*.idps[].authorizedParties` | no | Non-empty arrays of non-empty strings, checked against the token's client id claim and its `azp`. When two or more products bind the same IdP, each of those bindings MUST list at least one of the two, and no value may appear in the bindings of two products, counting both lists together (a Casdoor token carries its client id as both `aud` and `azp`, [source](https://github.com/casdoor/casdoor/blob/3d81f45bc98be0fe379b3a21973c783060066af5/object/token_jwt.go#L678-L697)): a shared value would let one product's token be exchanged for another's | |
 | `products.*.allowedOrigins` | no | Origins whose browsers may read `/token` answers ([CORS](api.md#cors)). Each is an `http` or `https` origin equal to `new URL(o).origin`, or `<scheme>://<host>` for another scheme such as `capacitor://localhost`, with no spaces or control characters | `[]` |
 | `products.*.events.url` | no | An `https` URL with no username or password, where the product receives [events](api.md#event-token). Without `events`, the product receives none | |
 | `webhookSources` | no | An object of webhook source records | `{}` |
@@ -238,7 +238,7 @@ To rotate a webhook secret:
   `WEBHOOK_SECRET_<SOURCE>` within that window, and no delivery fails.
 - **Casdoor**: there is no overlap. Change the bridge's secret and the webhook's header together; deliveries in
   between fail with `401` and are retried. Casdoor reads the webhook's headers at each attempt
-  ([source](https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/object/webhook_worker.go#L114-L129)),
+  ([source](https://github.com/casdoor/casdoor/blob/3d81f45bc98be0fe379b3a21973c783060066af5/object/webhook_worker.go#L162-L177)),
   so its queued retries pick up the new header.
 
 ## Sizes

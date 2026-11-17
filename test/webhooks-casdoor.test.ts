@@ -441,9 +441,11 @@ describe('Casdoor webhooks', () => {
                 expect(parse(newUserOauthSignup)[0]!.idpEventId).toBe(`new-user:${loginOauthSignup.body.name}`)
             })
 
-            it('never uses the record id, which is always 0', () => {
+            // 0 from Casdoor before 4.28, as in the fixtures, and the stored record's id since
+            it.each([0, 36])('never uses the record id, such as %d', (id) => {
                 expect(deleteByAdmin.body.id).toBe(0)
-                expect(parse(deleteByAdmin)[0]!.idpEventId).toBe(`delete-user:${deleteByAdmin.body.name}`)
+                const [event] = parseEdited(deleteByAdmin, { record: (record) => void (record.id = id) })
+                expect(event!.idpEventId).toBe(`delete-user:${deleteByAdmin.body.name}`)
             })
         })
 
