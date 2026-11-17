@@ -8,16 +8,15 @@
 // Needs docker and openssl. The image defaults to the Casdoor version the docs were checked against.
 //
 // The bridge takes only https URLs for an IdP and for a product's events, so this script serves both itself, under a
-// certificate made for the run that the bridge is told to trust: a proxy in front of Casdoor, whose address is
-// Casdoor's `origin` and so the issuer of its tokens, and the product's event receiver.
+// certificate made for the run that the bridge is told to trust: Casdoor's key set, at an address given to Casdoor
+// as its `origin` and so the issuer of its tokens, and the product's event receiver.
 //
 // Casdoor lets only the webhooks of `built-in` reach a private address, so the webhook belongs to `built-in` and
 // receives every organization's records. The bridge's own organization filter is therefore checked too.
 
 import { execFileSync, spawn } from 'node:child_process'
-import { createHash, randomBytes, randomUUID } from 'node:crypto'
+import { randomBytes, randomUUID } from 'node:crypto'
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
-import { request as httpRequest } from 'node:http'
 import { createServer as createHttpsServer, type Server } from 'node:https'
 import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
@@ -53,11 +52,12 @@ function expect(condition: boolean, problem: string): asserts condition {
 const hex = (bytes: number) => randomBytes(bytes).toString('hex')
 const now = () => new Date().toISOString()
 
-function uuidv5(name: string, namespace: string): string {
-    const hash = createHash('sha1').update(Buffer.from(namespace.replaceAll('-', ''), 'hex')).update(name).digest()
+async function uuidv5(name: string, namespace: string): Promise<string> {
+    const input = Buffer.concat([Buffer.from(namespace.replaceAll('-', ''), 'hex'), Buffer.from(name)])
+    const hash = Buffer.from(await crypto.subtle.digest('SHA-1', input)).subarray(0, 16)
     hash[6] = (hash[6]! & 0x0f) | 0x50
     hash[8] = (hash[8]! & 0x3f) | 0x80
-    const digits = hash.subarray(0, 16).toString('hex')
+    const digits = hash.toString('hex')
     return [digits.slice(0, 8), digits.slice(8, 12), digits.slice(12, 16), digits.slice(16, 20), digits.slice(20)].join('-')
 }
 
@@ -186,17 +186,16 @@ async function main(): Promise<void> {
     )
     const tls = { key: readFileSync(keyFile), cert: readFileSync(certFile) }
 
-    // The proxy in front of Casdoor
-    const proxy = createHttpsServer(tls, (incoming, outgoing) => {
-        const forwarded = httpRequest(new URL(incoming.url ?? '/', casdoorUrl), { method: incoming.method, headers: incoming.headers }, (answer) => {
-            outgoing.writeHead(answer.statusCode ?? 502, answer.headers)
-            answer.pipe(outgoing)
-        })
-        forwarded.on('error', () => outgoing.writeHead(502).end())
-        incoming.pipe(forwarded)
+    // Casdoor's key set, which is all the bridge asks an IdP for, at the address of the issuer
+    const keySet = createHttpsServer(tls, (incoming, outgoing) => {
+        if (incoming.url !== '/.well-known/jwks') return void outgoing.writeHead(404).end()
+        fetch(new URL('/.well-known/jwks', casdoorUrl)).then(
+            async (answer) => outgoing.writeHead(answer.status, { 'content-type': 'application/json' }).end(await answer.text()),
+            () => outgoing.writeHead(502).end(),
+        )
     })
-    const idpIssuer = `https://127.0.0.1:${await listen(proxy)}`
-    cleanups.push(() => void proxy.close())
+    const idpIssuer = `https://127.0.0.1:${await listen(keySet)}`
+    cleanups.push(() => void keySet.close())
 
     // The product's event receiver
     const received: string[] = []
@@ -400,7 +399,8 @@ async function main(): Promise<void> {
         ok(await signup('acme', 'nina', { email: 'nina@acme.example' }), 'sign up acme/nina')
         const nina = await stored('nina')
         const claims = await accessClaims((await tokens('nina')).access_token as string)
-        expect(claims.sub === derived(nina.id as string), `sub is ${claims.sub}, not ${derived(nina.id as string)} of the user id ${String(nina.id)}`)
+        const wanted = await derived(nina.id as string)
+        expect(claims.sub === wanted, `sub is ${claims.sub}, not ${wanted} of the user id ${String(nina.id)}`)
         expect(claims.idp === 'casdoor' && claims.client_id === 'acme', `idp and client_id are ${String(claims.idp)} and ${String(claims.client_id)}`)
         expect(claims.name === 'nina signed up', `name is ${String(claims.name)}`)
         expect(claims.email === undefined, `an address Casdoor did not verify was issued: ${String(claims.email)}`)
