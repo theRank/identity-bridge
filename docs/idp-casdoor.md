@@ -129,6 +129,12 @@ The bridge joins the two into an E.164 number, `+8613800138000`, in access token
 A number that makes none with its region is left out: an unknown region, a trunk prefix (`013800138000`), a
 number already in international form.
 
+Casdoor stores the national number as an integer, so without any leading zero ([source][casdoor-phone-integer]).
+Where that zero belongs to the number, as in Italian fixed lines and the numbers of Côte d'Ivoire and Congo,
+Casdoor refuses a user's change to such a number as invalid, and stores one an administrator writes without the
+zero: `0212345678` in Italy becomes `212345678`, which the bridge joins into `+39212345678`, not the number
+meant. Do not map the phone for an organization whose administrators or syncers write such numbers.
+
 `"phoneVerified": true` is sound only while every number a user can store was confirmed by a code. Casdoor
 checks one when a user signs up with a phone ([source][casdoor-phone-signup]), signs up by a verification
 code ([source][casdoor-phone-code-signup]), changes their number ([source][casdoor-phone-reset]) or sets up SMS
@@ -150,8 +156,8 @@ Administrators, application credentials, syncers and uploads write numbers witho
 here as they are for the [user id override](#user-id-override).
 
 These paths were also exercised against Casdoor 4.27.1: a sign-up and a change of number were refused without
-the code, a user's `update-user` left the number alone, and their change of region was refused under `Admin`
-and accepted without the account item.
+the code, a user's `update-user` left the number alone, their change of region was refused under `Admin` and
+accepted without the account item, and an administrator's `0212345678` was stored as `212345678`.
 
 ## Webhook
 
@@ -312,6 +318,7 @@ program call only the HTTPS domains listed there, and those domains need ICP fil
 [casdoor-sub]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/object/token_jwt.go#L695-L698
 [casdoor-id-index]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/object/user.go#L70
 [casdoor-user-fields]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/object/user.go#L83-L85
+[casdoor-phone-integer]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/util/validation.go#L90-L106
 [casdoor-phone-signup]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/controllers/account.go#L192-L200
 [casdoor-phone-code-signup]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/object/token_verification_code.go#L151-L172
 [casdoor-phone-reset]: https://github.com/casdoor/casdoor/blob/66b51eef9422bdd8f2f215f37ea29858548fb918/controllers/verification.go#L664-L684

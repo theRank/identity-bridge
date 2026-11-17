@@ -143,7 +143,7 @@ A record does not repeat its id as a member: `id` is an unknown key. Durations a
 - An email is kept only when verified and containing `@`. A phone number is kept only when verified and
   matching `^\+[1-9]\d{6,14}$` (E.164). A name is trimmed and dropped when empty. A picture is kept only as an
   `https` URL without userinfo, spaces, control characters or backslashes.
-- With `phoneRegion`, the `phone` claim is a national number, digits without a trunk prefix, and its region is
+- With `phoneRegion`, the `phone` claim is a national number, digits that do not begin with a zero, and its region is
   an ISO 3166-1 code in capitals. The bridge joins them into E.164 by the region's calling code, and drops a
   pair that makes no number ([Casdoor](idp-casdoor.md#phone-numbers)).
 - Claim names depend on the IdP. Casdoor's depend on the application's token format: with `JWT-Custom`, a

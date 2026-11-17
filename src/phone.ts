@@ -214,7 +214,9 @@ export const CALLING_CODES: ReadonlyMap<string, string> = new Map(
     Object.entries(REGIONS_BY_CALLING_CODE).flatMap(([code, regions]) => regions.split(' ').map((region): [string, string] => [region, code])),
 )
 
-// A national number keeps no trunk prefix: 13800138000, never 013800138000
+// Casdoor stores the national number as an integer, so none it stores begins with a zero. One that does is refused
+// rather than guessed at: the zero is a trunk prefix in most regions, as in 013800138000, and part of the number
+// in a few, as in Italy's 0212345678, and the region alone does not say which.
 const NATIONAL = /^[1-9][0-9]*$/
 
 // The international form of a number stored apart from its region, as Casdoor stores it. Whether the result is long

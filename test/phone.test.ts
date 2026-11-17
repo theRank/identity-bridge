@@ -35,6 +35,12 @@ describe('internationalNumber', () => {
         expect(internationalNumber(number, 'CN')).toBeUndefined()
     })
 
+    // Not joined either way: +390212345678 would be right here, and +86013800138000 wrong
+    it('gives none for a leading zero even where it belongs to the number', () => {
+        expect(internationalNumber('0212345678', 'IT')).toBeUndefined()
+        expect(internationalNumber('0123456789', 'CI')).toBeUndefined()
+    })
+
     it.each([
         ['an empty region', ''],
         ['a region in lower case', 'cn'],
