@@ -56,8 +56,8 @@ The server reads its environment once, at start:
 | `PORT` | `8080` | The port to listen on, over plain HTTP |
 | `HOST` | `0.0.0.0` | The address to listen on |
 
-- `HOST` must include the loopback address, as `0.0.0.0` and `::` do, because the image's health check probes
-  `127.0.0.1`.
+- When using the image's health check, bind an address that accepts connections to `127.0.0.1`, such as the
+  default `0.0.0.0`.
 - A change takes effect on restart: the runtime is loaded once per process.
 - Webhook secrets must not start or end with whitespace. A secret file that ends with a newline fails the load,
   with the reason `webhook secret for source <id> has surrounding whitespace`.
@@ -166,8 +166,8 @@ all allow it unless lowered.
 
 ## Replicas
 
-One process is enough at this load: a client exchanges about once per `tokenTtlSeconds`, plus one request per
-webhook. Several replicas need nothing shared, since the bridge keeps no state; each caches IdP keys on its own.
+Size the deployment for measured token exchange and webhook load. Replicas need the same configuration and
+signing keys, but no shared database; each caches IdP keys independently.
 
 ## Smoke test
 

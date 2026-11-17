@@ -21,7 +21,7 @@ const RECOGNIZED = [
     'resource',
 ]
 const NO_STORE = { 'cache-control': 'no-store', pragma: 'no-cache' }
-// On every answer, POST and OPTIONS alike, because whether CORS headers are given depends on the Origin
+// POST and OPTIONS responses vary by Origin, including when no CORS headers are sent.
 const VARY = { vary: 'Origin' }
 const PREFLIGHT = { 'access-control-allow-methods': 'POST', 'access-control-allow-headers': 'Content-Type', 'access-control-max-age': '600' }
 const STATUS: Record<ExchangeError['error'], number> = { invalid_request: 400, temporarily_unavailable: 503 }
@@ -54,8 +54,7 @@ async function exchange(request: Request, runtime: Runtime, deps: Deps, ctx: Rou
     try {
         return await issue(params.subjectToken, product, runtime, deps, ctx, cors)
     } catch {
-        // Answered here because handle's answer has no CORS headers, so a browser could not read it. The error is
-        // dropped, as it may quote the token.
+        // Preserve CORS on errors; discard exception details that may contain the token.
         return reject(ctx, 500, 'server_error', 'internal_error', cors)
     }
 }
@@ -104,8 +103,7 @@ function preflight(request: Request, config: Config): Response {
     return empty(204, listed ? { ...VARY, 'access-control-allow-origin': origin, ...PREFLIGHT } : VARY)
 }
 
-// CORS is a browser control, not authentication: an origin the product does not list is still served, only
-// without the header that lets a browser read the answer
+// Unlisted origins are still served: CORS controls browser access to the response, not authentication.
 function corsHeaders(request: Request, product: ProductConfig): Record<string, string> {
     const origin = request.headers.get('origin')
     return origin !== null && product.allowedOrigins.includes(origin) ? { 'access-control-allow-origin': origin } : {}

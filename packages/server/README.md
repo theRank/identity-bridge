@@ -62,15 +62,17 @@ async function events(request: Request): Promise<Response> {
         if (!(error instanceof BridgeTokenError)) throw error
         return new Response(null, { status: error.reason === 'jwks_unavailable' ? 503 : 400 })
     }
-    if (!(await seen(event.jti))) await apply(event) // store it durably before answering
+    await applyOnce(event) // atomically record jti and apply the event
     return new Response(null, { status: 202 })
 }
 ```
 
-Answer `202` once the event is stored. The bridge counts any `2xx` answer as delivered; any other, a redirect
-included, fails the delivery, and the identity provider then sends its webhook again. So the same event can
-arrive more than once, even after you answered `202`, always with the same `jti`: process each `jti` once. An
-event can also arrive after the user's first request with an access token.
+Implement `applyOnce` in your database: deduplicate by `jti` and apply the change in one transaction, then
+answer `202`. Separate `seen` and `apply` calls can race. The bridge counts any `2xx` as delivered; other
+statuses fail the delivery and let the IdP retry according to its policy. Events may arrive more than once,
+out of order, or after the user's first request. See the
+[event handling example](https://github.com/theRank/identity-bridge/blob/main/docs/integrate.md#consuming-events)
+for deduplication and deletion handling.
 
 ## API
 
@@ -132,10 +134,8 @@ keeps an event, which never expires, from being accepted as an access token.
 Every verification failure rejects with a `BridgeTokenError` whose `reason` says why. It has no `cause`, and
 its message holds the reason alone, never the token or its claims, so it is safe to log.
 
-Only two other kinds of error can occur. Invalid options throw from `createVerifier`, above. And a runtime
-that lacks a Web API the verifier needs, such as `AbortSignal.timeout`, can make `verifyAccessToken`,
-`verifyRequest` or `verifyEvent` reject with the runtime's own error, passed on unchanged: it is a defect of
-the runtime, not a verdict on the token, and it holds nothing from the token. The examples above rethrow it.
+Invalid options throw from `createVerifier`. Unclassified runtime errors, such as a missing
+`AbortSignal.timeout`, pass through unchanged; the examples above rethrow them.
 
 | `reason` | Meaning |
 |---|---|

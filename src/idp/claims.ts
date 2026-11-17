@@ -1,6 +1,5 @@
 import type { ClaimMapping, RawProfile } from '../types'
 
-// A token's claims set, whose values are not checked yet
 export type Payload = Record<string, unknown>
 
 export interface MappedClaims {
@@ -31,7 +30,6 @@ export function mapClaims(payload: Payload, mapping: ClaimMapping): MappedClaims
     return mapped
 }
 
-// A string or an array, as aud may be
 function clientIds(value: unknown): string[] {
     if (typeof value === 'string') return [value]
     return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []

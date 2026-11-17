@@ -111,7 +111,7 @@ ESA stores secret variables encrypted and passes all variables to the routine ([
 **Capacity.** The free plan allows 16 KiB of function variables, and the Advanced plan 64 KiB
 ([billing][esa-billing]). Observed in 2026-11: the free plan's limit is 16 KiB (16,384 characters of names and
 values) in total, with no limit per value. Over it, the script reports ESA's error `400019`.
-[Sizes](configuration.md#sizes) gives typical lengths.
+[Sizes](configuration.md#sizes) covers what to count.
 
 ## Fetch limit and fan-out
 
@@ -170,8 +170,9 @@ routine's log lines. [What the smoke test checks](../README.md#smoke-test).
 - **Code size.** 4 MB ([overview][esa-overview]); the build fails when `esa.js` exceeds it.
 - **Web APIs.** ESA's list of runtime APIs ([runtime APIs][esa-runtime-api]) leaves out `AbortController` and
   `AbortSignal.timeout`, which the bridge uses. Observed: both work, and `AbortSignal.timeout` rejects with an
-  error named `Error` rather than `TimeoutError`; the bridge treats any rejection of a delivery as a failure, so
-  nothing depends on the name. `URL.parse` is missing, and the bridge does not use it.
+  error named `Error` rather than `TimeoutError`. JWKS fetches and webhook deliveries have independent
+  5-second timers, so their deadlines do not depend on the runtime's abort error name or signal handling.
+  `URL.parse` is missing, and the bridge does not use it.
 - **`Vary`.** Observed: ESA adds `Accept-Encoding` to the bridge's `Vary: Origin`, which does no harm.
 
 ## Key rotation

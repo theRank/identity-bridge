@@ -16,8 +16,9 @@ A client signs the user in with the IdP, then asks the bridge for an access toke
 The bridge refuses an IdP token older than `maxTokenAgeSeconds`, 15 minutes by default, so the client gets a
 fresh IdP token for every exchange ([why](api.md#processing)).
 
-`createBridgeClient` does the exchange, keeps the bridge token in memory and refreshes it before it expires
-([how](../packages/client/README.md#how-it-works)). It needs only a function that returns a fresh IdP token:
+`createBridgeClient` caches the bridge token in memory. A `getToken()` call refreshes it when near expiry
+([details](../packages/client/README.md#how-it-works)); there is no background refresh. Supply a function
+that returns a fresh IdP token:
 
 ```ts
 import { createBridgeClient } from '@therank/identity-bridge-client'
@@ -136,8 +137,9 @@ A client that does this itself follows the same pattern as the SDK:
 3. When it is due, get a fresh IdP token and exchange again. Let concurrent callers wait for the one exchange
    in flight.
 4. Retry `503 temporarily_unavailable`, and a request that got no answer, a couple of times with the same IdP
-   token, after a short wait. Do not retry other errors: `400 invalid_request` means the IdP token was not
-   accepted, so sign the user in again.
+   token, after a short wait. Other errors need investigation: `400 invalid_request` can mean a malformed
+   request or an unacceptable IdP token. Sign in again if the session has ended; check the bridge logs for
+   request or configuration problems.
 5. On sign-out, drop the token.
 
 ## Backends
@@ -181,8 +183,8 @@ Use a JWT library that supports ES256 and a JWKS, and check, for an access token
 - `exp` is present and in the future, allowing at most 60 seconds of clock skew;
 - `sub` is a user id: a lowercase UUID ([user ids](api.md#user-ids)).
 
-The `typ` check is the one libraries do not make for you: without it, an event token would pass as an access
-token that never expires ([why](api.md#access-token)).
+Configure or implement the `typ` check explicitly. A verifier that also fails to require `exp` could accept
+an event as an access token that never expires ([why](api.md#access-token)).
 
 #### Go
 
@@ -448,7 +450,7 @@ webhook sources that list it ([fan-out](api.md#fan-out)). The body is the event 
    for one user can arrive at once, and without it an upsert that found no tombstone can commit after the
    deletion that wrote one.
 4. **Answer `202`** once the transaction has committed. Any `2xx` counts as delivered; any other answer, a
-   redirect included, makes the bridge answer the IdP with `502`, and the IdP sends the webhook again. The
+   redirect included, makes the bridge answer the IdP with `502`, allowing the IdP to retry. The
    bridge waits 5 seconds for an answer. Refuse an event that does not verify with `400` and the error body of
    [RFC 8935 §2.3](https://www.rfc-editor.org/rfc/rfc8935#section-2.3), as the [API](api.md#event-token) asks.
 

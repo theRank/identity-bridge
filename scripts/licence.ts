@@ -1,5 +1,4 @@
-// The banner a single-file bundle opens with: the bridge's licence notice and the full licence of every package
-// bundled into it, read from node_modules at build time, so the notices follow upgrades.
+// Read bundled dependencies' licences at build time so notices follow dependency upgrades.
 
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -21,7 +20,6 @@ const NOTICE = [
 
 export interface Banner {
     text: string
-    // The bundled packages by name, such as jose
     packages: string[]
 }
 

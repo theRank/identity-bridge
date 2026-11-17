@@ -1,14 +1,9 @@
 name: Release
 
-# On a v* tag: the multi-arch image on GHCR, tagged X.Y.Z, then the GitHub release with server.mjs, esa.js and their
-# SHA-256 sums, so a release is never announced before its image exists. A version with a - is a prerelease. Only
-# the highest version that is not a prerelease, among all v* tags, gets the image tags X.Y and latest and is marked
-# the latest release, so a patch to an older line moves neither. A manual run (workflow_dispatch) builds everything
-# and publishes nothing.
+# Publish the image before announcing the release with its bundles and checksums.
+# scripts/release-tag.ts chooses latest/prerelease tags; manual runs publish nothing.
 #
-# Three jobs, so install scripts and test code never run where anything can be published: check runs both with
-# read-only permissions; image, in the Dockerfile's build stage, and release install without scripts, and both run
-# in the release environment, where protection rules can be added.
+# Tests run in the read-only job. Publishing jobs disable install scripts and use the release environment.
 
 on:
   push:
@@ -18,7 +13,7 @@ on:
 permissions:
   contents: read
 
-# One release at a time, so latest is decided and pushed in tag order; dry runs queue apart, never holding one up
+# Serialize releases to avoid concurrent latest-tag updates; dry runs use a separate group.
 concurrency:
   group: release-${{ github.event_name }}
   cancel-in-progress: false

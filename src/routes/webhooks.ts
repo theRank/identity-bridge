@@ -28,7 +28,6 @@ interface Failure {
 }
 
 export const webhooksRoute: RouteHandler = async (request, runtime, deps, ctx) => {
-    // Set by the router for this route. Records have no prototype, so any path segment is safe to index with.
     const source = ctx.source === undefined ? undefined : runtime.config.webhookSources[ctx.source]
     if (source === undefined) return refuse(ctx, 404, 'unknown_source')
     ctx.idp = source.idp
@@ -70,7 +69,7 @@ export const webhooksRoute: RouteHandler = async (request, runtime, deps, ctx) =
     return answer(ctx, delivered, failed, failed.length === 0 ? undefined : 'delivery_failed')
 }
 
-// Every token is signed before the first delivery starts, so an unexpected error never leaves a partial fan-out
+// Sign all tokens before sending, so signing failures cannot cause a partial fan-out.
 async function mint(events: LifecycleEvent[], userIds: string[], source: WebhookSourceConfig, runtime: Runtime, nowSec: number): Promise<Delivery[]> {
     const targets = source.products.map((product) => target(runtime.config, product))
     const deliveries: Delivery[] = []
@@ -84,7 +83,6 @@ async function mint(events: LifecycleEvent[], userIds: string[], source: Webhook
     return deliveries
 }
 
-// The configuration only lets a source list products that receive events
 function target(config: Config, product: string): Target {
     const url = config.products[product]?.events?.url
     if (url === undefined) throw new Error('webhook source names a product without events')

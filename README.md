@@ -1,18 +1,12 @@
 # identity-bridge
 
-A stateless identity broker. A client signs the user in with an identity provider (IdP), Clerk or Casdoor
-today, and exchanges the IdP's token for the bridge's own short-lived access token through
-[RFC 8693](https://www.rfc-editor.org/rfc/rfc8693) token exchange. Product backends trust one issuer, their
-bridge deployment, and verify its tokens against its JWKS; they never handle an IdP's tokens. The bridge also
-relays the IdPs' user lifecycle webhooks to products as signed security event tokens, so products never handle
-an IdP's webhook format either.
+A stateless identity broker for Clerk and Casdoor. Clients exchange an identity provider's (IdP's) JWT for a
+short-lived bridge access token through [RFC 8693](https://www.rfc-editor.org/rfc/rfc8693). Product backends
+verify bridge tokens against its JWKS and receive user lifecycle webhooks as signed security event tokens.
 
-Adding or replacing an IdP is a configuration change, not a change to any product. The repository holds the
-code, the release artifacts and TypeScript SDKs for clients and backends; each deployer keeps its own
-configuration and deployment.
-
-**Status:** 1.0.0 is in preparation and not yet tagged; v0.0.1 and v0.0.2 are test releases. See the
-[changelog](CHANGELOG.md).
+Product backends use the same token and event formats across IdPs; clients still integrate with their chosen
+IdP's sign-in flow. This repository provides the service and TypeScript SDKs. Each deployer maintains its own
+configuration. See the [changelog](CHANGELOG.md) for release status.
 
 ```text
                     1 sign in
@@ -30,12 +24,10 @@ configuration and deployment.
 
 ## Guarantees
 
-- **Stateless.** No database, key-value store or queue. A request needs only the configuration, the signing
-  key and the request itself. Replicas share nothing, and it runs wherever a Web-standard fetch handler runs.
-- **Bounded revocation.** The bridge cannot see that an IdP banned a user or ended a session. It refuses IdP
-  tokens older than `maxTokenAgeSeconds`, so every exchange needs a fresh IdP token, which the IdP issues only
-  to a user it still accepts. A user cut off at the IdP keeps access for at most about 32 minutes with the
-  defaults ([why](docs/api.md#processing)).
+- **Stateless.** No database, key-value store or queue. Replicas need the same configuration and keys; each
+  caches IdP public keys independently.
+- **Bounded revocation.** If the IdP stops issuing tokens to a banned user or ended session, existing tokens
+  allow access for at most about 32 minutes with the defaults ([calculation](docs/api.md#processing)).
 - **Stable user ids.** A user's id is the UUIDv5 of the IdP's issuer and subject under a fixed namespace, or an
   id set by an administrator in the IdP. The token and the webhook paths give the same id for the same person,
   and the override keeps ids across a migration to another IdP.
@@ -63,27 +55,26 @@ keep their own authorization, keyed by the bridge's user id.
 
 | Package | For |
 |---|---|
-| [`@therank/identity-bridge-client`](packages/client/README.md) ([npm](https://www.npmjs.com/package/@therank/identity-bridge-client)) | Browsers, Node.js and WeChat mini programs: exchanges IdP tokens, keeps the bridge token in memory and refreshes it |
-| [`@therank/identity-bridge-server`](packages/server/README.md) ([npm](https://www.npmjs.com/package/@therank/identity-bridge-server)) | Product backends: verifies access tokens and events with every check fixed |
+| [`@therank/identity-bridge-client`](packages/client/README.md) ([npm](https://www.npmjs.com/package/@therank/identity-bridge-client)) | Browsers, Node.js and WeChat mini programs: token exchange, caching and refresh on demand |
+| [`@therank/identity-bridge-server`](packages/server/README.md) ([npm](https://www.npmjs.com/package/@therank/identity-bridge-server)) | Product backends: access token and event verification |
 
 Both share the bridge's release version. Backends in other languages use a JWT library: see
 [integrate.md](docs/integrate.md#other-languages).
 
 ## Choosing a runtime
 
-One deployment is one issuer, one key set and one configuration. A product serving users both outside and
-inside mainland China runs two: one trusting Clerk, one trusting Casdoor.
+One deployment is one issuer, one key set and one configuration. A product can use separate deployments for
+Clerk outside mainland China and Casdoor inside it.
 
 | Runtime | Where | Notes |
 |---|---|---|
-| [Cloudflare Workers](docs/deploy-workers.md) | Outside mainland China | The Free plan allows 100,000 requests a day and 10 ms of CPU time per request ([limits](https://developers.cloudflare.com/workers/platform/limits/#account-plan-limits)) |
-| [Alibaba Cloud ESA](docs/deploy-esa.md) | Mainland China, on an ICP-filed domain | No cold start observed. A request may make 10 fetches on the free plan, 100 on Advanced, so a webhook source relays to at most that many products; 16 KiB of variables on the free plan ([billing](https://help.aliyun.com/en/edge-security-acceleration/esa/user-guide/functions-and-pages-billing)) |
-| [Alibaba Cloud Function Compute](docs/deploy-fc.md) | Mainland China, on an ICP-filed domain | The Node bundle as a code package. No fan-out limit. Observed: cold starts after idle minutes, unless an instance is kept. Variables documented as 4 KB in total ([environment variables](https://www.alibabacloud.com/help/en/functioncompute/environment-variables)) |
+| [Cloudflare Workers](docs/deploy-workers.md) | Outside mainland China | Check the plan's request and CPU limits |
+| [Alibaba Cloud ESA](docs/deploy-esa.md) | Mainland China, on an ICP-filed domain | The plan's fetch limit caps webhook fan-out |
+| [Alibaba Cloud Function Compute](docs/deploy-fc.md) | Mainland China, on an ICP-filed domain | Runs the Node bundle; account for cold starts and variable size limits |
 | [Node](docs/deploy-node.md) | Any host | The Node bundle or the container image, on a host you run |
 
-In mainland China, choose ESA when cold starts matter and every webhook source's products fit within ESA's
-fetch limit; Function Compute otherwise; and the container when you already run the host of a self-hosted
-Casdoor, beside it.
+Deployment guides include platform limits and observed behavior. A container can share an existing Casdoor
+host.
 
 ## Releases
 
@@ -106,10 +97,8 @@ later, nothing installed, no secret and no IdP token:
 node scripts/smoke.ts https://id.acme.example acme
 ```
 
-It checks that `/healthz` answers `200 {"status": "ok"}`, which needs the configuration, the keys and every
-webhook secret to have loaded and the crypto self-test to pass; that the JWKS has an ES256 key with a `kid` and
-no private key; that `/token` gives the expected error for a junk subject token, an unknown audience, another
-grant type and a scope; and that an unknown path is `404`. It exits with `1` on any mismatch. Each
+It checks health, public JWKS contents, token exchange error responses and unknown-path handling, and exits
+with `1` on any mismatch. It does not exercise a valid IdP token exchange or webhook delivery. Each
 `--header 'name: value'` is sent with every request, such as the cookie an
 [ESA default domain](docs/deploy-esa.md#default-domain-and-staging) needs; header values are never printed.
 

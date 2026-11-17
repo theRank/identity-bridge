@@ -90,8 +90,7 @@ async function serve(req: IncomingMessage, res: ServerResponse, server: Server, 
         response = new Response(null, { status: 500 })
         body = new Uint8Array()
     }
-    // The client went away, or Node's request timeout fired, before the request was read: whatever the core made
-    // of the missing bytes, no one receives its answer
+    // Incomplete requests on destroyed connections have no recipient, regardless of the core's response.
     if (line && !req.complete && res.destroyed) line = { ...line, status: 499, outcome: 'rejected', code: 'client_closed' }
     if (line) deps.log(line)
     res.statusCode = response.status
@@ -117,9 +116,7 @@ function toRequest(req: IncomingMessage): Request {
     return new Request(requestUrl(req.url ?? '/'), init)
 }
 
-// An origin-form target keeps its path as sent, so //a/b stays a path; an absolute-form one, which names a host
-// of the client's choosing, keeps only its path and query. A target URL cannot parse gets the path /, which no
-// route serves.
+// Keep //a/b as a path and ignore client-supplied hosts. Unparseable targets fall back to an unserved path.
 function requestUrl(target: string): URL {
     const url = new URL(BASE)
     try {
@@ -137,9 +134,7 @@ export function listenAddress(env: NodeServerOptions['env']): { port: number; ho
     return { port: Number(env.PORT || 8080), host: env.HOST || '0.0.0.0' }
 }
 
-// Stops accepting connections and closes idle ones; each request in flight is answered, and its connection
-// closes with the answer. Resolves true once every connection has closed, or false when the deadline passed
-// first and the connections left were closed, cutting their requests off.
+// Drain connections until the deadline; resolve false if remaining connections had to be closed.
 export function shutdown(server: Server, deadline: Promise<unknown>): Promise<boolean> {
     return new Promise((resolve) => {
         let cut = false

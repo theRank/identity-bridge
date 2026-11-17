@@ -22,7 +22,7 @@ export interface BridgeClientOptions {
 }
 
 export interface BridgeClient {
-    /** The bridge access token: from memory while it is fresh, else from a new exchange. */
+    /** Returns a cached token or refreshes on demand, falling back to a valid token on transient exchange failure. */
     getToken(): Promise<string>
     /** Forgets the token, for sign-out. An exchange in flight still resolves for its callers but is not kept. */
     clear(): void
@@ -68,8 +68,7 @@ interface Issued {
 }
 
 /**
- * A client that exchanges identity provider tokens for bridge access tokens, keeps the token in memory, and
- * exchanges again shortly before it expires.
+ * Exchanges and caches tokens in memory. `getToken()` triggers refresh when needed; no background timer.
  */
 export function createBridgeClient(options: BridgeClientOptions): BridgeClient {
     const { url, audience, refreshBeforeSeconds = 60 } = options
@@ -79,8 +78,7 @@ export function createBridgeClient(options: BridgeClientOptions): BridgeClient {
     let cached: Issued | undefined
     let pending: Promise<string> | undefined
 
-    // A refresh that still gets no answer or temporarily_unavailable after its retries keeps the token it was
-    // refreshing, if still valid and neither cleared nor replaced. A getIdpToken failure is passed on as it is.
+    // Only exchange failures may fall back to a cached token; getIdpToken errors must reach the caller.
     async function refresh(current: Issued | undefined): Promise<Issued> {
         const subjectToken = await options.getIdpToken()
         try {
@@ -154,7 +152,7 @@ async function send(transport: Transport, request: { url: string; body: string }
     }
 }
 
-// The lifetime is measured from the answer's arrival by the client's own clock, so a skewed clock does not matter
+// Relative lifetime tolerates a fixed clock offset, but not a clock jump while the token is cached.
 function issued(answer: { status: number; body: unknown }, arrivedAt: number, refreshBeforeSeconds: number): Issued {
     const { status, body } = answer
     if (status !== 200) throw new BridgeError(status, oauthError(body) ?? 'bad_response')

@@ -1,7 +1,7 @@
 import { formBody, isRecord } from './form.js'
 import { BridgeError, type Transport } from './index.js'
 
-// The members of the mini program's wx global used here, declared rather than taken from a typings package
+// Declare only the wx APIs used here to avoid a dependency on platform typings.
 interface WxFailure {
     errMsg?: string
 }
@@ -90,8 +90,7 @@ function wxLoginCode(): Promise<string> {
     })
 }
 
-// Reads the token and the error members only: the answer's `code` is WeChat's session_key, which must never be
-// read, kept or logged
+// Read only token/error fields: `code` contains WeChat's session_key and must not escape this response.
 function accessToken(status: number, body: unknown): string {
     if (!isRecord(body)) throw new BridgeError(status, 'bad_response')
     if (status === 200) {
