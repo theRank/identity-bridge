@@ -1,5 +1,4 @@
-// Calling codes and the regions that use each, as in libphonenumber's metadata (libphonenumber-js 1.13.16), which
-// Casdoor names the region of a stored number from
+// Calling codes from libphonenumber-js 1.13.16, matching Casdoor's region names.
 const REGIONS_BY_CALLING_CODE: Record<string, string> = {
     1: 'AG AI AS BB BM BS CA DM DO GD GU JM KN KY LC MP MS PR SX TC TT US VC VG VI',
     7: 'KZ RU',
@@ -214,13 +213,11 @@ export const CALLING_CODES: ReadonlyMap<string, string> = new Map(
     Object.entries(REGIONS_BY_CALLING_CODE).flatMap(([code, regions]) => regions.split(' ').map((region): [string, string] => [region, code])),
 )
 
-// Casdoor stores the national number as an integer, so none it stores begins with a zero. One that does is refused
-// rather than guessed at: the zero is a trunk prefix in most regions, as in 013800138000, and part of the number
-// in a few, as in Italy's 0212345678, and the region alone does not say which.
+// Reject leading zeros: they may be a trunk prefix or part of the number, and Casdoor's integer storage
+// cannot preserve that distinction (for example, Italian fixed lines).
 const NATIONAL = /^[1-9][0-9]*$/
 
-// The international form of a number stored apart from its region, as Casdoor stores it. Whether the result is long
-// enough to be a number is left to the profile's E.164 check.
+// Length validation is left to the profile's E.164 check.
 export function internationalNumber(national: unknown, region: unknown): string | undefined {
     if (typeof national !== 'string' || typeof region !== 'string' || !NATIONAL.test(national)) return undefined
     const code = CALLING_CODES.get(region)

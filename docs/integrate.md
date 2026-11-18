@@ -38,8 +38,9 @@ bridge.clear()
 ```
 
 Call `getToken()` before each request to the backend; it answers from memory while the token is fresh. It
-throws a `BridgeError` whose `error` says why an exchange failed; `invalid_request` with status 400 usually
-means the user must sign in again. The [client README](../packages/client/README.md#bridgeerror) lists them.
+throws a `BridgeError` when an exchange fails without a usable fallback. `400 invalid_request` can mean an
+unacceptable IdP token or a malformed request: sign in again if the session ended; otherwise check the bridge
+logs. See the [error reference](../packages/client/README.md#bridgeerror).
 
 ### Clerk
 
@@ -506,8 +507,8 @@ request, which is why users are created on first sight, below.
 - **Create users on first sight**, from whichever comes first: an access token or a `user-created` event, unless
   the id has a tombstone (below), checking it under the same lock on the user id as events. Some users produce
   no `user-created` at all.
-- **Refresh profiles from token claims.** Each access token carries the current verified email, name and
-  picture. For Casdoor users this is the only way profile changes arrive.
+- **Refresh profiles from token claims.** Tokens include available email, phone, name and picture fields;
+  email and phone appear only when verified. For Casdoor users this is the only way profile changes arrive.
 - **Keep authorization in the product**, keyed by `sub`. The bridge carries no roles or permissions.
 - **After `user-deleted`**, keep the tombstone: later events for the id change nothing. The bridge does not
   know about the deletion: it still exchanges an IdP token issued before it until that token expires or is too

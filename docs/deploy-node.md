@@ -59,8 +59,7 @@ The server reads its environment once, at start:
 - When using the image's health check, bind an address that accepts connections to `127.0.0.1`, such as the
   default `0.0.0.0`.
 - A change takes effect on restart: the runtime is loaded once per process.
-- Webhook secrets must not start or end with whitespace. A secret file that ends with a newline fails the load,
-  with the reason `webhook secret for source <id> has surrounding whitespace`.
+- [Webhook secrets](configuration.md#webhook-secrets) must not start or end with whitespace.
 
 Pass `SIGNING_KEYS` and the webhook secrets from your orchestrator's secrets or from files at run time. Never
 bake them into an image. With `docker run`, an env file holds one `NAME=value` per line
@@ -181,8 +180,8 @@ node scripts/smoke.ts https://id.cn.acme.example acme
 
 ## Key rotation
 
-Follow [rotating the signing key](configuration.md#rotating-the-signing-key): set the new `SIGNING_KEYS`,
-restart, and run the smoke test; later drop the retired key and restart again.
+Follow [key rotation](configuration.md#rotating-the-signing-key), restarting the process after each
+`SIGNING_KEYS` update.
 
 ## Trying it locally
 

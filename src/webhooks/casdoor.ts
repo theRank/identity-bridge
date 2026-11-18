@@ -24,8 +24,7 @@ export const casdoor: WebhookAdapter = {
         const action = own(record, 'action')
         const organization = own(record, 'organization')
         const response = own(record, 'response')
-        // The stored record's id. Casdoor before 4.28 sends the webhook before it stores the record, so with the id 0,
-        // which would give every record one event id.
+        // Before Casdoor 4.28, every webhook had id 0, collapsing distinct events into one.
         if (typeof id !== 'number' || !Number.isSafeInteger(id) || id <= 0) throw new BadPayloadError('record id is not a positive integer')
         if (typeof action !== 'string' || typeof organization !== 'string' || typeof response !== 'string') {
             throw new BadPayloadError('record lacks action, organization or response')
@@ -55,17 +54,15 @@ export const casdoor: WebhookAdapter = {
     },
 }
 
-// new-user carries the stored user. Every other action carries the caller's raw body, and Casdoor lets users
-// update and delete their own accounts, so a deletion is trusted only from an admin of the source's organization,
-// who may write any of its users anyway. extendedUser is that actor, loaded by Casdoor from its store.
+// new-user carries stored data; delete-user carries caller input. Trust deletions only from an organization
+// admin, identified by Casdoor's stored extendedUser, who already has write access to those users.
 function eventType(action: string, actor: unknown, organization: string): EventType | undefined {
     if (action === 'new-user') return 'user-created'
     if (action === 'delete-user' && isObject(actor) && own(actor, 'isAdmin') === true && own(actor, 'owner') === organization) return 'user-deleted'
     return undefined
 }
 
-// Casdoor stores a number apart from its region and keeps no verification flag for it, so the phone counts as
-// verified only when the IdP's mapping trusts Casdoor's policy, as it does for the tokens of the same users
+// Casdoor has no phone verification flag; match the token path's explicit trust in its verification policy.
 function profile(user: JsonObject, idp: IdpConfig): Profile {
     return cleanProfile({
         email: own(user, 'email'),

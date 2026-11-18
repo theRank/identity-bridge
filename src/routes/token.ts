@@ -125,8 +125,7 @@ function formParams(body: string): Map<string, string[]> {
     return params
 }
 
-// The order decides the answer to a request that breaks several rules: repeats are checked before the grant
-// type, so a repeated grant_type is invalid_request even when one of its values is another grant
+// Validation order determines the error when several rules fail; see docs/api.md#errors.
 function validate(params: Map<string, string[]>): ExchangeRequest | Rejection {
     if ((params.get('audience')?.length ?? 0) > 1) return ['invalid_target', 'bad_request']
     for (const values of params.values()) if (values.length > 1) return MALFORMED

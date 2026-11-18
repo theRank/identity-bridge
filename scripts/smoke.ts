@@ -1,14 +1,11 @@
-// Checks a running bridge from outside, as a deployer does after every deploy. It needs no secret and no IdP token:
-// each check is an answer any healthy deployment gives. Exits 1 on any mismatch.
+// Checks public routes and error responses after deployment, without an IdP token. Exits 1 on mismatch.
 //
 //     node scripts/smoke.ts <base-url> <product-id> [--header 'name: value']...
 //
-// Each --header goes with every request, such as the access cookie an ESA debug domain needs. Header values are never
-// printed, since they can be credentials. A header given twice is sent once with both values, a cookie's joined with
-// "; " and any other's with ", ", so several cookies go in one --header, 'cookie: a=1; b=2', or in one each.
+// --header applies to every request and may contain credentials, so values are never printed.
+// Repeated headers are combined; cookies use "; ", other headers ", ".
 //
-// Self-contained, with fetch only: Node runs this file by stripping its types, which needs import specifiers with a
-// .ts extension, and src/ is not written that way.
+// Self-contained so deployers can run it with Node's type stripping and no installed dependencies.
 
 const TOKEN_EXCHANGE = 'urn:ietf:params:oauth:grant-type:token-exchange'
 const JWT = 'urn:ietf:params:oauth:token-type:jwt'

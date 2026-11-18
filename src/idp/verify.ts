@@ -8,7 +8,7 @@ import { remoteJwks } from './jwks'
 export interface VerifiedSubject {
     idp: IdpConfig
     subject: string
-    // The raw value of the mapped uid claim, for deriveUserId to check; absent when the token has none
+    // Unchecked until deriveUserId; absent when the token has no mapped uid.
     uid?: unknown
     profile: Profile
 }
@@ -29,7 +29,7 @@ export class ExchangeError extends Error {
     }
 }
 
-// Each failure throws ExchangeError; an error it cannot classify is rethrown as it is
+// Classify token/JWKS failures; let unexpected runtime errors reach the router.
 export async function verifySubjectToken(token: string, product: ProductConfig, config: Config, deps: Deps): Promise<VerifiedSubject> {
     const bound = boundIdp(product, config, unverifiedIssuer(token))
     // No network call for an issuer the product does not trust
@@ -113,7 +113,6 @@ function failureCode(error: unknown, keyFetched: () => boolean): LogCode | undef
     return undefined
 }
 
-// Not every runtime defines DOMException
 function isDomException(error: unknown): boolean {
     return typeof DOMException !== 'undefined' && error instanceof DOMException
 }

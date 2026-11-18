@@ -1,8 +1,6 @@
 name: Casdoor
 
-# The bridge against a real Casdoor. The version the docs were checked against runs on changes to the service, to
-# catch a change of ours; Casdoor's newest release runs beside it weekly, to notice when Casdoor changes what the
-# bridge relies on. Nothing here deploys or publishes.
+# Pin Casdoor on PRs to detect our regressions; also check latest on scheduled/manual runs for upstream changes.
 
 on:
   pull_request:
@@ -21,7 +19,6 @@ permissions:
 jobs:
   e2e:
     name: e2e (${{ matrix.casdoor }})
-    # A fork's weekly run would tell its owner nothing they can act on
     if: github.event_name != 'schedule' || github.repository == 'theRank/identity-bridge'
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -30,7 +27,7 @@ jobs:
       matrix:
         casdoor: ${{ fromJSON(github.event_name == 'pull_request' && '["pinned"]' || '["pinned", "latest"]') }}
     env:
-      # Without an image the script runs the version it names, the one of docs/idp-casdoor.md
+      # Empty selects the script's pinned version, matching docs/idp-casdoor.md.
       IMAGE: ${{ matrix.casdoor == 'latest' && 'casbin/casdoor-all-in-one:latest' || '' }}
     steps:
       - name: Checkout code

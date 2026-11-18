@@ -3,9 +3,8 @@
 How to set up [Clerk][clerk-docs] for the bridge. The matching bridge configuration is the
 [Clerk example](configuration.md#a-clerk-deployment).
 
-The repository's [`scripts/e2e-clerk.ts`](../scripts/e2e-clerk.ts) runs the bridge against a real Clerk instance
-set up this way, the [session token](#session-token) customization included, and its CI repeats that on changes
-to the service and weekly, to notice when Clerk changes what the bridge relies on.
+[`scripts/e2e-clerk.ts`](../scripts/e2e-clerk.ts) checks this setup against a real development instance;
+see [Development](../README.md#development) for prerequisites and CI coverage.
 
 ## Applications
 

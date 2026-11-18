@@ -67,9 +67,7 @@ export type BridgeTokenErrorReason =
     | 'invalid_claims'
     | 'jwks_unavailable'
 
-/**
- * A verification failure with a fixed message and no `cause`, safe to log without exposing token claims.
- */
+/** A verification failure safe to log: no token claims or underlying error. */
 export class BridgeTokenError extends Error {
     override name = 'BridgeTokenError'
     readonly reason: BridgeTokenErrorReason
@@ -100,9 +98,9 @@ class JwksFetchError extends Error {
 class InvalidClaims extends Error {}
 
 /**
- * A verifier of bridge access tokens and event tokens for one product. Create one and reuse it, so the bridge's
- * keys stay cached. Throws a `TypeError` or `RangeError` for invalid options. Every verification failure rejects
- * with a `BridgeTokenError`; a runtime missing a required Web API can reject with its own error.
+ * Verifies bridge access tokens and events for one product. Reuse it to retain the JWKS cache.
+ * Invalid options throw `TypeError` or `RangeError`. Recognized verification failures reject with
+ * `BridgeTokenError`; unclassified runtime errors pass through.
  */
 export function createVerifier(options: VerifierOptions): Verifier {
     const { issuer, audience, clockToleranceSeconds = MAX_CLOCK_TOLERANCE_SECONDS } = options
@@ -130,8 +128,8 @@ export function createVerifier(options: VerifierOptions): Verifier {
         }
     }
 
-    // typ is normalized by jose, so application/at+jwt and application/secevent+jwt are accepted too. Both kinds
-    // are signed with the same keys, and an event has no exp: the typ check keeps one from passing as the other.
+    // Events share the signing keys and have no exp; typ prevents their use as access tokens.
+    // jose also accepts the application/ prefix.
     async function verifyAccessToken(token: string): Promise<BridgeUser> {
         return checked(bridgeUser, await verify(token, 'at+jwt', ['exp', 'iat', 'sub']))
     }
@@ -205,7 +203,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-// Rows in order: several reasons share an error class and differ only in claim or reason
 function failureReason(error: unknown, keysFetched: () => boolean): BridgeTokenErrorReason | undefined {
     if (error instanceof errors.JWSInvalid || error instanceof errors.JWTInvalid || error instanceof errors.JOSENotSupported) return 'malformed'
     if (error instanceof errors.JWTClaimValidationFailed && error.reason === 'invalid') return 'malformed'
@@ -226,7 +223,6 @@ function failureReason(error: unknown, keysFetched: () => boolean): BridgeTokenE
     return undefined
 }
 
-// Not every runtime defines DOMException
 function isDomException(error: unknown): boolean {
     return typeof DOMException !== 'undefined' && error instanceof DOMException
 }

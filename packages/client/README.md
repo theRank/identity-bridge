@@ -40,7 +40,7 @@ configuration.
 
 ### Node.js
 
-Node.js 22 or newer has a global `fetch`, so usage is the same. Both `import` and `require` work:
+On Node.js 22 or newer, usage is the same with the global `fetch`. Both `import` and `require` work:
 
 ```js
 const { createBridgeClient } = require('@therank/identity-bridge-client')
@@ -67,9 +67,8 @@ const bridge = createBridgeClient({
 ```
 
 `casdoorMiniProgramIdpToken` calls `wx.login` for a code and exchanges it at Casdoor for a Casdoor access
-token. The WeChat app secret stays in Casdoor's WeChat mini program provider; the mini program needs only the
-client id of the Casdoor application. Of Casdoor's answer only the access token or the error is read; nothing
-else, WeChat's session key included, is read, kept or logged.
+token. The WeChat app secret stays in Casdoor; the mini program needs only the application's client id. The
+helper reads only token and error fields, never WeChat's session key.
 
 A mini program must meet these constraints:
 
@@ -83,21 +82,20 @@ A mini program must meet these constraints:
 
 ## How it works
 
-- **Exchange.** `getToken()` calls `getIdpToken()` and POSTs the token to `${url}/token` as an
-  [RFC 8693](https://www.rfc-editor.org/rfc/rfc8693) token exchange for `audience`.
+- **Exchange.** When a new bridge token is needed, `getToken()` calls `getIdpToken()` and POSTs its result to
+  `${url}/token` as an [RFC 8693](https://www.rfc-editor.org/rfc/rfc8693) token exchange for `audience`.
 - **Cache.** The bridge token is kept in memory only, never in storage. It is reused while more than
   `min(refreshBeforeSeconds, expires_in / 2)` seconds of its lifetime remain; after that the next call
   exchanges a fresh IdP token. The lifetime is counted from when the answer arrives, by the client's own
-  wall clock (`now`, `Date.now` by default), so a device clock that is merely set wrong does not matter. A
-  clock that jumps backwards while a token is cached can, however, keep the token in use past its real
-  expiry, and your backend then rejects it as `expired`. Pass `now` to use another clock.
+  clock (`now`, `Date.now` by default). A fixed clock offset is harmless; a backward clock jump or a delayed
+  response can keep a cached token in use past its actual expiry. The backend still enforces `exp`.
+  Supply a monotonic millisecond clock through `now` to avoid clock jumps.
 - **One exchange at a time.** Calls made while an exchange is in flight wait for that exchange.
-- **Retries.** When no answer arrives, or the bridge answers `503 temporarily_unavailable`, the request is
+- **Retries.** When the transport rejects, or the bridge answers `503 temporarily_unavailable`, the request is
   sent again twice, after 250 ms and then 1 s, with the same IdP token. Other errors are thrown at once.
 - **Fallback.** If a refresh fails with `network` or `temporarily_unavailable`, callers receive the cached
   token only while it remains valid by the client's clock and has not been cleared. The next call retries
   the refresh. Other failures, including `getIdpToken()` failures, are thrown.
-- **Failures are not cached.** After a failed exchange, the next call starts a new one.
 
 ## API
 
@@ -107,17 +105,17 @@ A mini program must meet these constraints:
 |---|---|---|
 | `url` | `string` | Required. The bridge's issuer URL, without a trailing slash. |
 | `audience` | `string` | Required. Your product's id in the bridge configuration. |
-| `getIdpToken` | `() => Promise<string>` | Required. Returns a fresh identity provider token on every call. If it rejects, `getToken()` rejects with the same error. |
+| `getIdpToken` | `() => Promise<string>` | Required. Returns a valid IdP token within the bridge's maximum token age. If it rejects, `getToken()` rejects with the same error. |
 | `transport` | `Transport` | How requests are sent. Default: the global `fetch`. |
-| `refreshBeforeSeconds` | `number` | How long before expiry to exchange again, capped at half the token's lifetime. Default `60`. A negative value throws a `RangeError`. |
-| `now` | `() => number` | The clock, in milliseconds since the epoch. Default `Date.now`. |
+| `refreshBeforeSeconds` | `number` | Seconds before expiry to exchange again, capped at half the token's lifetime. Default `60`. A negative value or `NaN` throws a `RangeError`. |
+| `now` | `() => number` | Clock in milliseconds, used for elapsed time. Default `Date.now`; a monotonic clock is also supported. |
 
 An option given as `undefined` takes its default.
 
 Returns a client with:
 
-- `getToken(): Promise<string>`: the bridge access token, from memory or from a new exchange, or the cached
-  token while the bridge cannot be reached, as described above.
+- `getToken(): Promise<string>`: returns a cached token or exchanges on demand, with the retry and fallback
+  behavior [above](#how-it-works). A failed exchange is not cached.
 - `clear(): void`: forgets the token, for sign-out. An exchange already in flight still resolves for the
   calls waiting on it, but its token is not kept; the next call starts a new exchange.
 
@@ -127,13 +125,14 @@ Returns a client with:
 type Transport = (request: { url: string; body: string }) => Promise<{ status: number; body: unknown }>
 ```
 
-POSTs `body`, an `application/x-www-form-urlencoded` string, to `url`, and resolves with the HTTP status and
-the parsed JSON answer whatever the status. It rejects only when no answer arrives.
+POSTs `body` to `url` with `Content-Type: application/x-www-form-urlencoded`. Resolve for any HTTP status,
+with parsed JSON as `body`. Non-JSON responses must also resolve; the default fetch transport returns
+`undefined` as their body. Reject if the request or response-body read fails. The client treats any rejection
+as `network` and discards its reason.
 
 ### `wxRequestTransport` (from `/wechat`)
 
-A `Transport` over `wx.request`. It rejects with an `Error` holding `wx.request`'s `errMsg` when the request
-fails.
+A `Transport` over `wx.request`. On failure, it rejects with an `Error` containing `errMsg` or a fallback message.
 
 ### `casdoorMiniProgramIdpToken(options)` (from `/wechat`)
 
@@ -153,14 +152,13 @@ Each call gets a new `wx.login` code and POSTs `client_id`, `code` and `tag=wech
 
 Thrown for a failed exchange, and for a failed Casdoor login. It has two properties:
 
-- `status`: the HTTP status of the answer, or `0` when no answer arrived;
+- `status`: the HTTP status of the answer, or `0` when the transport rejects;
 - `error`: a short code, below.
 
 The bridge's `error_description` is not exposed: branch on `error`.
 
-The ES module and CommonJS builds each define their own `BridgeError` class, so `instanceof BridgeError` is
-false for an error thrown by the other build, as when one part of an app imports the package and another
-requires it. Check `error.name === 'BridgeError'` instead:
+When mixing ES module and CommonJS builds, check `error.name` instead of `instanceof BridgeError`: each build
+defines its own class.
 
 ```ts
 import type { BridgeError } from '@therank/identity-bridge-client'
@@ -177,7 +175,7 @@ function isBridgeError(error: unknown): error is BridgeError {
 | `invalid_target` | 400 | The bridge has no product with this `audience`. |
 | `temporarily_unavailable` | 503 | The IdP's JWKS could not be fetched or used. The SDK retried the exchange twice. |
 | `server_error` | 500 | The bridge failed. |
-| `network` | 0 | No answer arrived. The exchange with the bridge first retries twice; `casdoorMiniProgramIdpToken` never retries, since a `wx.login` code can be used only once. |
+| `network` | 0 | The transport rejected, including a failed response-body read. Bridge exchanges retry twice; `casdoorMiniProgramIdpToken` never retries a single-use `wx.login` code. |
 | `bad_response` | any | The answer was not one the bridge or Casdoor gives, such as an HTML error page from a proxy. |
 | `casdoor_error` | Casdoor's | From `casdoorMiniProgramIdpToken`: Casdoor answered `{"status": "error"}`. |
 | Casdoor's `error` | Casdoor's | From `casdoorMiniProgramIdpToken`: Casdoor answered with an OAuth error such as `invalid_client`. |

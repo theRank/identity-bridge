@@ -1,18 +1,15 @@
-// Runs the bridge against a real Casdoor, to catch what the fixtures cannot: a Casdoor release that changes what its
-// tokens, its webhooks or its user APIs do. Starts a throwaway Casdoor container and the Node bundle, sets Casdoor up
-// as docs/idp-casdoor.md says, and checks what a product would see. Exits 1 on any mismatch.
+// Checks tokens, webhooks and user write permissions against a throwaway Casdoor container and the Node bundle.
+// Setup follows docs/idp-casdoor.md; exits 1 on mismatch.
 //
 //     npm run build:node
 //     node scripts/e2e-casdoor.ts [image]
 //
 // Needs docker and openssl. The image defaults to the Casdoor version the docs were checked against.
 //
-// The bridge takes only https URLs for an IdP and for a product's events, so this script serves both itself, under a
-// certificate made for the run that the bridge is told to trust: Casdoor's key set, at an address given to Casdoor
-// as its `origin` and so the issuer of its tokens, and the product's event receiver.
+// The bridge requires HTTPS: serve Casdoor's JWKS and the product's event receiver with a temporary certificate
+// trusted by the bridge, and set Casdoor's origin to that HTTPS address.
 //
-// Casdoor lets only the webhooks of `built-in` reach a private address, so the webhook belongs to `built-in` and
-// receives every organization's records. The bridge's own organization filter is therefore checked too.
+// A built-in webhook can reach local addresses and receives all organizations, exercising tenant filtering.
 
 import { execFileSync, spawn } from 'node:child_process'
 import { randomBytes, randomUUID } from 'node:crypto'

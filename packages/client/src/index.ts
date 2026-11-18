@@ -1,8 +1,8 @@
 import { formBody, isRecord } from './form.js'
 
 /**
- * Sends a request: POSTs `body`, an `application/x-www-form-urlencoded` string, to `url`, and resolves with the HTTP
- * status and the parsed JSON answer, whatever the status. Rejects only when no answer arrives.
+ * POSTs `body` with Content-Type application/x-www-form-urlencoded and returns the status and parsed JSON.
+ * HTTP errors and non-JSON bodies must resolve; only request or response-body read failures reject.
  */
 export type Transport = (request: { url: string; body: string }) => Promise<{ status: number; body: unknown }>
 
@@ -11,13 +11,13 @@ export interface BridgeClientOptions {
     url: string
     /** The product's id in the bridge configuration. */
     audience: string
-    /** Returns a fresh identity provider token on every call. */
+    /** Returns a valid IdP token within the bridge's maximum token age. */
     getIdpToken(): Promise<string>
     /** How requests are sent. Default: the global `fetch`. */
     transport?: Transport | undefined
     /** How long before expiry to exchange again, capped at half the token's lifetime. Default 60. */
     refreshBeforeSeconds?: number | undefined
-    /** The clock, in milliseconds since the epoch. Default `Date.now`. */
+    /** Clock in milliseconds for elapsed time; may be monotonic. Default `Date.now`. */
     now?: (() => number) | undefined
 }
 
@@ -29,7 +29,7 @@ export interface BridgeClient {
 }
 
 /**
- * A failed exchange, or a failed Casdoor login. `status` is the HTTP status, or 0 when no answer arrived; `error` is
+ * A failed exchange or Casdoor login. `status` is the HTTP status, or 0 when the transport rejects; `error` is
  * the OAuth error of the answer, or `network`, `bad_response` or `casdoor_error`.
  *
  * The ES module and CommonJS builds each define this class, so check `error.name === 'BridgeError'` rather than
@@ -40,7 +40,6 @@ export class BridgeError extends Error {
     readonly status: number
     readonly error: string
 
-    // The error_description is left out on purpose: callers branch on `error`, and the description is for people
     constructor(status: number, error: string) {
         super(`identity-bridge: ${error} (status ${status})`)
         this.status = status
@@ -48,7 +47,7 @@ export class BridgeError extends Error {
     }
 }
 
-// The client compiles without the DOM lib; these are the parts of fetch and setTimeout it uses
+// Local declarations keep the client independent of DOM typings.
 interface FetchResponse {
     status: number
     text(): Promise<string>
@@ -142,8 +141,7 @@ export function createBridgeClient(options: BridgeClientOptions): BridgeClient {
     }
 }
 
-// undefined for a rejected transport. Its reason is dropped, as a custom transport may quote the request, which
-// holds the IdP token.
+// Discard transport errors: they may quote the request's IdP token.
 async function send(transport: Transport, request: { url: string; body: string }): Promise<{ status: number; body: unknown } | undefined> {
     try {
         return await transport(request)

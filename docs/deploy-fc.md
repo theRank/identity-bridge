@@ -5,8 +5,7 @@ mainland China. It uses the same Node 24 bundle as a local deployment. The bridg
 limit on webhook fan-out; function resources and timeouts still apply.
 [Choosing a runtime](../README.md#choosing-a-runtime) compares the options.
 
-Function Compute's documentation does not describe all of what a deployment meets. What it leaves out is given
-here as observed on Function Compute 3.0 in cn-hangzhou in 2026-11; Function Compute's source is not public.
+Observations below are from Function Compute 3.0 in `cn-hangzhou` in 2026-11.
 
 ## Pinning a release
 
@@ -39,8 +38,6 @@ zip code.zip server.mjs
 
 The fields are those of the `CreateFunction` and `UpdateFunction` APIs ([function][fc-function-struct],
 [custom runtime][fc-custom-runtime-config]); the console has a setting for each.
-
-Why each one:
 
 - **Runtime and layer.** `custom.debian12` is a custom runtime: Function Compute starts the startup command and
   forwards HTTP requests to the port it listens on ([custom runtime][fc-custom-runtime]). Its official
@@ -124,9 +121,8 @@ Observed: a code package function serves the new code at once. [What the smoke t
 
 ## Key rotation
 
-Follow [rotating the signing key](configuration.md#rotating-the-signing-key): update `SIGNING_KEYS`, wait for
-the update, run the smoke test, and later update it again without the retired key. During a rotation
-`SIGNING_KEYS` holds two keys; check that everything still fits within the documented 4 KB.
+Follow [key rotation](configuration.md#rotating-the-signing-key), waiting for each function update to complete.
+Allow space for the new private key and all retained public keys within the documented variable limit.
 
 ## Container images
 

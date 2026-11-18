@@ -39,7 +39,7 @@ export const webhooksRoute: RouteHandler = async (request, runtime, deps, ctx) =
 
     const idp = runtime.config.idps[source.idp]
     if (idp === undefined) throw new Error('webhook source names an unknown idp')
-    // The IdP would redeliver the same bytes, so an unprocessable payload is answered 200 and the log code is the alert
+    // Retrying cannot fix these bytes: acknowledge bad payloads and report them through log codes.
     let events: LifecycleEvent[]
     try {
         events = adapter.parse(request, body, source, idp)
@@ -90,8 +90,7 @@ function target(config: Config, product: string): Target {
     return { product, url }
 }
 
-// The timer ends the wait on its own, since not every runtime has AbortController or a fetch that honours a
-// signal; where one exists, it also cancels the request. Redirects are failures, so none is followed.
+// Enforce the deadline even if abort is unavailable or ignored. Do not follow redirects with the event token.
 function deliver(fetch: Deps['fetch'], { url, token }: Delivery): Promise<DeliveryError | undefined> {
     const controller = typeof AbortController === 'function' ? new AbortController() : undefined
     const init: RequestInit = { method: 'POST', headers: DELIVERY_HEADERS, body: token, redirect: 'manual' }

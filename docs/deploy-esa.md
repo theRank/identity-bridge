@@ -1,11 +1,8 @@
 # Deploying on Alibaba Cloud ESA
 
-The bridge as an ESA Functions and Pages routine, for mainland China. Observed in 2026-11, a routine showed no
-cold start after a deployment; the [fetch limit](#fetch-limit-and-fan-out) caps the products a webhook source
-relays to. [Choosing a runtime](../README.md#choosing-a-runtime) compares the options.
-
-ESA's documentation does not describe all of what a deployment meets. What it leaves out or contradicts is
-given here as observed on the free plan in 2026-11.
+Run the bridge as an ESA Functions and Pages routine. The [fetch limit](#fetch-limit-and-fan-out) caps webhook
+fan-out; [Choosing a runtime](../README.md#choosing-a-runtime) compares alternatives. Observations below are
+from the free plan in 2026-11, including no observed cold start after deployment.
 
 ## Activating
 
@@ -177,9 +174,8 @@ routine's log lines. [What the smoke test checks](../README.md#smoke-test).
 
 ## Key rotation
 
-Follow [rotating the signing key](configuration.md#rotating-the-signing-key): put the new `SIGNING_KEYS` in the
-variables file and run the script again, which sets the variables and deploys a new version bound to them; run
-the smoke test; later drop the retired key and run it again.
+Follow [key rotation](configuration.md#rotating-the-signing-key), updating `SIGNING_KEYS` in the variables
+file and rerunning the deploy script at each step. The script binds each new code version to those variables.
 
 ## Upgrading
 

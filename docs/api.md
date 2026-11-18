@@ -137,7 +137,9 @@ size, a repeated `audience` (`invalid_target`), any other repeated parameter (`i
 (`invalid_target`), `scope` (`invalid_scope`), then the remaining parameter rules (`invalid_request`), then the
 product.
 
-A client may retry `503 temporarily_unavailable` with the same IdP token. Other errors do not change on retry.
+A client may retry `503 temporarily_unavailable` with the same IdP token. Do not automatically retry other
+errors: inspect the error and bridge logs first. The [client SDK](../packages/client/README.md#how-it-works)
+also retries transport failures.
 
 ### CORS
 
@@ -279,8 +281,8 @@ event's own fields must be valid, else it is unprocessable.
 | 502 | `{"delivered": ["<product>", ...], "failed": [{"product": "<id>", "error": "timeout" \| "network" \| "status <n>"}, ...]}` | At least one delivery failed | `delivery_failed` |
 | 500 | empty | [Failure mode](#failure-mode) or an unexpected error | `runtime_unavailable`, `internal_error` |
 
-Bodies are `Content-Type: application/json`. An unprocessable payload is answered `200`: the IdP would send
-the same bytes again, so a retry cannot help, and the log code is the alert.
+Non-empty bodies are `Content-Type: application/json`. An unprocessable payload is answered `200`: the IdP
+would send the same bytes again, so a retry cannot help, and the log code is the alert.
 
 ### Clerk sources
 

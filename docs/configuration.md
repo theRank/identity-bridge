@@ -243,10 +243,9 @@ To rotate a webhook secret:
 
 ## Sizes
 
-Function Compute and ESA limit the total size of a function's variables: keep within 4 KB on
-[Function Compute](deploy-fc.md#configuration-and-secrets) and 16 KiB on ESA's free plan
-([ESA](deploy-esa.md#variables)). Count all variable names and values, including webhook secrets, and leave
-room for retired public keys during rotation.
+Check the variable limits for [Function Compute](deploy-fc.md#configuration-and-secrets),
+[ESA](deploy-esa.md#variables) or [Workers](deploy-workers.md#limits-and-abuse). For total-size limits, count
+all names and values, including webhook secrets, and leave room for retired public keys during rotation.
 
 Minify `BRIDGE_CONFIG`, for example with `node -e 'process.stdout.write(JSON.stringify(require("./bridge-config.json")))'`.
 

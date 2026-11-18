@@ -1,20 +1,12 @@
-// Runs the bridge against a real Clerk instance, to catch what the fixtures cannot: a Clerk release that changes
-// what its session tokens, its JWKS or its claims look like. For each case it creates a throwaway user on a
-// dedicated Clerk test instance through the Backend API, mints a real session token, exchanges it at the Node
-// bundle, and checks what a product would see. Exits 1 on any mismatch.
+// Checks real Clerk session tokens against the Node bundle using throwaway users. Exits 1 on mismatch.
 //
 //     npm run build:node
 //     CLERK_SECRET_KEY=sk_test_... CLERK_ISSUER=https://<instance>.clerk.accounts.dev node scripts/e2e-clerk.ts
 //
-// Needs a dedicated Clerk DEVELOPMENT instance: POST /v1/sessions, which mints a session without a sign-in, is
-// offered only on development instances, and the script refuses an sk_live_ key. The instance must carry the
-// session-token customization from docs/idp-clerk.md, the email, name, picture and uid claims; without it the
-// token has no profile and the first check fails. CLERK_ISSUER is the instance's Frontend API URL, the `iss` of
-// its tokens; set it directly, or let it be read from CLERK_PUBLISHABLE_KEY. The secret is used only as the
-// Backend API bearer and is never logged.
+// Requires a dedicated DEVELOPMENT instance configured as in docs/idp-clerk.md: session creation is
+// development-only, and sk_live_ keys are refused. CLERK_PUBLISHABLE_KEY can supply the issuer instead.
 //
-// Only token exchange is covered. Clerk delivers webhooks asynchronously over the public internet through Svix,
-// which a CI run cannot receive without standing infrastructure, so webhooks stay on the captured fixtures.
+// Webhooks need a public receiver; they remain covered by fixtures rather than this local run.
 
 import { spawn } from 'node:child_process'
 import { randomBytes, randomUUID } from 'node:crypto'

@@ -4,11 +4,9 @@ How to set up a self-hosted [Casdoor][casdoor-docs] instance for the bridge, inc
 sign-in. One Casdoor instance can serve several products. The matching bridge configuration is the
 [Casdoor example](configuration.md#a-casdoor-deployment).
 
-Casdoor's documentation does not describe all of what the bridge relies on, and in places differs from what
-Casdoor does. Where it does, this guide links to Casdoor's source at release
-[4.29.0][casdoor-commit], the version this release was checked against. The repository's
-[`scripts/e2e-casdoor.ts`](../scripts/e2e-casdoor.ts) runs the bridge against a Casdoor set up this way, and
-its CI repeats that weekly with Casdoor's newest release.
+This guide is checked against Casdoor [4.29.0][casdoor-commit] and links to that version's source where its
+documentation differs. [`scripts/e2e-casdoor.ts`](../scripts/e2e-casdoor.ts) exercises this setup;
+see [Development](../README.md#development) for prerequisites and CI coverage.
 
 ## Instance
 
@@ -192,8 +190,6 @@ The bridge source:
   "casdoor-acme": { "type": "casdoor", "idp": "casdoor", "organization": "acme", "uidField": "uid", "products": ["acme"] }
 }
 ```
-
-Why each setting:
 
 - **A public address.** The webhooks of every organization but `built-in` may send requests only to Internet
   addresses ([Casdoor][casdoor-webhooks], [source][casdoor-public-only]), so the bridge must be reachable at
