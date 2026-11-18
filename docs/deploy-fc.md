@@ -1,8 +1,7 @@
 # Deploying on Alibaba Cloud Function Compute
 
 The bridge as a Function Compute 3.0 function, running the release's Node bundle as a code package, for
-mainland China. It uses the same Node 24 bundle as a local deployment. The bridge sets no product-count
-limit on webhook fan-out; function resources and timeouts still apply.
+mainland China. Unlike ESA, it sets no limit on webhook fan-out beyond the function's resources and timeout.
 [Choosing a runtime](../README.md#choosing-a-runtime) compares the options.
 
 Observations below are from Function Compute 3.0 in `cn-hangzhou` in 2026-11.
@@ -70,11 +69,11 @@ The configuration, the keys and the webhook secrets are environment variables, w
 encrypted at rest ([environment variables][fc-env]).
 
 **Size.** Function Compute documents a limit of 4 KB for all environment variables together
-([environment variables][fc-env]). Observed on Function Compute 3.0 in 2026-11, `UpdateFunction` accepted up
-to 32 KiB and refused 33 KiB with `Environment variable size is too large (max: 32768, actual: '33792')`.
-Keep the minified configuration, the keys and the secrets within the documented 4 KB;
-[sizes](configuration.md#sizes) covers what to count. A deployment that does not fit needs another runtime:
-the bridge reads its configuration only from the environment.
+([environment variables][fc-env]). Observed: `UpdateFunction` accepted up to 32 KiB and refused 33 KiB with
+`Environment variable size is too large (max: 32768, actual: '33792')`. Keep the minified configuration, the
+keys and the secrets within the documented 4 KB; [sizes](configuration.md#sizes) covers what to count. A
+deployment that does not fit needs another runtime: the bridge reads its configuration only from the
+environment.
 
 **Who can read them.** `GetFunction` returns the function's environment variables, the keys and secrets
 included, to any RAM user allowed the action `fc:GetFunction` on it ([GetFunction][fc-get-function]). Grant

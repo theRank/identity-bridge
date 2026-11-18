@@ -435,9 +435,8 @@ logs a `runtime_load_failed` line that says what failed
 ([configuration.md](configuration.md#runtime-load-failures)). A deployment that cannot load is therefore
 caught by `/healthz` and the smoke test rather than by the first user.
 
-An exception that escapes a route gets the answer failure mode gives that route, `503` on `/healthz`, and is
-logged as `internal_error`; on `/token`, once the product is resolved, that `500` also carries the
-[CORS](#cors) headers.
+An exception that escapes a route gets the answer failure mode gives that route and is logged as
+`internal_error`; on `/token`, once the product is resolved, that `500` also carries the [CORS](#cors) headers.
 
 [clerk-webhooks]: https://clerk.com/docs/guides/development/webhooks/overview
 [svix-verify]: https://docs.svix.com/receiving/verifying-payloads/how-manual

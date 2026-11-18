@@ -1,6 +1,7 @@
 import type { ClaimMapping, Config, IdpAlgorithm, IdpBinding, IdpConfig, ProductConfig, WebhookSourceConfig } from './types'
 
-// Prefixed with the JSON path of the offending value; quotes only short configuration values, never the raw input
+// Prefixed with the JSON path of the offending value; quotes configuration values cut to 64 characters, never the
+// raw input
 export class ConfigError extends Error {
     override name = 'ConfigError'
 

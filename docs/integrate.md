@@ -16,9 +16,9 @@ A client signs the user in with the IdP, then asks the bridge for an access toke
 The bridge refuses an IdP token older than `maxTokenAgeSeconds`, 15 minutes by default, so the client gets a
 fresh IdP token for every exchange ([why](api.md#processing)).
 
-`createBridgeClient` caches the bridge token in memory. A `getToken()` call refreshes it when near expiry
-([details](../packages/client/README.md#how-it-works)); there is no background refresh. Supply a function
-that returns a fresh IdP token:
+`createBridgeClient` keeps the bridge token in memory, and `getToken()` answers from it until the token nears
+expiry, then exchanges again; there is no background refresh
+([details](../packages/client/README.md#how-it-works)). Supply a function that returns a fresh IdP token:
 
 ```ts
 import { createBridgeClient } from '@therank/identity-bridge-client'
@@ -37,10 +37,10 @@ const response = await fetch('https://api.acme.example/me', {
 bridge.clear()
 ```
 
-Call `getToken()` before each request to the backend; it answers from memory while the token is fresh. It
-throws a `BridgeError` when an exchange fails without a usable fallback. `400 invalid_request` can mean an
+Call `getToken()` before each request to the backend. It throws a `BridgeError` when an exchange fails without
+a usable fallback ([errors](../packages/client/README.md#bridgeerror)). `400 invalid_request` can mean an
 unacceptable IdP token or a malformed request: sign in again if the session ended; otherwise check the bridge
-logs. See the [error reference](../packages/client/README.md#bridgeerror).
+logs.
 
 ### Clerk
 
@@ -138,9 +138,7 @@ A client that does this itself follows the same pattern as the SDK:
 3. When it is due, get a fresh IdP token and exchange again. Let concurrent callers wait for the one exchange
    in flight.
 4. Retry `503 temporarily_unavailable`, and a request that got no answer, a couple of times with the same IdP
-   token, after a short wait. Other errors need investigation: `400 invalid_request` can mean a malformed
-   request or an unacceptable IdP token. Sign in again if the session has ended; check the bridge logs for
-   request or configuration problems.
+   token, after a short wait. Do not retry other errors; handle `400 invalid_request` as [above](#clients).
 5. On sign-out, drop the token.
 
 ## Backends

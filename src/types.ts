@@ -123,7 +123,7 @@ export type OAuthErrorCode =
     | 'temporarily_unavailable'
     | 'server_error'
 
-// Accumulates request log fields without storing token or payload content.
+// The LogLine fields a route fills in as it goes
 export interface RouteContext {
     product?: string
     idp?: string

@@ -31,7 +31,6 @@ export const webhooksRoute: RouteHandler = async (request, runtime, deps, ctx) =
     const source = ctx.source === undefined ? undefined : runtime.config.webhookSources[ctx.source]
     if (source === undefined) return refuse(ctx, 404, 'unknown_source')
     ctx.idp = source.idp
-    // Read as text before parsing: the Svix signature covers the exact bytes
     const body = await readBody(request, MAX_BODY_BYTES)
     if (body === null) return refuse(ctx, 413, 'too_large')
     const adapter = ADAPTERS[source.type]

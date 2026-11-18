@@ -4,8 +4,7 @@ A stateless identity broker for Clerk and Casdoor. Clients exchange an identity 
 short-lived bridge access token through [RFC 8693](https://www.rfc-editor.org/rfc/rfc8693). Product backends
 verify bridge tokens against its JWKS and receive user lifecycle webhooks as signed security event tokens.
 
-This repository provides the service and TypeScript SDKs. Clients use their IdP's sign-in flow; product
-backends use the bridge's common token and event formats. Each deployer maintains its own configuration.
+This repository provides the service and its TypeScript SDKs; each deployer keeps its own configuration.
 
 ```text
                     1 sign in
@@ -120,8 +119,8 @@ Build with `npm run build:node` before running the IdP integration checks:
 
 - `node scripts/e2e-casdoor.ts [image]`: token exchange, webhook delivery and user write permissions against a
   throwaway Casdoor container configured as in [the setup guide](docs/idp-casdoor.md). Requires Docker and
-  `openssl`; the optional image selects another Casdoor version. CI checks service changes and runs weekly
-  against both the pinned version and `latest`.
+  `openssl`; the optional image selects another Casdoor version. CI runs it against the pinned version on
+  service changes, and against both the pinned version and `latest` weekly and manually.
 - `node scripts/e2e-clerk.ts`: token exchange against a dedicated Clerk development instance configured as in
   [the setup guide](docs/idp-clerk.md). Set `CLERK_SECRET_KEY` and either `CLERK_ISSUER` (the Frontend API URL)
   or `CLERK_PUBLISHABLE_KEY`. It creates and deletes test users; webhooks are not covered. CI runs on service

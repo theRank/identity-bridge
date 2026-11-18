@@ -16,10 +16,9 @@ export interface Delivery {
     body: string
 }
 
-// Casdoor fixtures are real Casdoor deliveries holding the record as JSON, so it reads and edits as an object; its
-// `object` member stays a string. They are from Casdoor 4.27.1, which sent every record's id as 0: the ids are
-// numbered here in the records' order, as 4.28 and later send them. extendedUser, the actor's full masked user in a real delivery, is reduced to the
-// members the relay reads, owner and isAdmin, plus the actor's name and id.
+// Real Casdoor 4.27.1 deliveries, the record held as JSON so it edits as an object; its `object` member stays a
+// string. 4.27.1 sent every record's id as 0, so the ids are numbered here in order, as 4.28 and later send them.
+// extendedUser is reduced to the members the relay reads, owner and isAdmin, plus the actor's name and id.
 export interface CasdoorFixture {
     headers: Record<string, string>
     body: object

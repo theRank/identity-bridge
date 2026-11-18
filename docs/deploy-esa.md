@@ -2,7 +2,7 @@
 
 Run the bridge as an ESA Functions and Pages routine. The [fetch limit](#fetch-limit-and-fan-out) caps webhook
 fan-out; [Choosing a runtime](../README.md#choosing-a-runtime) compares alternatives. Observations below are
-from the free plan in 2026-11, including no observed cold start after deployment.
+from the free plan in 2026-11.
 
 ## Activating
 
@@ -76,7 +76,7 @@ its own that allows only the actions the script calls: `esa:GetRoutine`, `esa:Cr
 
 ### Why not ESA's CLI
 
-ESA's own CLI is not used for two reasons, observed in 2026-11:
+ESA's own CLI is not used, for two observed reasons:
 
 - It refuses a variable value over 200 characters ([source][esa-cli-limit]), which the configuration and a
   rotation's `SIGNING_KEYS` exceed. ESA itself accepts them: the check runs only in the CLI.
@@ -106,7 +106,7 @@ WEBHOOK_SECRET_CASDOOR_ACME=...
 ESA stores secret variables encrypted and passes all variables to the routine ([variables][esa-variables]).
 
 **Capacity.** The free plan allows 16 KiB of function variables, and the Advanced plan 64 KiB
-([billing][esa-billing]). Observed in 2026-11: the free plan's limit is 16 KiB (16,384 characters of names and
+([billing][esa-billing]). Observed: the free plan's limit is 16 KiB (16,384 characters of names and
 values) in total, with no limit per value. Over it, the script reports ESA's error `400019`.
 [Sizes](configuration.md#sizes) covers what to count.
 
@@ -163,7 +163,7 @@ routine's log lines. [What the smoke test checks](../README.md#smoke-test).
 ## Other limits
 
 - **CPU.** 100 milliseconds per request ([billing][esa-billing]). Observed from Hangzhou: warm requests take 8 to
-  12 milliseconds, and no request came near the limit.
+  12 milliseconds, no request came near the limit, and no cold start showed after a deployment.
 - **Code size.** 4 MB ([overview][esa-overview]); the build fails when `esa.js` exceeds it.
 - **Web APIs.** ESA's list of runtime APIs ([runtime APIs][esa-runtime-api]) leaves out `AbortController` and
   `AbortSignal.timeout`, which the bridge uses. Observed: both work, and `AbortSignal.timeout` rejects with an
