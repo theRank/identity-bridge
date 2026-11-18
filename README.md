@@ -125,6 +125,13 @@ lets users write. It needs Docker and `openssl`, and `npm run build:node` first;
 picks another Casdoor version. CI runs it on changes to the service, and weekly against Casdoor's newest
 release.
 
+`node scripts/e2e-clerk.ts` runs the Node bundle against a real Clerk instance: it creates throwaway users
+through the Backend API, exchanges a session token for each and checks the access token. It needs
+`npm run build:node` first, a dedicated Clerk development instance set up as [idp-clerk.md](docs/idp-clerk.md)
+says, and its secret key in `CLERK_SECRET_KEY` with the instance's Frontend API URL in `CLERK_ISSUER`. Because
+the secret is not a fork's to hold, CI runs it only on the main repository, weekly and on demand, and not as a
+merge gate. Webhooks are not covered: Clerk delivers them asynchronously over the public internet.
+
 ## Security
 
 See [SECURITY.md](SECURITY.md).

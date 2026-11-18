@@ -3,6 +3,10 @@
 How to set up [Clerk][clerk-docs] for the bridge. The matching bridge configuration is the
 [Clerk example](configuration.md#a-clerk-deployment).
 
+The repository's [`scripts/e2e-clerk.ts`](../scripts/e2e-clerk.ts) runs the bridge against a real Clerk instance
+set up this way, the [session token](#session-token) customization included, and its CI repeats that weekly, to
+notice when Clerk changes what the bridge relies on.
+
 ## Applications
 
 Use one Clerk application per product. Each application's instance has its own Frontend API URL, which is the

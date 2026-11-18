@@ -1,0 +1,44 @@
+name: Clerk
+
+# The bridge against a real Clerk instance, to notice when Clerk changes what the bridge relies on: its session
+# tokens, its JWKS or its claims. It needs a dedicated development instance's secret key, which forks never
+# receive, so it runs only on the main repository, weekly and on demand. It is not a merge gate: it depends on
+# Clerk being reachable, which a pull request must not. Nothing here deploys or publishes.
+
+on:
+  schedule:
+    - cron: '41 4 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    # The secret lives only on the main repository; a fork's run would have nothing to authenticate with
+    if: github.repository == 'theRank/identity-bridge'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Build the Node bundle
+        run: npm run build:node
+
+      - name: End-to-end test
+        run: node scripts/e2e-clerk.ts
+        env:
+          CLERK_SECRET_KEY: ${{ secrets.CLERK_E2E_SECRET_KEY }}
+          CLERK_ISSUER: https://verified-monkfish-6997.clerk.accounts.dev
