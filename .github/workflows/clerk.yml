@@ -1,11 +1,18 @@
 name: Clerk
 
 # The bridge against a real Clerk instance, to notice when Clerk changes what the bridge relies on: its session
-# tokens, its JWKS or its claims. It needs a dedicated development instance's secret key, which forks never
-# receive, so it runs only on the main repository, weekly and on demand. It is not a merge gate: it depends on
-# Clerk being reachable, which a pull request must not. Nothing here deploys or publishes.
+# tokens, its JWKS or its claims. It needs a dedicated development instance's secret key, which a fork's pull
+# request never receives, so it runs on changes to the service from a branch of this repository, weekly, and on
+# demand, and a fork's pull request skips it. Keep it out of the required checks: it depends on Clerk being
+# reachable. Nothing here deploys or publishes.
 
 on:
+  pull_request:
+    paths:
+      - src/**
+      - scripts/e2e-clerk.ts
+      - package-lock.json
+      - .github/workflows/clerk.yml
   schedule:
     - cron: '41 4 * * 1'
   workflow_dispatch:
@@ -15,8 +22,11 @@ permissions:
 
 jobs:
   e2e:
-    # The secret lives only on the main repository; a fork's run would have nothing to authenticate with
-    if: github.repository == 'theRank/identity-bridge'
+    # The secret is not a fork's to hold: the schedule and dispatch run on this repository, and a pull request
+    # only from a branch of it, never a fork
+    if: >-
+      (github.event_name != 'pull_request' && github.repository == 'theRank/identity-bridge') ||
+      (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == 'theRank/identity-bridge' && github.actor != 'dependabot[bot]')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
