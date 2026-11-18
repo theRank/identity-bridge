@@ -36,6 +36,8 @@ breaking change to the [wire contract](docs/api.md) is a new major version of al
   `scripts/dev-env.ts`, throwaway values for local runs.
 - `scripts/e2e-casdoor.ts`, the bridge against a real Casdoor, run on changes to the service and weekly against
   Casdoor's newest release.
+- `scripts/e2e-clerk.ts`, the bridge against a real Clerk instance, run on changes to the service and weekly,
+  outside a fork's pull request.
 
 ### Packages
 
