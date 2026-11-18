@@ -9,9 +9,9 @@
 // Needs a dedicated Clerk DEVELOPMENT instance: POST /v1/sessions, which mints a session without a sign-in, is
 // offered only on development instances, and the script refuses an sk_live_ key. The instance must carry the
 // session-token customization from docs/idp-clerk.md, the email, name, picture and uid claims; without it the
-// token has no profile and the first check fails, pointing back to that step. CLERK_ISSUER is the instance's
-// Frontend API URL, the `iss` of its tokens; set it directly, or let it be read from CLERK_PUBLISHABLE_KEY. The
-// secret is used only as the Backend API bearer and is never logged.
+// token has no profile and the first check fails. CLERK_ISSUER is the instance's Frontend API URL, the `iss` of
+// its tokens; set it directly, or let it be read from CLERK_PUBLISHABLE_KEY. The secret is used only as the
+// Backend API bearer and is never logged.
 //
 // Only token exchange is covered. Clerk delivers webhooks asynchronously over the public internet through Svix,
 // which a CI run cannot receive without standing infrastructure, so webhooks stay on the captured fixtures.
@@ -55,8 +55,8 @@ async function uuidv5(name: string, namespace: string): Promise<string> {
     return [digits.slice(0, 8), digits.slice(8, 12), digits.slice(12, 16), digits.slice(16, 20), digits.slice(20)].join('-')
 }
 
-// The instance's Frontend API URL, the issuer of its session tokens. A publishable key is the base64 of that
-// host with a trailing '$' (docs/idp-clerk.md derives the issuer from it the same way).
+// The instance's Frontend API URL, the issuer of its session tokens: from CLERK_ISSUER, or derived from a
+// publishable key, which is the base64 of that host with a trailing '$'.
 function clerkIssuer(): string {
     const direct = process.env.CLERK_ISSUER
     if (direct) return direct.replace(/\/+$/, '')
@@ -206,7 +206,6 @@ async function main(): Promise<void> {
         const wanted = await derived(userId)
         expect(claims.sub === wanted, `sub is ${String(claims.sub)}, not ${wanted} of the Clerk user id ${userId}`)
         expect(claims.idp === IDP && claims.client_id === PRODUCT, `idp and client_id are ${String(claims.idp)} and ${String(claims.client_id)}`)
-        // A missing profile almost always means the instance has no "Customize session token" claims
         expect(claims.name === 'Nina North', `name is ${String(claims.name)}: are the session-token claims set on the instance (docs/idp-clerk.md)?`)
         expect(typeof claims.email === 'string' && (claims.email as string).startsWith('e2e-nina-'), `email is ${String(claims.email)}`)
         expect(typeof claims.picture === 'string' && (claims.picture as string).startsWith('https://'), `picture is ${String(claims.picture)}`)
