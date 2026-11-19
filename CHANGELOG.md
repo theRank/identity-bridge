@@ -34,10 +34,10 @@ breaking change to the [wire contract](docs/api.md) is a new major version of al
 - Workers Logs turned on by the repository's `wrangler.jsonc`, for the bridge's own log lines only.
 - `scripts/smoke.ts`, a post-deploy smoke test; `scripts/deploy-esa.ts`, an ESA deploy through its OpenAPI;
   `scripts/dev-env.ts`, throwaway values for local runs.
-- `scripts/e2e-casdoor.ts`, the bridge against a real Casdoor, run on changes to the service and weekly against
-  Casdoor's newest release.
+- `scripts/e2e-casdoor.ts`, the bridge against a real Casdoor: the pinned version on changes to the service,
+  and weekly both it and Casdoor's newest release.
 - `scripts/e2e-clerk.ts`, the bridge against a real Clerk instance, run on changes to the service and weekly,
-  outside a fork's pull request.
+  except for fork and Dependabot pull requests.
 
 ### Packages
 

@@ -1,12 +1,10 @@
 # Deploying on Alibaba Cloud Function Compute
 
 The bridge as a Function Compute 3.0 function, running the release's Node bundle as a code package, for
-mainland China. It uses the same Node 24 bundle as a local deployment. The bridge sets no product-count
-limit on webhook fan-out; function resources and timeouts still apply.
+mainland China. Unlike ESA, it sets no limit on webhook fan-out beyond the function's resources and timeout.
 [Choosing a runtime](../README.md#choosing-a-runtime) compares the options.
 
-Function Compute's documentation does not describe all of what a deployment meets. What it leaves out is given
-here as observed on Function Compute 3.0 in cn-hangzhou in 2026-11; Function Compute's source is not public.
+Observations below are from Function Compute 3.0 in `cn-hangzhou` in 2026-11.
 
 ## Pinning a release
 
@@ -40,8 +38,6 @@ zip code.zip server.mjs
 The fields are those of the `CreateFunction` and `UpdateFunction` APIs ([function][fc-function-struct],
 [custom runtime][fc-custom-runtime-config]); the console has a setting for each.
 
-Why each one:
-
 - **Runtime and layer.** `custom.debian12` is a custom runtime: Function Compute starts the startup command and
   forwards HTTP requests to the port it listens on ([custom runtime][fc-custom-runtime]). Its official
   `Nodejs24` layer provides Node.js 24, version 24.22.1 in layer version 2, under `/opt/nodejs24/bin`
@@ -73,11 +69,11 @@ The configuration, the keys and the webhook secrets are environment variables, w
 encrypted at rest ([environment variables][fc-env]).
 
 **Size.** Function Compute documents a limit of 4 KB for all environment variables together
-([environment variables][fc-env]). Observed on Function Compute 3.0 in 2026-11, `UpdateFunction` accepted up
-to 32 KiB and refused 33 KiB with `Environment variable size is too large (max: 32768, actual: '33792')`.
-Keep the minified configuration, the keys and the secrets within the documented 4 KB;
-[sizes](configuration.md#sizes) covers what to count. A deployment that does not fit needs another runtime:
-the bridge reads its configuration only from the environment.
+([environment variables][fc-env]). Observed: `UpdateFunction` accepted up to 32 KiB and refused 33 KiB with
+`Environment variable size is too large (max: 32768, actual: '33792')`. Keep the minified configuration, the
+keys and the secrets within the documented 4 KB; [sizes](configuration.md#sizes) covers what to count. A
+deployment that does not fit needs another runtime: the bridge reads its configuration only from the
+environment.
 
 **Who can read them.** `GetFunction` returns the function's environment variables, the keys and secrets
 included, to any RAM user allowed the action `fc:GetFunction` on it ([GetFunction][fc-get-function]). Grant
@@ -124,9 +120,8 @@ Observed: a code package function serves the new code at once. [What the smoke t
 
 ## Key rotation
 
-Follow [rotating the signing key](configuration.md#rotating-the-signing-key): update `SIGNING_KEYS`, wait for
-the update, run the smoke test, and later update it again without the retired key. During a rotation
-`SIGNING_KEYS` holds two keys; check that everything still fits within the documented 4 KB.
+Follow [key rotation](configuration.md#rotating-the-signing-key), waiting for each function update to complete.
+Allow space for the new private key and all retained public keys within the documented variable limit.
 
 ## Container images
 

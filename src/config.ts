@@ -1,6 +1,7 @@
 import type { ClaimMapping, Config, IdpAlgorithm, IdpBinding, IdpConfig, ProductConfig, WebhookSourceConfig } from './types'
 
-// Prefixed with the JSON path of the offending value; quotes only short configuration values, never the raw input
+// Prefixed with the JSON path of the offending value; quotes configuration values cut to 64 characters, never the
+// raw input
 export class ConfigError extends Error {
     override name = 'ConfigError'
 
@@ -112,7 +113,6 @@ interface Bound {
     idpAt: At
     product: string
     binding: IdpBinding
-    // The clientIds and authorizedParties entries
     clients: At[]
 }
 
@@ -239,7 +239,6 @@ function reference<T>(at: At, record: Record<string, T>, kind: string): T {
     return record[key] ?? at.fail(`unknown ${kind} ${quote(key)}`)
 }
 
-// Carries the JSON path into validation errors.
 class At {
     readonly value: unknown
     readonly path: string
@@ -335,7 +334,7 @@ class Fields {
     }
 }
 
-// Consumers index records with untrusted keys, such as a token's audience, so no record has a prototype
+// Untrusted keys must not resolve inherited properties.
 function nullRecord<T>(): Record<string, T> {
     return Object.create(null)
 }

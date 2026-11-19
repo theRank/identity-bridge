@@ -1,7 +1,6 @@
 name: Test
 
-# The typecheck is a separate step because wrangler and esbuild strip types without checking them. Nothing here
-# deploys or publishes.
+# Typecheck separately: wrangler and esbuild strip types without checking them.
 
 on:
   pull_request:
@@ -58,7 +57,6 @@ jobs:
         with:
           persist-credentials: false
 
-      # Only to run the scripts, which need nothing installed
       - name: Set up Node
         uses: actions/setup-node@v7
         with:
@@ -73,7 +71,6 @@ jobs:
           docker run --detach --name "$CONTAINER" --env-file "$RUNNER_TEMP/dev.env" \
             --publish 127.0.0.1:8080:8080 "$IMAGE"
 
-      # A container that exited will never become healthy, so that fails at once
       - name: Wait for the health check
         run: |
           for _ in $(seq 30); do
@@ -102,9 +99,7 @@ jobs:
       - name: Smoke test
         run: node scripts/smoke.ts http://127.0.0.1:8080 acme
 
-      # A request held in flight by Expect: 100-continue, its body unsent, must still be answered once the stop has
-      # begun, and the stop must end with exit code 0 inside Docker's default 10 s grace period, which the bundle's
-      # own 8 s deadline stays under
+      # Hold the body until shutdown starts to check that in-flight requests finish within Docker's 10 s grace.
       - name: Stop with a request in flight
         run: |
           body='grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Atoken-exchange'
@@ -141,8 +136,7 @@ jobs:
             exit 1
           fi
 
-      # As PID 1 a signal without a handler is ignored, so the bundle keeps its handler: a second signal during a
-      # stop exits at once with 128 + 15
+      # PID 1 ignores unhandled signals: a persistent handler must make the second SIGTERM exit with 143.
       - name: Second signal
         run: |
           docker start "$CONTAINER" > /dev/null

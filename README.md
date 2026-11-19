@@ -4,9 +4,7 @@ A stateless identity broker for Clerk and Casdoor. Clients exchange an identity 
 short-lived bridge access token through [RFC 8693](https://www.rfc-editor.org/rfc/rfc8693). Product backends
 verify bridge tokens against its JWKS and receive user lifecycle webhooks as signed security event tokens.
 
-Product backends use the same token and event formats across IdPs; clients still integrate with their chosen
-IdP's sign-in flow. This repository provides the service and TypeScript SDKs. Each deployer maintains its own
-configuration. See the [changelog](CHANGELOG.md) for release status.
+This repository provides the service and its TypeScript SDKs; each deployer keeps its own configuration.
 
 ```text
                     1 sign in
@@ -73,12 +71,10 @@ Clerk outside mainland China and Casdoor inside it.
 | [Alibaba Cloud Function Compute](docs/deploy-fc.md) | Mainland China, on an ICP-filed domain | Runs the Node bundle; account for cold starts and variable size limits |
 | [Node](docs/deploy-node.md) | Any host | The Node bundle or the container image, on a host you run |
 
-Deployment guides include platform limits and observed behavior. A container can share an existing Casdoor
-host.
-
 ## Releases
 
-Releases are tagged `vX.Y.Z`. Deployments pin a tag. Each release has:
+See the [changelog](CHANGELOG.md) for release status. Releases are tagged `vX.Y.Z`; pin a tag for deployment.
+The release workflows publish:
 
 - on its [GitHub release](https://github.com/theRank/identity-bridge/releases), `server.mjs`, the single-file
   Node bundle, and `esa.js`, the single-file ESA bundle, each with a `.sha256` file;
@@ -119,19 +115,17 @@ npm run dev         # a local Worker, reading .dev.vars
 `node scripts/dev-env.ts` prints throwaway values on `*.example` hosts for local runs; see
 [deploy-node.md](docs/deploy-node.md#trying-it-locally).
 
-`node scripts/e2e-casdoor.ts` runs the Node bundle against a throwaway Casdoor container, set up as
-[idp-casdoor.md](docs/idp-casdoor.md) says: token exchange, the webhook relay, and what that guide says Casdoor
-lets users write. It needs Docker and `openssl`, and `npm run build:node` first; an image name as its argument
-picks another Casdoor version. CI runs it on changes to the service, and weekly against Casdoor's newest
-release.
+Build with `npm run build:node` before running the IdP integration checks:
 
-`node scripts/e2e-clerk.ts` runs the Node bundle against a real Clerk instance: it creates throwaway users
-through the Backend API, exchanges a session token for each and checks the access token. It needs
-`npm run build:node` first, a dedicated Clerk development instance set up as [idp-clerk.md](docs/idp-clerk.md)
-says, and its secret key in `CLERK_SECRET_KEY` with the instance's Frontend API URL in `CLERK_ISSUER`. Because
-the secret is not a fork's to hold, CI runs it on changes to the service from a branch of this repository, and
-weekly; a fork's pull request skips it, and it stays out of the required checks, as it depends on Clerk being
-reachable. Webhooks are not covered: Clerk delivers them asynchronously over the public internet.
+- `node scripts/e2e-casdoor.ts [image]`: token exchange, webhook delivery and user write permissions against a
+  throwaway Casdoor container configured as in [the setup guide](docs/idp-casdoor.md). Requires Docker and
+  `openssl`; the optional image selects another Casdoor version. CI runs it against the pinned version on
+  service changes, and against both the pinned version and `latest` weekly and manually.
+- `node scripts/e2e-clerk.ts`: token exchange against a dedicated Clerk development instance configured as in
+  [the setup guide](docs/idp-clerk.md). Set `CLERK_SECRET_KEY` and either `CLERK_ISSUER` (the Frontend API URL)
+  or `CLERK_PUBLISHABLE_KEY`. It creates and deletes test users; webhooks are not covered. CI runs on service
+  changes, weekly and manually, but skips fork and Dependabot pull requests. Keep this external-service
+  check out of required checks.
 
 ## Security
 

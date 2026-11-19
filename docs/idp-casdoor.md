@@ -4,11 +4,9 @@ How to set up a self-hosted [Casdoor][casdoor-docs] instance for the bridge, inc
 sign-in. One Casdoor instance can serve several products. The matching bridge configuration is the
 [Casdoor example](configuration.md#a-casdoor-deployment).
 
-Casdoor's documentation does not describe all of what the bridge relies on, and in places differs from what
-Casdoor does. Where it does, this guide links to Casdoor's source at release
-[4.29.0][casdoor-commit], the version this release was checked against. The repository's
-[`scripts/e2e-casdoor.ts`](../scripts/e2e-casdoor.ts) runs the bridge against a Casdoor set up this way, and
-its CI repeats that weekly with Casdoor's newest release.
+This guide is checked against Casdoor [4.29.0][casdoor-commit] and links to that version's source where its
+documentation differs. [`scripts/e2e-casdoor.ts`](../scripts/e2e-casdoor.ts) exercises this setup;
+see [Development](../README.md#development) for prerequisites and CI coverage.
 
 ## Instance
 
@@ -193,8 +191,6 @@ The bridge source:
 }
 ```
 
-Why each setting:
-
 - **A public address.** The webhooks of every organization but `built-in` may send requests only to Internet
   addresses ([Casdoor][casdoor-webhooks], [source][casdoor-public-only]), so the bridge must be reachable at
   one.
@@ -247,8 +243,8 @@ To set the fields, read the webhook with `GET /api/get-webhook?id=admin/<webhook
 the whole object back to `POST /api/update-webhook?id=admin/<webhook name>`, as an admin
 ([API][casdoor-api], [source][casdoor-webhook-api]). An organization admin must add
 `&organization=<organization>` to the `get-webhook` request, or Casdoor answers `null`; a global admin need not
-([source][casdoor-get-webhook], [source][casdoor-get-webhook-org]). The instance's Swagger page may not list the retry fields;
-Casdoor reads them anyway ([source][casdoor-webhook-struct]).
+([source][casdoor-get-webhook], [source][casdoor-get-webhook-org]). The instance's Swagger page may not list
+the retry fields; Casdoor reads them anyway ([source][casdoor-webhook-struct]).
 
 ### Restart after the first webhook
 
@@ -274,9 +270,8 @@ expire) rather than on events.
 
 ## What is not relayed
 
-Casdoor's webhook body is an audit record of an API call, and for most actions its `object` is whatever the
-caller sent. The bridge relays only what it can trust ([mapping](api.md#casdoor-sources)), so products do not
-receive:
+For most actions a record's `object` is whatever the caller sent. The bridge relays only what it can trust
+([mapping](api.md#casdoor-sources)), so products do not receive:
 
 - **Profile updates.** An `update-user` body is the caller's, and users may update their own accounts.
   Products see a changed profile in the claims of the user's next access token.
@@ -307,8 +302,8 @@ A mini program signs in with Casdoor's mini program code login:
 
 1. In Casdoor, add a provider with the mini program's AppID and app secret, and add it to the mini program's
    application. Casdoor's [mini program guide][casdoor-miniprogram] says to use a provider of type `WeChat`;
-   at the commit this release was checked against, Casdoor looks for one of type `WeChatMiniProgram`
-   ([source][casdoor-miniprogram-provider]), so use that type.
+   Casdoor 4.29.0 looks for one of type `WeChatMiniProgram` ([source][casdoor-miniprogram-provider]), so use
+   that type.
 2. The mini program calls [`wx.login`][wx-login] for a code, valid for five minutes and usable once
    ([login][wx-login-flow]), and posts it with `client_id` and `tag=wechat_miniprogram` to Casdoor's
    `/api/login/oauth/access_token` ([guide][casdoor-miniprogram], [source][casdoor-miniprogram-tag]). No client

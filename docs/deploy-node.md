@@ -46,7 +46,7 @@ build stage's `npm ci` at a registry mirror.
 
 ## Configuration and secrets
 
-The server reads its environment once, at start:
+The server reads its environment once, at start, so a change takes effect on restart:
 
 | Variable | Default | Meaning |
 |---|---|---|
@@ -58,9 +58,7 @@ The server reads its environment once, at start:
 
 - When using the image's health check, bind an address that accepts connections to `127.0.0.1`, such as the
   default `0.0.0.0`.
-- A change takes effect on restart: the runtime is loaded once per process.
-- Webhook secrets must not start or end with whitespace. A secret file that ends with a newline fails the load,
-  with the reason `webhook secret for source <id> has surrounding whitespace`.
+- [Webhook secrets](configuration.md#webhook-secrets) must not start or end with whitespace.
 
 Pass `SIGNING_KEYS` and the webhook secrets from your orchestrator's secrets or from files at run time. Never
 bake them into an image. With `docker run`, an env file holds one `NAME=value` per line
@@ -74,9 +72,9 @@ docker run --detach --name identity-bridge --publish 127.0.0.1:8080:8080 \
 ```
 
 `--env-file` makes the values part of the container's configuration, and `docker inspect` shows them to anyone
-who can reach the Docker daemon, as observed with this image in 2026-11; Docker warns against passing secrets
-as environment variables ([Compose secrets][compose-use-secrets]). Keep it for local runs, and use the Compose
-or Kubernetes secrets below in production.
+who can reach the Docker daemon; Docker warns against passing secrets as environment variables
+([Compose secrets][compose-use-secrets]). Keep it for local runs, and use the Compose or Kubernetes secrets
+below in production.
 
 With Docker Compose secrets, which arrive as files, a shell reads them into the environment; `$(cat ...)` also
 drops a trailing newline:
@@ -155,9 +153,9 @@ ended before the request was read completely, as when the 30-second request time
 
 ## Stopping
 
-On `SIGTERM` or `SIGINT` the server logs `{"event":"stopping","signal":"SIGTERM"}`, stops accepting
-connections, gives requests in flight up to 8 seconds, and exits: with `0`, or `1` when the deadline cut
-requests off. A second signal exits at once.
+On `SIGTERM` or `SIGINT` the server stops accepting connections, logs `{"event":"stopping","signal":"SIGTERM"}`,
+gives requests in flight up to 8 seconds, and exits: with `0`, or `1` when the deadline cut requests off. A
+second signal exits at once.
 
 Give it a stop grace period of at least 10 seconds, so the 8-second deadline, not a kill, ends a stop: Docker's
 default for `docker stop` ([Docker][docker-stop]), Compose's `stop_grace_period`
@@ -181,8 +179,8 @@ node scripts/smoke.ts https://id.cn.acme.example acme
 
 ## Key rotation
 
-Follow [rotating the signing key](configuration.md#rotating-the-signing-key): set the new `SIGNING_KEYS`,
-restart, and run the smoke test; later drop the retired key and restart again.
+Follow [key rotation](configuration.md#rotating-the-signing-key), restarting the process after each
+`SIGNING_KEYS` update.
 
 ## Trying it locally
 

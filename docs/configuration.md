@@ -14,9 +14,8 @@ Each runtime takes them as environment variables or bindings: see
 deployment values; keep yours with your deployment.
 
 The bridge loads these values once per isolate or process. Invalid configuration or signing keys, or a
-missing, empty or whitespace-padded webhook secret, cause [failure mode](api.md#failure-mode): `/healthz`
-answers `503`, and a [`runtime_load_failed`](#runtime-load-failures) line identifies the problem. Webhook
-secret contents are checked during authentication, not at startup.
+missing or [whitespace-padded](#webhook-secrets) webhook secret, cause [failure mode](api.md#failure-mode):
+`/healthz` answers `503`, and a [`runtime_load_failed`](#runtime-load-failures) line identifies the problem.
 
 ## The configuration document
 
@@ -143,9 +142,9 @@ A record does not repeat its id as a member: `id` is an unknown key. Durations a
 - An email is kept only when verified and containing `@`. A phone number is kept only when verified and
   matching `^\+[1-9]\d{6,14}$` (E.164). A name is trimmed and dropped when empty. A picture is kept only as an
   `https` URL without userinfo, spaces, control characters or backslashes.
-- With `phoneRegion`, the `phone` claim is a national number, digits that do not begin with a zero, and its region is
-  an ISO 3166-1 code in capitals. The bridge joins them into E.164 by the region's calling code, and drops a
-  pair that makes no number ([Casdoor](idp-casdoor.md#phone-numbers)).
+- With `phoneRegion`, the `phone` claim is a national number, digits that do not begin with a zero, and its
+  region is an ISO 3166-1 code in capitals. The bridge joins them into E.164 by the region's calling code, and
+  drops a pair that makes no number ([Casdoor](idp-casdoor.md#phone-numbers)).
 - Claim names depend on the IdP. Casdoor's depend on the application's token format: with `JWT-Custom`, a
   selected field such as `EmailVerified` becomes the claim `emailVerified`, and `Properties.uid` becomes a
   top-level `uid` claim ([idp-casdoor.md](idp-casdoor.md#token-format)).
@@ -243,10 +242,9 @@ To rotate a webhook secret:
 
 ## Sizes
 
-Function Compute and ESA limit the total size of a function's variables: keep within 4 KB on
-[Function Compute](deploy-fc.md#configuration-and-secrets) and 16 KiB on ESA's free plan
-([ESA](deploy-esa.md#variables)). Count all variable names and values, including webhook secrets, and leave
-room for retired public keys during rotation.
+Check the variable limits for [Function Compute](deploy-fc.md#configuration-and-secrets),
+[ESA](deploy-esa.md#variables) or [Workers](deploy-workers.md#limits-and-abuse). For total-size limits, count
+all names and values, including webhook secrets, and leave room for retired public keys during rotation.
 
 Minify `BRIDGE_CONFIG`, for example with `node -e 'process.stdout.write(JSON.stringify(require("./bridge-config.json")))'`.
 

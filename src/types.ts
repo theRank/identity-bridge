@@ -49,7 +49,6 @@ export interface IdpBinding {
     authorizedParties?: string[]
 }
 
-// Casdoor sources must carry an organization for tenant filtering.
 export type WebhookSourceConfig = ClerkSourceConfig | CasdoorSourceConfig
 
 interface SourceConfigFields {
@@ -124,7 +123,7 @@ export type OAuthErrorCode =
     | 'temporarily_unavailable'
     | 'server_error'
 
-// Filled in by the router and the route handlers as facts become known; dispatch turns it into the request's LogLine
+// The LogLine fields a route fills in as it goes
 export interface RouteContext {
     product?: string
     idp?: string

@@ -85,10 +85,8 @@ for deduplication and deletion handling.
 | `clockToleranceSeconds` | `number` | Leeway for `exp` and `nbf`, from `0` to `60`. Default `60`. |
 | `fetch` | `typeof fetch` | Used to fetch the keys. Default: the global `fetch`. |
 
-Invalid options throw from `createVerifier`: a `TypeError` when `issuer` or `audience` is not a non-empty
-string, or when `clockToleranceSeconds` is not a number, such as the string `'30'` read from an environment
-variable; a `RangeError` when `clockToleranceSeconds` is outside `0` to `60`. So a missing setting fails at
-startup instead of letting other products' tokens through.
+Invalid options fail at startup: `TypeError` if `issuer` or `audience` is not a non-empty string, the JWKS URL
+cannot be parsed, or the tolerance is not a number; `RangeError` for a tolerance outside `0` to `60` or `NaN`.
 
 The keys are cached for 10 minutes; a token whose key is not among them makes the verifier fetch the keys
 again, at most once every 30 seconds. A fetch that has not completed after 5 seconds fails.
@@ -131,8 +129,8 @@ keeps an event, which never expires, from being accepted as an access token.
 
 ### `BridgeTokenError`
 
-Every verification failure rejects with a `BridgeTokenError` whose `reason` says why. It has no `cause`, and
-its message holds the reason alone, never the token or its claims, so it is safe to log.
+Recognized verification failures reject with a `BridgeTokenError`. Its message is
+`bridge token rejected: <reason>`, with no `cause`, token or claims, so it is safe to log.
 
 Invalid options throw from `createVerifier`. Unclassified runtime errors, such as a missing
 `AbortSignal.timeout`, pass through unchanged; the examples above rethrow them.

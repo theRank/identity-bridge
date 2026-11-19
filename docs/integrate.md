@@ -16,9 +16,9 @@ A client signs the user in with the IdP, then asks the bridge for an access toke
 The bridge refuses an IdP token older than `maxTokenAgeSeconds`, 15 minutes by default, so the client gets a
 fresh IdP token for every exchange ([why](api.md#processing)).
 
-`createBridgeClient` caches the bridge token in memory. A `getToken()` call refreshes it when near expiry
-([details](../packages/client/README.md#how-it-works)); there is no background refresh. Supply a function
-that returns a fresh IdP token:
+`createBridgeClient` keeps the bridge token in memory, and `getToken()` answers from it until the token nears
+expiry, then exchanges again; there is no background refresh
+([details](../packages/client/README.md#how-it-works)). Supply a function that returns a fresh IdP token:
 
 ```ts
 import { createBridgeClient } from '@therank/identity-bridge-client'
@@ -37,9 +37,10 @@ const response = await fetch('https://api.acme.example/me', {
 bridge.clear()
 ```
 
-Call `getToken()` before each request to the backend; it answers from memory while the token is fresh. It
-throws a `BridgeError` whose `error` says why an exchange failed; `invalid_request` with status 400 usually
-means the user must sign in again. The [client README](../packages/client/README.md#bridgeerror) lists them.
+Call `getToken()` before each request to the backend. It throws a `BridgeError` when an exchange fails without
+a usable fallback ([errors](../packages/client/README.md#bridgeerror)). `400 invalid_request` can mean an
+unacceptable IdP token or a malformed request: sign in again if the session ended; otherwise check the bridge
+logs.
 
 ### Clerk
 
@@ -137,9 +138,7 @@ A client that does this itself follows the same pattern as the SDK:
 3. When it is due, get a fresh IdP token and exchange again. Let concurrent callers wait for the one exchange
    in flight.
 4. Retry `503 temporarily_unavailable`, and a request that got no answer, a couple of times with the same IdP
-   token, after a short wait. Other errors need investigation: `400 invalid_request` can mean a malformed
-   request or an unacceptable IdP token. Sign in again if the session has ended; check the bridge logs for
-   request or configuration problems.
+   token, after a short wait. Do not retry other errors; handle `400 invalid_request` as [above](#clients).
 5. On sign-out, drop the token.
 
 ## Backends
@@ -506,8 +505,8 @@ request, which is why users are created on first sight, below.
 - **Create users on first sight**, from whichever comes first: an access token or a `user-created` event, unless
   the id has a tombstone (below), checking it under the same lock on the user id as events. Some users produce
   no `user-created` at all.
-- **Refresh profiles from token claims.** Each access token carries the current verified email, name and
-  picture. For Casdoor users this is the only way profile changes arrive.
+- **Refresh profiles from token claims.** Tokens include available email, phone, name and picture fields;
+  email and phone appear only when verified. For Casdoor users this is the only way profile changes arrive.
 - **Keep authorization in the product**, keyed by `sub`. The bridge carries no roles or permissions.
 - **After `user-deleted`**, keep the tombstone: later events for the id change nothing. The bridge does not
   know about the deletion: it still exchanges an IdP token issued before it until that token expires or is too

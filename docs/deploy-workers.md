@@ -60,6 +60,8 @@ is where the SDKs reach the bridge ([issuer](api.md#issuer)).
   ([limits][cf-limits]). An exchange verifies the IdP's signature and signs a token; measure its CPU time, and
   move to the Paid plan if it comes close to the limit.
 - `/token` is public. Limit request rates on the zone with a rate limiting rule ([rate limiting][cf-rate-limit]).
+- Each variable is limited to 5 KB ([limits][cf-limits]); check the serialized `BRIDGE_CONFIG` and `SIGNING_KEYS`,
+  including retired keys during rotation.
 
 ## Logs
 
@@ -88,9 +90,8 @@ node scripts/smoke.ts https://id.acme.example acme
 
 ## Key rotation
 
-Follow [rotating the signing key](configuration.md#rotating-the-signing-key): put the new `SIGNING_KEYS` with
-`wrangler secret put`, run the smoke test, and later put it again without the retired key. Every isolate loads
-the new secret, since a new version starts new isolates.
+Follow [key rotation](configuration.md#rotating-the-signing-key), applying each `SIGNING_KEYS` update with
+`wrangler secret put SIGNING_KEYS --name identity-bridge-acme`. Each update deploys a new Worker version.
 
 ## Upgrading
 
