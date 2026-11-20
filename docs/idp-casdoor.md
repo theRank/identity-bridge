@@ -8,6 +8,9 @@ This guide is checked against Casdoor [4.29.0][casdoor-commit] and links to that
 documentation differs. [`scripts/e2e-casdoor.ts`](../scripts/e2e-casdoor.ts) exercises this setup;
 see [Development](../README.md#development) for prerequisites and CI coverage.
 
+[Webhooks](#webhook) need Casdoor 4.28 or later. No minimum is known for token exchange, which CI exercises
+against 4.29.0 and Casdoor's newest release only.
+
 ## Instance
 
 - **Set `origin`.** Set `origin` in Casdoor's `conf/app.conf` to its public URL, such as
@@ -167,9 +170,11 @@ the [record][casdoor-records] of the API call. Those docs also leave out the ext
 fields and the names of the retry fields.
 
 Webhooks need Casdoor 4.28 or later. The bridge names each event by the id of its record
-([event id](api.md#casdoor-sources)), which earlier releases send as `0`. Those ids number the rows of one
-database: after a restore from a backup, or a move to a new database that does not carry the records over,
-Casdoor gives out ids it has used before, and products discard the events that carry them as repeats.
+([event id](api.md#casdoor-sources)), which earlier releases send as `0`: the bridge answers every webhook of
+such a release with `200`, relays nothing and logs [`bad_payload`](configuration.md#log-codes). Those ids
+number the rows of one database: after a restore from a backup, or a move to a new database that does not carry
+the records over, Casdoor gives out ids it has used before, and products discard the events that carry them as
+repeats.
 
 | Setting | Value |
 |---|---|
