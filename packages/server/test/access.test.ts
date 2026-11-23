@@ -92,6 +92,12 @@ describe('verifyAccessToken', () => {
         expect(await verifier.verifyAccessToken(token)).toStrictEqual({ userId: decodeJwt(token).sub, region: 'us', expiresAt: NOW_SEC + 900 })
     })
 
+    it('gives updated_at as updatedAt', async () => {
+        const { real, verifier } = setup()
+        const token = await resign(keys, await real.accessToken(), { claims: { updated_at: NOW_SEC - 3600 } })
+        expect(await verifier.verifyAccessToken(token)).toMatchObject({ email: ADA.email, updatedAt: NOW_SEC - 3600 })
+    })
+
     it('does not expose the idp claim', async () => {
         const { real, verifier } = setup()
         const token = await real.accessToken()
@@ -224,6 +230,8 @@ describe('verifyAccessToken', () => {
             ['a sub that is not a string', { sub: 42 }],
             ['an email that is not a string', { email: ['ada@acme.example'] }],
             ['a region that is not a string', { region: 1 }],
+            ['an updated_at that is not a number', { updated_at: String(NOW_SEC) }],
+            ['an updated_at that is null', { updated_at: null }],
         ])('rejects %s as invalid_claims', async (_, claims) => {
             const { real, verifier } = setup()
             const token = await resign(keys, await real.accessToken(), { claims })

@@ -166,6 +166,7 @@ describe('parseConfig documents', () => {
         expect(Object.keys(config)).toEqual(['issuer', 'tokenTtlSeconds', 'idps', 'products', 'webhookSources'])
         expect(Object.keys(config.idps.idp!.claims)).not.toContain('uid')
         expect(Object.keys(config.idps.idp!.claims)).not.toContain('phoneRegion')
+        expect(Object.keys(config.idps.idp!.claims)).not.toContain('updatedAt')
         expect(Object.keys(config.products.app!)).toEqual(['id', 'idps', 'allowedOrigins'])
         expect(Object.keys(config.products.app!.idps[0]!)).toEqual(['idp'])
     })
@@ -196,6 +197,21 @@ describe('parseConfig documents', () => {
         ],
         ['literal true for both verified flags', 'clerk', (doc) => (doc.idps['clerk-acme'].claims.phoneVerified = true)],
         ['a phone region claim', 'casdoor', (doc) => Object.assign(doc.idps.casdoor.claims, { phone: 'phone', phoneRegion: 'countryCode', phoneVerified: true })],
+        ['an updatedAt claim', 'clerk', (doc) => (doc.idps['clerk-acme'].claims.updatedAt = 'updated_at')],
+        ['iat as the updatedAt claim', 'casdoor', (doc) => (doc.idps.casdoor.claims.updatedAt = 'iat')],
+        [
+            'updatedAt on an IdP that several single-IdP products bind',
+            'casdoor',
+            (doc) => (doc.idps.casdoor.claims.updatedAt = 'iat'),
+        ],
+        [
+            'a product bound to several IdPs, none mapping updatedAt',
+            'clerk',
+            (doc) => {
+                doc.idps.other = { issuer: 'https://other.example', jwksUri: 'https://other.example/jwks' }
+                doc.products.acme.idps.push({ idp: 'other' })
+            },
+        ],
         ['an id of 63 characters', 'minimal', (doc) => (doc.products = { ['a'.repeat(63)]: { idps: [{ idp: 'idp' }] } })],
         ['a one-digit id', 'minimal', (doc) => (doc.products = { '0': { idps: [{ idp: 'idp' }] } })],
         ['capacitor://localhost', 'clerk', (doc) => (doc.products.acme.allowedOrigins = ['capacitor://localhost'])],
@@ -214,12 +230,14 @@ describe('parseConfig documents', () => {
                 doc.idps.casdoor.requiredClaims = { ver: 2, admin: false }
                 doc.idps.casdoor.claims.phoneVerified = true
                 doc.idps.casdoor.claims.phoneRegion = 'countryCode'
+                doc.idps.casdoor.claims.updatedAt = 'iat'
                 doc.products.acme.allowedOrigins = ['capacitor://localhost', 'http://localhost:5173']
             }),
         )
         expect(config.idps.casdoor!.requiredClaims).toEqual({ ver: 2, admin: false })
         expect(config.idps.casdoor!.claims.phoneVerified).toBe(true)
         expect(config.idps.casdoor!.claims.phoneRegion).toBe('countryCode')
+        expect(config.idps.casdoor!.claims.updatedAt).toBe('iat')
         expect(config.products.acme!.allowedOrigins).toEqual(['capacitor://localhost', 'http://localhost:5173'])
     })
 })
@@ -554,6 +572,24 @@ describe('parseConfig field rules', () => {
             'idps.casdoor.claims.phoneRegion: must be a non-empty string',
         ],
         [
+            'an empty updatedAt claim',
+            'clerk',
+            (doc) => (doc.idps['clerk-acme'].claims.updatedAt = ''),
+            'idps.clerk-acme.claims.updatedAt: must be a non-empty string',
+        ],
+        [
+            'literal true for the updatedAt claim',
+            'clerk',
+            (doc) => (doc.idps['clerk-acme'].claims.updatedAt = true),
+            'idps.clerk-acme.claims.updatedAt: must be a non-empty string',
+        ],
+        [
+            'a snake_case updatedAt key',
+            'clerk',
+            (doc) => (doc.idps['clerk-acme'].claims.updated_at = 'updated_at'),
+            'idps.clerk-acme.claims.updated_at: unknown key',
+        ],
+        [
             'a misspelled phoneRegion key',
             'casdoor',
             (doc) => (doc.idps.casdoor.claims.phoneregion = 'countryCode'),
@@ -834,6 +870,25 @@ describe('parseConfig cross-references', () => {
             'clerk',
             (doc) => doc.products.acme.idps.push({ idp: 'clerk-acme' }),
             'products.acme.idps[1].idp: idp "clerk-acme" is already bound at idps[0]',
+        ],
+        [
+            'updatedAt on an IdP of a product bound to several IdPs',
+            'clerk',
+            (doc) => {
+                doc.idps.other = { issuer: 'https://other.example', jwksUri: 'https://other.example/jwks' }
+                doc.products.acme.idps.push({ idp: 'other' })
+                doc.idps['clerk-acme'].claims.updatedAt = 'updated_at'
+            },
+            'products.acme.idps[0].idp: idp "clerk-acme" maps updatedAt, which needs a product bound to it alone: times of different idps cannot be compared',
+        ],
+        [
+            'updatedAt on the second IdP of a product bound to several IdPs',
+            'clerk',
+            (doc) => {
+                doc.idps.other = { issuer: 'https://other.example', jwksUri: 'https://other.example/jwks', claims: { updatedAt: 'iat' } }
+                doc.products.acme.idps.push({ idp: 'other' })
+            },
+            'products.acme.idps[1].idp: idp "other" maps updatedAt, which needs a product bound to it alone: times of different idps cannot be compared',
         ],
         [
             'two IdP records with one issuer',

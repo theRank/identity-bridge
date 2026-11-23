@@ -70,6 +70,12 @@ describe('verifyEvent', () => {
         expect(await verifier.verifyEvent(token)).toMatchObject({ profile: { name: ADA.name } })
     })
 
+    it('gives a profile updated_at as updatedAt', async () => {
+        const { real, verifier } = setup()
+        const token = await resign(keys, await real.eventToken('user.updated'), { claims: { events: { [UPDATED]: { email: ADA.email, updated_at: NOW_SEC - 5 } } } })
+        expect(await verifier.verifyEvent(token)).toMatchObject({ profile: { email: ADA.email, updatedAt: NOW_SEC - 5 } })
+    })
+
     describe('reasons', () => {
         it('rejects an empty body as missing', async () => {
             const { verifier } = setup()
@@ -124,6 +130,7 @@ describe('verifyEvent', () => {
             ['an event type of another profile', { events: { 'https://schemas.openid.net/secevent/risc/event-type/account-disabled': {} } }],
             ['an event payload that is not an object', { events: { [UPDATED]: 'Ada' } }],
             ['a profile member that is not a string', { events: { [UPDATED]: { email: 42 } } }],
+            ['a profile updated_at that is not a number', { events: { [UPDATED]: { updated_at: '1760000000' } } }],
         ])('rejects %s as invalid_claims', async (_, claims) => {
             const { real, verifier } = setup()
             const token = await resign(keys, await real.eventToken('user.updated'), { claims })

@@ -40,6 +40,7 @@ CI (`.github/workflows/test.yml`) runs typecheck, test, build and the packages' 
 
 ## Change Rules
 
-- A wire contract change updates the service, both SDKs, `docs/api.md` and `CHANGELOG.md` together. A breaking
-  one is marked `!` and is a new major version of all three
+- A wire contract change updates the service, each SDK that reads the changed part, `docs/api.md` and
+  `CHANGELOG.md` together. The client SDK reads only the `/token` response, never token claims or events. A
+  breaking one is marked `!` and is a new major version of all three
 - A behavior change gets a line in the unreleased section of `CHANGELOG.md`

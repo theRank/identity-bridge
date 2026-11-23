@@ -45,6 +45,13 @@ export const clerk: WebhookAdapter = {
         const lifecycle: LifecycleEvent = { idpEventId, type: mapped, subject, profile: mapped === 'user-deleted' ? {} : profile(data) }
         // The configuration allows only external_id as a Clerk uidField. Absent or null means no override.
         if (source.uidField !== undefined && Object.hasOwn(data, 'external_id')) lifecycle.uid = own(data, 'external_id')
+        if (mapped !== 'user-deleted') {
+            // Clerk orders user events by updated_at; timestamp, when the event occurred, follows the write
+            const times = [own(data, 'updated_at'), own(event, 'timestamp')]
+                .filter((value) => value !== undefined)
+                .map((value) => (typeof value === 'number' ? value / 1000 : value))
+            if (times.length > 0) lifecycle.times = times
+        }
         return [lifecycle]
     },
 }

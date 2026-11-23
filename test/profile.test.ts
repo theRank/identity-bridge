@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { cleanProfile } from '../src/profile'
+import { cleanProfile, profileTime } from '../src/profile'
 import type { RawProfile } from '../src/types'
 
 const FULL: RawProfile = {
@@ -190,5 +190,49 @@ describe('cleanProfile', () => {
                 picture: 'https://img.acme.example/ada.png',
             })
         })
+    })
+})
+
+describe('profileTime', () => {
+    const NOW = 1_760_000_000
+    const TOLERANCE = 60
+
+    it.each([
+        ['whole seconds', NOW - 3600],
+        ['now', NOW],
+        ['a time within the tolerance', NOW + 30],
+        ['exactly now plus the tolerance', NOW + TOLERANCE],
+        ['an early time', 1],
+    ])('keeps %s', (_, value) => {
+        expect(profileTime(value, NOW, TOLERANCE)).toBe(value)
+    })
+
+    // Whole seconds, as OIDC's updated_at, which products often decode as an integer
+    it.each([
+        ['a fraction', NOW - 0.25, NOW - 1],
+        ['a fraction just below a second', NOW - 3600 + 0.999, NOW - 3600],
+        ['a fraction within the tolerance', NOW + TOLERANCE - 0.5, NOW + TOLERANCE - 1],
+    ])('floors %s to whole seconds', (_, value, expected) => {
+        expect(profileTime(value, NOW, TOLERANCE)).toBe(expected)
+    })
+
+    it.each([
+        ['zero', 0],
+        ['a fraction of the first second, which floors to zero', 0.5],
+        ['a negative time', -1],
+        ['a time beyond the tolerance', NOW + TOLERANCE + 0.001],
+        ['NaN', NaN],
+        ['Infinity', Infinity],
+        ['a numeric string', String(NOW)],
+        ['an ISO string', '2025-10-09T08:53:20Z'],
+        ['null', null],
+        ['undefined', undefined],
+        ['true', true],
+        ['an object', {}],
+        ['an array', [NOW]],
+        ['a Number object', new Number(NOW)],
+        ['a bigint', 1_760_000_000n],
+    ])('drops %s', (_, value) => {
+        expect(profileTime(value, NOW, TOLERANCE)).toBeUndefined()
     })
 })

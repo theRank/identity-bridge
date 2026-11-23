@@ -7,6 +7,8 @@ export interface MappedClaims {
     clientIds: string[]
     // Present only when a uid claim is mapped and the token has it; its value is unchecked
     uid?: unknown
+    // Likewise for the updatedAt claim
+    updatedAt?: unknown
     profile: RawProfile
 }
 
@@ -28,6 +30,7 @@ export function mapClaims(payload: Payload, mapping: ClaimMapping): MappedClaims
         },
     }
     if (mapping.uid !== undefined && Object.hasOwn(payload, mapping.uid)) mapped.uid = payload[mapping.uid]
+    if (mapping.updatedAt !== undefined && Object.hasOwn(payload, mapping.updatedAt)) mapped.updatedAt = payload[mapping.updatedAt]
     return mapped
 }
 

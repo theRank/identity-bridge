@@ -38,7 +38,7 @@ One Clerk application per product, so each product has an IdP of its own:
       "algorithms": ["RS256"],
       "maxTokenAgeSeconds": 900,
       "clockToleranceSeconds": 60,
-      "claims": { "uid": "uid", "email": "email", "emailVerified": true, "name": "name", "picture": "picture" }
+      "claims": { "uid": "uid", "email": "email", "emailVerified": true, "name": "name", "picture": "picture", "updatedAt": "updated_at" }
     }
   },
   "products": {
@@ -70,7 +70,7 @@ One shared Casdoor instance serving two products, its applications using the `JW
       "jwksUri": "https://casdoor.example/.well-known/jwks",
       "algorithms": ["RS256"],
       "requiredClaims": { "tokenType": "access-token" },
-      "claims": { "uid": "uid", "emailVerified": "emailVerified", "name": "displayName", "picture": "avatar" }
+      "claims": { "uid": "uid", "emailVerified": "emailVerified", "name": "displayName", "picture": "avatar", "updatedAt": "iat" }
     }
   },
   "products": {
@@ -111,7 +111,7 @@ A record does not repeat its id as a member: `id` is an unknown key. Durations a
 | `idps.*.requiredClaims` | no | A non-empty object of claim name to string, number or boolean. Each must equal the token's claim exactly. To require none, omit the key: `{}` is refused | absent |
 | `idps.*.claims` | no | The [claim mapping](#claim-mapping) | see below |
 | `products` | yes | A non-empty object of product records | |
-| `products.*.idps` | yes | A non-empty array of bindings, `{ "idp": "<idp id>" }` plus the optional lists below. Each `idp` exists and is bound at most once per product | |
+| `products.*.idps` | yes | A non-empty array of bindings, `{ "idp": "<idp id>" }` plus the optional lists below. Each `idp` exists and is bound at most once per product. With two or more bindings, none of their IdPs may map `updatedAt` ([claim mapping](#claim-mapping)) | |
 | `products.*.idps[].clientIds`, `products.*.idps[].authorizedParties` | no | Non-empty arrays of non-empty strings, checked against the token's client id claim and its `azp`. When two or more products bind the same IdP, each of those bindings MUST list at least one of the two, and no value may appear in the bindings of two products, counting both lists together (a Casdoor token carries its client id as both `aud` and `azp`, [source](https://github.com/casdoor/casdoor/blob/3d81f45bc98be0fe379b3a21973c783060066af5/object/token_jwt.go#L678-L697)): a shared value would let one product's token be exchanged for another's | |
 | `products.*.allowedOrigins` | no | Origins whose browsers may read `/token` answers ([CORS](api.md#cors)). Each is an `http` or `https` origin equal to `new URL(o).origin`, or `<scheme>://<host>` for another scheme such as `capacitor://localhost`, with no spaces or control characters | `[]` |
 | `products.*.events.url` | no | An `https` URL with no username or password, where the product receives [events](api.md#event-token). Without `events`, the product receives none | |
@@ -137,6 +137,7 @@ A record does not repeat its id as a member: `id` is an unknown key. Durations a
 | `phoneVerified` | `phone_number_verified` | A claim name, or the literal `true` |
 | `name` | `name` | The display name |
 | `picture` | `picture` | The avatar URL |
+| `updatedAt` | none | The claim holding when the profile was current, a NumericDate: `updated_at` for Clerk ([setup](idp-clerk.md#session-token)), `iat` for Casdoor. Turns on [`updated_at`](api.md#profile-time) in the IdP's access tokens and events together. Only for an IdP whose products bind no other IdP |
 
 - A verified flag counts only when the claim's value is the boolean `true`.
 - An email is kept only when verified and containing `@`. A phone number is kept only when verified and
@@ -145,6 +146,13 @@ A record does not repeat its id as a member: `id` is an unknown key. Durations a
 - With `phoneRegion`, the `phone` claim is a national number, digits that do not begin with a zero, and its
   region is an ISO 3166-1 code in capitals. The bridge joins them into E.164 by the region's calling code, and
   drops a pair that makes no number ([Casdoor](idp-casdoor.md#phone-numbers)).
+- `updatedAt` has no default: the token's `iat` is right for Casdoor and wrong for Clerk. Map it only once the
+  IdP's tokens carry the claim: before that, events have times and tokens do not, and products ignore every token
+  after the first event. Each IdP's times mean something else, so a product that compares them must take them
+  from one IdP: an IdP that maps `updatedAt` cannot share a product with another IdP. Once products store
+  times, keep it on. Without it, tokens carry no time, and a product that keeps the newest profile ignores
+  them, so stored emails and phones stop changing: entirely for Casdoor, whose profile changes arrive only in
+  tokens. To turn it off, have products clear their stored times first ([integrate.md](integrate.md#data-rules)).
 - Claim names depend on the IdP. Casdoor's depend on the application's token format: with `JWT-Custom`, a
   selected field such as `EmailVerified` becomes the claim `emailVerified`, and `Properties.uid` becomes a
   top-level `uid` claim ([idp-casdoor.md](idp-casdoor.md#token-format)).
@@ -268,6 +276,7 @@ The bridge writes one JSON line per request:
 | `idp` | The IdP id, once known |
 | `source` | The webhook source id, from the path |
 | `delivered`, `failed` | For webhooks, how many deliveries succeeded and failed |
+| `updatedAt` | `missing` or `invalid` when the IdP maps `updatedAt` but a token, or a relayed `user-created` or `user-updated`, had no usable time. That alone fails nothing: the token or event goes on without a time, and the request's status comes from the rest of it. Absent otherwise |
 
 Logs never hold tokens, emails, phone numbers or payload content.
 

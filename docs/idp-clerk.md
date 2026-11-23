@@ -18,7 +18,7 @@ apart and the binding needs no `clientIds`:
     "issuer": "https://clerk.acme.example",
     "jwksUri": "https://clerk.acme.example/.well-known/jwks.json",
     "algorithms": ["RS256"],
-    "claims": { "uid": "uid", "email": "email", "emailVerified": true, "name": "name", "picture": "picture" }
+    "claims": { "uid": "uid", "email": "email", "emailVerified": true, "name": "name", "picture": "picture", "updatedAt": "updated_at" }
   }
 }
 ```
@@ -46,6 +46,7 @@ bridge maps in the Clerk Dashboard, on the **Sessions** page, under **Customize 
   "email": "{{user.primary_email_address}}",
   "name": "{{user.full_name}}",
   "picture": "{{user.image_url}}",
+  "updated_at": "{{user.updated_at}}",
   "uid": "{{user.external_id}}"
 }
 ```
@@ -54,8 +55,18 @@ bridge maps in the Clerk Dashboard, on the **Sessions** page, under **Customize 
   not set renders as `null` ([shortcodes][clerk-shortcodes]), which the bridge reads as no value: no override,
   no name.
 - The session token is kept in a cookie, so Clerk advises keeping custom claims under about 1.2 KB
-  ([customizing][clerk-customize]); these four are well within it. Do not add others for the bridge: it reads
+  ([customizing][clerk-customize]); these five are well within it. Do not add others for the bridge: it reads
   only the mapped claims.
+- `updated_at` is the user's last update in Unix seconds ([shortcodes][clerk-shortcodes]), mapped as
+  `"updatedAt": "updated_at"` to give tokens and events a [profile time](api.md#profile-time). Do not map the
+  token's `iat` instead: Clerk can mint a session token with a new `iat` and the claims of the previous token
+  ([clerk/javascript#8097][clerk-minter]), so a new `iat` can come with an old email. `updated_at` is copied with
+  the other claims, so it always matches them. Every change to a user's email addresses, and every sign-in,
+  moves it forward. Without the claim, as in tokens minted before it was added, the token carries no time; the
+  bridge logs `"updatedAt": "missing"` and exchanges it anyway.
+- Add the claim here before the bridge maps `updatedAt`. Events take their time from the webhook payload,
+  whatever the session token holds, so with the mapping and without the claim, products that keep the newest
+  profile would ignore every token after the first event and follow webhooks alone.
 - Clerk's session tokens expire after 60 seconds, and `getToken()` returns a valid one, from its cache or newly
   minted ([`getToken()`][clerk-gettoken]), so a token can be up to a minute old. That is far younger than the
   default `maxTokenAgeSeconds` of 900; for Clerk, keep it at 60 or more, although the configuration allows 30.
@@ -91,6 +102,10 @@ event, deletions included. Clerk's `user.created` and `user.updated` events carr
 the user's id and, if one is set, `external_id` ([source][clerk-deleted-json]). An override kept in
 `public_metadata` would be missing from the deletion, which would then carry the wrong user id.
 
+During the migration the product binds both IdPs, so neither may map `updatedAt`: turn
+[profile times](api.md#profile-time) off first, products clearing their stored times, and on again once the
+product binds Clerk alone.
+
 ## Webhooks
 
 On the **Webhooks** page of the Clerk Dashboard, select **Add Endpoint** ([setting up][clerk-webhook-setup]):
@@ -114,6 +129,7 @@ its `jti` ([fan-out](api.md#fan-out)). Clerk does not promise an order ([webhook
 Clients pass a fresh session token to the bridge: [integrate.md](integrate.md#clerk).
 
 [clerk-docs]: https://clerk.com/docs
+[clerk-minter]: https://github.com/clerk/javascript/pull/8097
 [clerk-session-tokens]: https://clerk.com/docs/guides/sessions/session-tokens
 [clerk-default-claims]: https://clerk.com/docs/guides/sessions/session-tokens#default-claims
 [clerk-jwks]: https://clerk.com/docs/guides/sessions/manual-jwt-verification#get-your-instances-public-key

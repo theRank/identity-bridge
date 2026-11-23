@@ -34,6 +34,8 @@ export interface ClaimMapping {
     phoneVerified: string | true
     name: string
     picture: string
+    // The claim holding when the token's profile was current; set, it also turns on times in the IdP's events
+    updatedAt?: string
 }
 
 export interface ProductConfig {
@@ -86,6 +88,7 @@ export interface LogLine {
     source?: string
     delivered?: number
     failed?: number
+    updatedAt?: TimeStatus
 }
 
 export type LogCode =
@@ -131,6 +134,7 @@ export interface RouteContext {
     code?: LogCode
     delivered?: number
     failed?: number
+    updatedAt?: TimeStatus
 }
 
 export type RouteHandler = (request: Request, runtime: Runtime, deps: Deps, ctx: RouteContext) => Promise<Response>
@@ -178,7 +182,12 @@ export interface Profile {
     phoneNumber?: string
     name?: string
     picture?: string
+    // Whole seconds since the epoch: when the IdP's state of this profile was current
+    updatedAt?: number
 }
+
+// Why a profile that should have carried a time does not
+export type TimeStatus = 'missing' | 'invalid'
 
 export type EventType = 'user-created' | 'user-updated' | 'user-deleted'
 
@@ -188,4 +197,7 @@ export interface LifecycleEvent {
     subject: string
     uid?: unknown
     profile: Profile
+    // Candidate profile times, most preferred first: numbers converted to seconds but not yet checked, other values
+    // as found. The route takes the first usable one.
+    times?: unknown[]
 }

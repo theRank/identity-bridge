@@ -58,6 +58,12 @@ async function getIdpToken(): Promise<string> {
 `clerk` is the loaded Clerk instance; with a framework SDK, use its own `getToken`. The session token must carry
 the claims [idp-clerk.md](idp-clerk.md#session-token) adds.
 
+After the user changes their own email or phone, call `bridge.clear()` and get the next session token with
+`getToken({ skipCache: true })`, which Clerk mints from its own store
+([Clerk](https://clerk.com/docs/guides/sessions/force-token-refresh)). Otherwise the change can reach the
+backend only by webhook or once Clerk next mints from its store, since Clerk can mint a token by copying the
+claims of the previous one ([idp-clerk.md](idp-clerk.md#session-token)).
+
 ### Casdoor on the web and in apps
 
 The client signs in with the OIDC authorization code flow with PKCE, through any OIDC library, against the
@@ -223,15 +229,16 @@ type Verifier struct {
 }
 
 type Claims struct {
-	Iss    string                     `json:"iss"`
-	Sub    string                     `json:"sub"`
-	Aud    string                     `json:"aud"`
-	Exp    *int64                     `json:"exp"`
-	Iat    *int64                     `json:"iat"`
-	Jti    string                     `json:"jti"`
-	Email  string                     `json:"email"`
-	Name   string                     `json:"name"`
-	Events map[string]json.RawMessage `json:"events"`
+	Iss       string                     `json:"iss"`
+	Sub       string                     `json:"sub"`
+	Aud       string                     `json:"aud"`
+	Exp       *int64                     `json:"exp"`
+	Iat       *int64                     `json:"iat"`
+	Jti       string                     `json:"jti"`
+	Email     string                     `json:"email"`
+	Name      string                     `json:"name"`
+	UpdatedAt *int64                     `json:"updated_at"`
+	Events    map[string]json.RawMessage `json:"events"`
 }
 
 // VerifyAccessToken returns the claims of a valid access token.
@@ -442,8 +449,9 @@ webhook sources that list it ([fan-out](api.md#fan-out)). The body is the event 
 2. **Process each `jti` once.** The same event arrives again whenever the IdP redelivers a webhook, which it
    does after any product's delivery fails. Record the `jti` in the same transaction as the change it causes,
    so a crash between the two cannot apply an event twice or lose it.
-3. **Keep deleted users deleted.** Events carry no sequence: an event an IdP redelivers can arrive after a
-   later one, as Clerk warns ([Clerk](https://clerk.com/docs/guides/development/webhooks/overview)). A late
+3. **Keep deleted users deleted.** Events arrive in no fixed order: an event an IdP redelivers can arrive after
+   a later one, as Clerk warns ([Clerk](https://clerk.com/docs/guides/development/webhooks/overview)). Profiles
+   carry an `updated_at` to order them by ([data rules](#data-rules)); deletions need more. A late
    `user-created` or `user-updated` has its own `jti`, so it passes the check above; on a `user-deleted`, keep
    a tombstone for the id, and skip upserts for ids that have one. Take a lock on the user id first: two events
    for one user can arrive at once, and without it an upsert that found no tombstone can commit after the
@@ -485,9 +493,13 @@ export async function identityEvents(request: Request): Promise<Response> {
         }
         const { rowCount: deleted } = await tx.query('SELECT 1 FROM deleted_users WHERE id = $1', [event.userId])
         if (deleted > 0) return
+        // Keep the newest profile (data rules, below): an older one changes nothing
+        const updatedAt = event.profile.updatedAt === undefined ? null : new Date(event.profile.updatedAt * 1000)
         await tx.query(
-            'INSERT INTO users (id, email, name) VALUES ($1, $2, $3) ON CONFLICT (id) DO UPDATE SET email = $2, name = $3',
-            [event.userId, event.profile.email ?? null, event.profile.name ?? null],
+            `INSERT INTO users (id, email, name, idp_updated_at) VALUES ($1, $2, $3, $4)
+             ON CONFLICT (id) DO UPDATE SET email = $2, name = $3, idp_updated_at = $4
+             WHERE users.idp_updated_at IS NULL OR users.idp_updated_at <= $4`,
+            [event.userId, event.profile.email ?? null, event.profile.name ?? null, updatedAt],
         )
     })
     return new Response(null, { status: 202 })
@@ -505,8 +517,28 @@ request, which is why users are created on first sight, below.
 - **Create users on first sight**, from whichever comes first: an access token or a `user-created` event, unless
   the id has a tombstone (below), checking it under the same lock on the user id as events. Some users produce
   no `user-created` at all.
-- **Refresh profiles from token claims.** Tokens include available email, phone, name and picture fields;
-  email and phone appear only when verified. For Casdoor users this is the only way profile changes arrive.
+- **Refresh profiles from token claims, keeping the newest.** Tokens include available email, phone, name and
+  picture fields; email and phone appear only when verified. For Casdoor users this is the only way profile
+  changes arrive. Tokens from several devices and events in any order all carry profiles, so apply one only if
+  it is not older than the stored one: keep its [`updated_at`](api.md#profile-time) with it, in a column of its
+  own (a table's `updated_at` usually means its last write), and compare. A profile without `updated_at` applies
+  only while none is stored. Then a token issued before the user changed their email, still valid on another
+  device, and a late or redelivered event change nothing:
+
+  ```sql
+  UPDATE users SET email = $2, phone = $3, idp_updated_at = $4
+   WHERE id = $1 AND (idp_updated_at IS NULL OR idp_updated_at <= $4)
+  ```
+
+  With `$4` null, for a profile without `updated_at`, the comparison is unknown, so only a user without a
+  stored time is updated. An equal time applies, so within one second the last profile to arrive wins. Times are
+  whole seconds, and two states of a profile can share one: Clerk users often verify a new address and make it
+  primary within the same second. The later state then still applies, and every token issued after it carries
+  it. A profile from earlier in that second can arrive late and apply too; the next request with a current token
+  writes the latest back, and a stale token has at most `tokenTtlSeconds` to run. Refusing equal times instead
+  would keep whichever came first, possibly the older state, until the IdP's time next moves, which for Clerk
+  takes another change or sign-in. To stop using times, set the stored ones to null before the deployment drops
+  `updatedAt` ([configuration](configuration.md#claim-mapping)).
 - **Keep authorization in the product**, keyed by `sub`. The bridge carries no roles or permissions.
 - **After `user-deleted`**, keep the tombstone: later events for the id change nothing. The bridge does not
   know about the deletion: it still exchanges an IdP token issued before it until that token expires or is too
