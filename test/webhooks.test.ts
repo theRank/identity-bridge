@@ -692,9 +692,9 @@ describe('/webhooks/{source}', () => {
             return { payload: Object.values(payload.events as Doc)[0] as Doc, iat: payload.iat, logs }
         }
 
-        it('gives a Clerk user-updated the time of data.updated_at when the IdP maps updatedAt', async () => {
+        it('gives a Clerk user-updated the time of data.updated_at, in whole seconds, when the IdP maps updatedAt', async () => {
             const { payload, logs } = await deliveredPayload(clerkRequest(clerkUpdated), 'clerk', { edit: timed('clerk') })
-            expect(payload.updated_at).toBe(1794608379.357)
+            expect(payload.updated_at).toBe(1794608379)
             expect(logs).toEqual([line('clerk', 200, { delivered: 1, failed: 0 })])
         })
 
@@ -736,8 +736,20 @@ describe('/webhooks/{source}', () => {
                     delete event.timestamp
                 },
             ],
-            ['missing', (event) => void (event.data.updated_at = null)],
-            ['invalid', (event) => void (event.data.updated_at = '1794608379357')],
+            [
+                'missing',
+                (event) => {
+                    event.data.updated_at = null
+                    delete event.timestamp
+                },
+            ],
+            [
+                'invalid',
+                (event) => {
+                    event.data.updated_at = '1794608379357'
+                    delete event.timestamp
+                },
+            ],
             ['invalid', (event) => void (event.data.updated_at = CLERK_NOW_MS + 61_000)],
         ])('delivers without a time and logs updatedAt %s', async (status, edit) => {
             const request = clerkRequest(await resignClerk(clerkUpdated, { event: edit }))

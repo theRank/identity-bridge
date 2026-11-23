@@ -17,10 +17,12 @@ export function cleanProfile(raw: RawProfile): Profile {
     return profile
 }
 
-// A time later than now would hold products' stored time ahead and make them ignore real updates until then
+// A time later than now would hold products' stored time ahead and make them ignore real updates until then.
+// Whole seconds, like OIDC's updated_at, which products often decode as an integer.
 export function profileTime(value: unknown, nowSec: number, toleranceSec: number): number | undefined {
-    if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return undefined
-    return value <= nowSec + toleranceSec ? value : undefined
+    if (typeof value !== 'number' || !Number.isFinite(value) || value > nowSec + toleranceSec) return undefined
+    const seconds = Math.floor(value)
+    return seconds > 0 ? seconds : undefined
 }
 
 // try rather than URL.parse, which not every edge runtime provides

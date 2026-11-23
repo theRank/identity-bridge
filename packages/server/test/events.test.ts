@@ -72,8 +72,8 @@ describe('verifyEvent', () => {
 
     it('gives a profile updated_at as updatedAt', async () => {
         const { real, verifier } = setup()
-        const token = await resign(keys, await real.eventToken('user.updated'), { claims: { events: { [UPDATED]: { email: ADA.email, updated_at: NOW_SEC - 0.005 } } } })
-        expect(await verifier.verifyEvent(token)).toMatchObject({ profile: { email: ADA.email, updatedAt: NOW_SEC - 0.005 } })
+        const token = await resign(keys, await real.eventToken('user.updated'), { claims: { events: { [UPDATED]: { email: ADA.email, updated_at: NOW_SEC - 5 } } } })
+        expect(await verifier.verifyEvent(token)).toMatchObject({ profile: { email: ADA.email, updatedAt: NOW_SEC - 5 } })
     })
 
     describe('reasons', () => {

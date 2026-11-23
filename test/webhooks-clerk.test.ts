@@ -264,10 +264,21 @@ describe('Clerk webhooks', () => {
             })
 
             it.each([['a string', '1794608377727'], ['null', null], ['an object', {}]])(
-                'passes %s on unchanged, for the route to refuse',
+                'falls back to the event timestamp when data.updated_at is %s',
                 async (_, value) => {
                     const [event] = await parseEdited((event) => {
                         event.data.updated_at = value
+                    })
+                    expect(event!.updatedAt).toBe(1794608377.736)
+                },
+            )
+
+            it.each([['a string', '1794608377727'], ['null', null]])(
+                'passes data.updated_at on unchanged when it is %s and there is no timestamp, for the route to refuse',
+                async (_, value) => {
+                    const [event] = await parseEdited((event) => {
+                        event.data.updated_at = value
+                        delete event.timestamp
                     })
                     expect(event!.updatedAt).toStrictEqual(value)
                 },

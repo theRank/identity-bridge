@@ -199,7 +199,6 @@ describe('profileTime', () => {
 
     it.each([
         ['whole seconds', NOW - 3600],
-        ['fractional seconds', NOW - 0.25],
         ['now', NOW],
         ['a time within the tolerance', NOW + 30],
         ['exactly now plus the tolerance', NOW + TOLERANCE],
@@ -208,8 +207,18 @@ describe('profileTime', () => {
         expect(profileTime(value, NOW, TOLERANCE)).toBe(value)
     })
 
+    // Whole seconds, as OIDC's updated_at, which products often decode as an integer
+    it.each([
+        ['a fraction', NOW - 0.25, NOW - 1],
+        ['a fraction just below a second', NOW - 3600 + 0.999, NOW - 3600],
+        ['a fraction within the tolerance', NOW + TOLERANCE - 0.5, NOW + TOLERANCE - 1],
+    ])('floors %s to whole seconds', (_, value, expected) => {
+        expect(profileTime(value, NOW, TOLERANCE)).toBe(expected)
+    })
+
     it.each([
         ['zero', 0],
+        ['a fraction of the first second, which floors to zero', 0.5],
         ['a negative time', -1],
         ['a time beyond the tolerance', NOW + TOLERANCE + 0.001],
         ['NaN', NaN],
