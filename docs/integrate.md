@@ -493,12 +493,12 @@ export async function identityEvents(request: Request): Promise<Response> {
         }
         const { rowCount: deleted } = await tx.query('SELECT 1 FROM deleted_users WHERE id = $1', [event.userId])
         if (deleted > 0) return
-        // Keep the newest profile (data rules, below): one that is not newer changes nothing
+        // Keep the newest profile (data rules, below): an older one changes nothing
         const updatedAt = event.profile.updatedAt === undefined ? null : new Date(event.profile.updatedAt * 1000)
         await tx.query(
             `INSERT INTO users (id, email, name, idp_updated_at) VALUES ($1, $2, $3, $4)
              ON CONFLICT (id) DO UPDATE SET email = $2, name = $3, idp_updated_at = $4
-             WHERE users.idp_updated_at IS NULL OR users.idp_updated_at < $4`,
+             WHERE users.idp_updated_at IS NULL OR users.idp_updated_at <= $4`,
             [event.userId, event.profile.email ?? null, event.profile.name ?? null, updatedAt],
         )
     })
@@ -520,22 +520,25 @@ request, which is why users are created on first sight, below.
 - **Refresh profiles from token claims, keeping the newest.** Tokens include available email, phone, name and
   picture fields; email and phone appear only when verified. For Casdoor users this is the only way profile
   changes arrive. Tokens from several devices and events in any order all carry profiles, so apply one only if
-  it is newer than the stored one: keep its [`updated_at`](api.md#profile-time) with it, in a column of its own
-  (a table's `updated_at` usually means its last write), and compare. A profile without `updated_at` applies
+  it is not older than the stored one: keep its [`updated_at`](api.md#profile-time) with it, in a column of its
+  own (a table's `updated_at` usually means its last write), and compare. A profile without `updated_at` applies
   only while none is stored. Then a token issued before the user changed their email, still valid on another
   device, and a late or redelivered event change nothing:
 
   ```sql
   UPDATE users SET email = $2, phone = $3, idp_updated_at = $4
-   WHERE id = $1 AND (idp_updated_at IS NULL OR idp_updated_at < $4)
+   WHERE id = $1 AND (idp_updated_at IS NULL OR idp_updated_at <= $4)
   ```
 
   With `$4` null, for a profile without `updated_at`, the comparison is unknown, so only a user without a
-  stored time is updated. An equal time does not apply. Times are whole seconds, so two different profiles can
-  share one, as when a user changes their email within the second a token was issued; keeping the first stops
-  them from replacing each other in turn, and the next newer token or event brings the latest. A redelivery or a
-  second token for the same state changes nothing either way. To stop using times, set the stored ones to null
-  before the deployment drops `updatedAt` ([configuration](configuration.md#claim-mapping)).
+  stored time is updated. An equal time applies, so within one second the last profile to arrive wins. Times are
+  whole seconds, and two states of a profile can share one: Clerk users often verify a new address and make it
+  primary within the same second. The later state then still applies, and every token issued after it carries
+  it. A profile from earlier in that second can arrive late and apply too; the next request with a current token
+  writes the latest back, and a stale token has at most `tokenTtlSeconds` to run. Refusing equal times instead
+  would keep whichever came first, possibly the older state, until the IdP's time next moves, which for Clerk
+  takes another change or sign-in. To stop using times, set the stored ones to null before the deployment drops
+  `updatedAt` ([configuration](configuration.md#claim-mapping)).
 - **Keep authorization in the product**, keyed by `sub`. The bridge carries no roles or permissions.
 - **After `user-deleted`**, keep the tombstone: later events for the id change nothing. The bridge does not
   know about the deletion: it still exchanges an IdP token issued before it until that token expires or is too

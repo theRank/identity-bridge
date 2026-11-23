@@ -115,7 +115,9 @@ refresh: they call [`wx.login`][wx-login] again for a new code.
 
 To keep user ids across a migration to Casdoor, write each user's previous bridge user id into a `Properties`
 key, such as `uid`, select `Properties.uid` as a token field, and configure `"uid": "uid"` in the IdP's claims
-and `"uidField": "uid"` on the webhook source ([user ids](api.md#user-ids)).
+and `"uidField": "uid"` on the webhook source ([user ids](api.md#user-ids)). During the migration the product binds both IdPs, so
+neither may map `updatedAt`: turn [profile times](api.md#profile-time) off first, products clearing their stored
+times, and on again once the product binds Casdoor alone.
 
 - The value must be a canonical UUID, other than all zeros or all `f`. Any other value fails every exchange of
   that user (`bad_uid`).

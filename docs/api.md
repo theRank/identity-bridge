@@ -223,13 +223,16 @@ So for Casdoor it is not a last-update time. Compare it; do not show it as one. 
 different IdPs do not compare, and an IdP can map one only if every product bound to it is bound to no other IdP
 ([configuration](configuration.md#rules)). The bridge floors a fractional value, and leaves it out, without
 failing the exchange, when the mapped claim is absent, is not a positive finite number, or is later than now plus
-the IdP's `clockToleranceSeconds`. Within one second, two different profiles can share a time.
+the IdP's `clockToleranceSeconds`. Within one second, two states of a profile can share a time, so the last to
+arrive wins there.
 [integrate.md](integrate.md#data-rules) shows how a product uses it.
 
 ## User ids
 
 `sub` is the same for a person on every exchange and in every event, and it is stable across IdP migrations
-when the override below is used.
+when the override below is used. During a migration the product binds both IdPs, and neither may then map `updatedAt`
+([configuration](configuration.md#claim-mapping)): turn [profile times](#profile-time) off first, products clearing
+their stored times, and on again once the product binds the new IdP alone.
 
 1. **Override.** If the IdP's mapping names a `uid` claim and the token carries it with a value other than
    `null`, the value MUST be a canonical UUID, of any version, other than the nil UUID (all zeros) and the max

@@ -102,6 +102,10 @@ event, deletions included. Clerk's `user.created` and `user.updated` events carr
 the user's id and, if one is set, `external_id` ([source][clerk-deleted-json]). An override kept in
 `public_metadata` would be missing from the deletion, which would then carry the wrong user id.
 
+During the migration the product binds both IdPs, so neither may map `updatedAt`: turn
+[profile times](api.md#profile-time) off first, products clearing their stored times, and on again once the
+product binds Clerk alone.
+
 ## Webhooks
 
 On the **Webhooks** page of the Clerk Dashboard, select **Add Endpoint** ([setting up][clerk-webhook-setup]):
