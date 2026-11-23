@@ -34,6 +34,8 @@ export interface ClaimMapping {
     phoneVerified: string | true
     name: string
     picture: string
+    // The claim holding when the token's profile was current; set, it also turns on times in the IdP's events
+    updatedAt?: string
 }
 
 export interface ProductConfig {

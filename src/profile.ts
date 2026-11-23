@@ -17,6 +17,12 @@ export function cleanProfile(raw: RawProfile): Profile {
     return profile
 }
 
+// A time later than now would hold products' stored time ahead and make them ignore real updates until then
+export function profileTime(value: unknown, nowSec: number, toleranceSec: number): number | undefined {
+    if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return undefined
+    return value <= nowSec + toleranceSec ? value : undefined
+}
+
 // try rather than URL.parse, which not every edge runtime provides
 function isHttpsUrl(value: string): boolean {
     if (UNSAFE_IN_URL.test(value) || AT_IN_AUTHORITY.test(value)) return false

@@ -21,7 +21,7 @@ const PLAIN_KEY = /^[\w-]{1,64}$/
 const MAX_QUOTED = 64
 
 const ALGORITHMS: readonly IdpAlgorithm[] = ['RS256', 'RS384', 'RS512', 'PS256', 'ES256', 'ES384', 'EdDSA']
-const CLAIM_KEYS = ['clientId', 'uid', 'email', 'emailVerified', 'phone', 'phoneRegion', 'phoneVerified', 'name', 'picture']
+const CLAIM_KEYS = ['clientId', 'uid', 'email', 'emailVerified', 'phone', 'phoneRegion', 'phoneVerified', 'name', 'picture', 'updatedAt']
 
 type Idps = Record<string, IdpConfig>
 type Products = Record<string, ProductConfig>
@@ -105,6 +105,8 @@ function parseClaims(at: At | undefined): ClaimMapping {
         phoneVerified: flag('phoneVerified', 'phone_number_verified'),
         name: name('name', 'name'),
         picture: name('picture', 'picture'),
+        // No default: iat would be wrong for Clerk, and products cannot go back once they store times
+        ...present('updatedAt', claims?.optional('updatedAt')?.nonEmptyString()),
     }
 }
 

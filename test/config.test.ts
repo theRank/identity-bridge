@@ -166,6 +166,7 @@ describe('parseConfig documents', () => {
         expect(Object.keys(config)).toEqual(['issuer', 'tokenTtlSeconds', 'idps', 'products', 'webhookSources'])
         expect(Object.keys(config.idps.idp!.claims)).not.toContain('uid')
         expect(Object.keys(config.idps.idp!.claims)).not.toContain('phoneRegion')
+        expect(Object.keys(config.idps.idp!.claims)).not.toContain('updatedAt')
         expect(Object.keys(config.products.app!)).toEqual(['id', 'idps', 'allowedOrigins'])
         expect(Object.keys(config.products.app!.idps[0]!)).toEqual(['idp'])
     })
@@ -196,6 +197,8 @@ describe('parseConfig documents', () => {
         ],
         ['literal true for both verified flags', 'clerk', (doc) => (doc.idps['clerk-acme'].claims.phoneVerified = true)],
         ['a phone region claim', 'casdoor', (doc) => Object.assign(doc.idps.casdoor.claims, { phone: 'phone', phoneRegion: 'countryCode', phoneVerified: true })],
+        ['an updatedAt claim', 'clerk', (doc) => (doc.idps['clerk-acme'].claims.updatedAt = 'updated_at')],
+        ['iat as the updatedAt claim', 'casdoor', (doc) => (doc.idps.casdoor.claims.updatedAt = 'iat')],
         ['an id of 63 characters', 'minimal', (doc) => (doc.products = { ['a'.repeat(63)]: { idps: [{ idp: 'idp' }] } })],
         ['a one-digit id', 'minimal', (doc) => (doc.products = { '0': { idps: [{ idp: 'idp' }] } })],
         ['capacitor://localhost', 'clerk', (doc) => (doc.products.acme.allowedOrigins = ['capacitor://localhost'])],
@@ -214,12 +217,14 @@ describe('parseConfig documents', () => {
                 doc.idps.casdoor.requiredClaims = { ver: 2, admin: false }
                 doc.idps.casdoor.claims.phoneVerified = true
                 doc.idps.casdoor.claims.phoneRegion = 'countryCode'
+                doc.idps.casdoor.claims.updatedAt = 'iat'
                 doc.products.acme.allowedOrigins = ['capacitor://localhost', 'http://localhost:5173']
             }),
         )
         expect(config.idps.casdoor!.requiredClaims).toEqual({ ver: 2, admin: false })
         expect(config.idps.casdoor!.claims.phoneVerified).toBe(true)
         expect(config.idps.casdoor!.claims.phoneRegion).toBe('countryCode')
+        expect(config.idps.casdoor!.claims.updatedAt).toBe('iat')
         expect(config.products.acme!.allowedOrigins).toEqual(['capacitor://localhost', 'http://localhost:5173'])
     })
 })
@@ -552,6 +557,24 @@ describe('parseConfig field rules', () => {
             'casdoor',
             (doc) => (doc.idps.casdoor.claims.phoneRegion = true),
             'idps.casdoor.claims.phoneRegion: must be a non-empty string',
+        ],
+        [
+            'an empty updatedAt claim',
+            'clerk',
+            (doc) => (doc.idps['clerk-acme'].claims.updatedAt = ''),
+            'idps.clerk-acme.claims.updatedAt: must be a non-empty string',
+        ],
+        [
+            'literal true for the updatedAt claim',
+            'clerk',
+            (doc) => (doc.idps['clerk-acme'].claims.updatedAt = true),
+            'idps.clerk-acme.claims.updatedAt: must be a non-empty string',
+        ],
+        [
+            'a snake_case updatedAt key',
+            'clerk',
+            (doc) => (doc.idps['clerk-acme'].claims.updated_at = 'updated_at'),
+            'idps.clerk-acme.claims.updated_at: unknown key',
         ],
         [
             'a misspelled phoneRegion key',
