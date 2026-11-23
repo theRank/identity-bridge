@@ -28,6 +28,12 @@ export interface BridgeProfile {
     name?: string
     /** An avatar URL. */
     picture?: string
+    /**
+     * When the identity provider's state of this profile was current, in seconds since the epoch, possibly
+     * fractional. Present when the bridge maps a time for the identity provider. Compare it across access tokens and
+     * events to keep the newest profile; it is not meant for display.
+     */
+    updatedAt?: number
 }
 
 /** The user of a verified access token. */
@@ -186,6 +192,8 @@ function profile(claims: Record<string, unknown>): BridgeProfile {
     if (phoneNumber !== undefined) result.phoneNumber = phoneNumber
     if (name !== undefined) result.name = name
     if (picture !== undefined) result.picture = picture
+    const updatedAt = optionalTime(claims.updated_at)
+    if (updatedAt !== undefined) result.updatedAt = updatedAt
     return result
 }
 
@@ -196,6 +204,11 @@ function userId(sub: unknown): string {
 
 function optionalString(value: unknown): string | undefined {
     if (value !== undefined && typeof value !== 'string') throw new InvalidClaims()
+    return value
+}
+
+function optionalTime(value: unknown): number | undefined {
+    if (value !== undefined && (typeof value !== 'number' || !Number.isFinite(value))) throw new InvalidClaims()
     return value
 }
 

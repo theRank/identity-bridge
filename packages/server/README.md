@@ -114,6 +114,7 @@ keeps an event, which never expires, from being accepted as an access token.
 | `phoneNumber` | `string?` | E.164, present only when the identity provider verified it. |
 | `name` | `string?` | Display name. |
 | `picture` | `string?` | Avatar URL. |
+| `updatedAt` | `number?` | When the identity provider's state of this profile was current, in seconds since the epoch, possibly fractional. Present when the deployment maps a time for the identity provider. Keep the profile with the latest `updatedAt` across access tokens and events ([integrate.md](https://github.com/theRank/identity-bridge/blob/main/docs/integrate.md#data-rules)); not meant for display. |
 | `region` | `string?` | The bridge deployment's region label, such as `us`, when it has one. |
 | `expiresAt` | `number` | When the token expires, in seconds since the epoch. |
 
@@ -124,7 +125,7 @@ keeps an event, which never expires, from being accepted as an access token.
 | `jti` | `string` | The event's id, the same on every delivery of the event. |
 | `type` | `'user-created' \| 'user-updated' \| 'user-deleted'` | What happened. |
 | `userId` | `string` | The user's id, as in `BridgeUser`. |
-| `profile` | `{ email?, phoneNumber?, name?, picture? }` | The user's current profile, with the same rules as `BridgeUser`. Empty for `user-deleted`. |
+| `profile` | `{ email?, phoneNumber?, name?, picture?, updatedAt? }` | The user's profile at `updatedAt`, with the same rules as `BridgeUser`. Empty for `user-deleted`. |
 | `issuedAt` | `number` | When the bridge signed the event, in seconds since the epoch. |
 
 ### `BridgeTokenError`
