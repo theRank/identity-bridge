@@ -126,6 +126,14 @@ function parseProduct(at: At, id: string, idps: Idps, allBound: Bound[]): Produc
         const first = bound.findIndex((other) => other.binding.idp === binding.idp)
         if (first !== index) idpAt.fail(`idp ${quote(binding.idp)} is already bound at idps[${first}]`)
     })
+    // A product compares times per user, and ids can be shared across IdPs by the override, but each IdP's time
+    // means something else: Casdoor's is when the token was issued, Clerk's when the user last changed
+    if (bound.length > 1) {
+        for (const { idpAt, binding } of bound) {
+            if (idps[binding.idp]?.claims.updatedAt === undefined) continue
+            idpAt.fail(`idp ${quote(binding.idp)} maps updatedAt, which needs a product bound to it alone: times of different idps cannot be compared`)
+        }
+    }
     allBound.push(...bound)
     return {
         id,
