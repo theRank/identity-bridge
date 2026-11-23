@@ -14,7 +14,7 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { createInterface } from 'node:readline'
 import { setTimeout as sleep } from 'node:timers/promises'
-import { createRemoteJWKSet, jwtVerify, type JWTPayload } from 'jose'
+import { createRemoteJWKSet, decodeJwt, jwtVerify, type JWTPayload } from 'jose'
 
 type Doc = Record<string, any>
 
@@ -150,7 +150,7 @@ async function main(): Promise<void> {
                 issuer,
                 jwksUri: `${issuer}/.well-known/jwks.json`,
                 algorithms: ['RS256'],
-                claims: { uid: 'uid', email: 'email', emailVerified: true, name: 'name', picture: 'picture' },
+                claims: { uid: 'uid', email: 'email', emailVerified: true, name: 'name', picture: 'picture', updatedAt: 'updated_at' },
             },
         },
         products: { [PRODUCT]: { idps: [{ idp: IDP }] } },
@@ -209,6 +209,29 @@ async function main(): Promise<void> {
         const claims = await accessClaims(jwt)
         expect(claims.sub === uid, `sub is ${String(claims.sub)}, not the override ${uid}`)
         expect(typeof claims.email === 'string' && (claims.email as string).startsWith('e2e-olga-'), `email is ${String(claims.email)}`)
+    })
+
+    // Checked only when the instance's session token has the claim (docs/idp-clerk.md), which it may not have yet
+    await check('the access token carries the session token\'s updated_at, in whole seconds, or the bridge logs it missing', async () => {
+        const { jwt, userId } = await sessionToken('Uma', 'Updated')
+        const from = bridgeLines.length
+        const claims = await accessClaims(jwt)
+        const line = await logLine(from)
+        const session = decodeJwt(jwt)
+        if (!Object.hasOwn(session, 'updated_at')) {
+            expect(claims.updated_at === undefined && line.updatedAt === 'missing', `without the claim, updated_at is ${String(claims.updated_at)} and the log says ${String(line.updatedAt)}`)
+            process.stdout.write('     (the session token has no updated_at claim, so its value was not checked)\n')
+            return
+        }
+        const user = await clerk('GET', `/users/${userId}`)
+        const value = session.updated_at
+        // Seconds, not milliseconds: no earlier than the user's creation, no later than now
+        expect(
+            typeof value === 'number' && value >= Math.floor((user.created_at as number) / 1000) && value <= Date.now() / 1000 + 60,
+            `the session token's updated_at is ${String(value)}, not seconds since the user was created`,
+        )
+        expect(claims.updated_at === Math.floor(value), `updated_at is ${String(claims.updated_at)}, not the session token's ${value}`)
+        expect(line.updatedAt === undefined, `the log says updatedAt ${String(line.updatedAt)}`)
     })
 
     await check('a user whose external_id is not a canonical UUID is refused, with no access token', async () => {

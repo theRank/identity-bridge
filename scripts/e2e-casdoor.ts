@@ -20,7 +20,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createInterface } from 'node:readline'
 import { setTimeout as sleep } from 'node:timers/promises'
-import { createRemoteJWKSet, jwtVerify, type JWTPayload } from 'jose'
+import { createRemoteJWKSet, decodeJwt, jwtVerify, type JWTPayload } from 'jose'
 
 type Doc = Record<string, any>
 
@@ -35,6 +35,8 @@ const SMS = 'provider_sms_mock'
 const AVATAR = 'https://img.acme.example/olga.png'
 const TOKEN_EXCHANGE = 'urn:ietf:params:oauth:grant-type:token-exchange'
 const EVENT = 'urn:identity-bridge:event:'
+// Sign-up records fall between this and the end of the run, by Casdoor's clock, which is the host's
+const RUN_STARTED = Math.floor(Date.now() / 1000)
 // docs/api.md, "User ids"
 const USER_ID_NAMESPACE = '95c1f512-a23b-48f7-8328-199bb33cc0b4'
 // Log codes that no request of this run may end with: each means the bridge and Casdoor disagree
@@ -229,7 +231,7 @@ async function main(): Promise<void> {
                 jwksUri: `${idpIssuer}/.well-known/jwks`,
                 algorithms: ['RS256'],
                 requiredClaims: { tokenType: 'access-token' },
-                claims: { uid: 'uid', emailVerified: 'emailVerified', name: 'displayName', picture: 'avatar', phone: 'phone', phoneRegion: 'countryCode', phoneVerified: true },
+                claims: { uid: 'uid', emailVerified: 'emailVerified', name: 'displayName', picture: 'avatar', phone: 'phone', phoneRegion: 'countryCode', phoneVerified: true, updatedAt: 'iat' },
             },
         },
         products: { acme: { idps: [{ idp: 'casdoor', clientIds: [clientId] }], events: { url: eventsUrl } } },
@@ -392,10 +394,16 @@ async function main(): Promise<void> {
     // ------------------------------------------------------------ tokens
 
     let ninaSub = ''
+    let ninaTokenTime = 0
     await check('a user who signed up exchanges their token, for the id derived from Casdoor\'s issuer and user id', async () => {
         ok(await signup('acme', 'nina', { email: 'nina@acme.example' }), 'sign up acme/nina')
         const nina = await stored('nina')
-        const claims = await accessClaims((await tokens('nina')).access_token as string)
+        const casdoorToken = (await tokens('nina')).access_token as string
+        const claims = await accessClaims(casdoorToken)
+        // "updatedAt": "iat": the profile time is when Casdoor issued the token
+        const iat = decodeJwt(casdoorToken).iat
+        expect(claims.updated_at === iat, `updated_at is ${String(claims.updated_at)}, not the Casdoor token's iat ${String(iat)}`)
+        ninaTokenTime = iat!
         const wanted = await derived(nina.id as string)
         expect(claims.sub === wanted, `sub is ${claims.sub}, not ${wanted} of the user id ${String(nina.id)}`)
         expect(claims.idp === 'casdoor' && claims.client_id === 'acme', `idp and client_id are ${String(claims.idp)} and ${String(claims.client_id)}`)
@@ -514,6 +522,20 @@ async function main(): Promise<void> {
         expect(JSON.stringify(events.sort()) === JSON.stringify(expected.sort()), `the events are ${JSON.stringify(events)}, not ${JSON.stringify(expected)}`)
     })
 
+    await check('a sign-up event carries the record time in whole seconds, no later than the user\'s tokens; a deletion none', async () => {
+        for (const token of received) {
+            const { payload } = await jwtVerify(token, bridgeKeys, { issuer: BRIDGE_ISSUER, audience: 'acme', typ: 'secevent+jwt', algorithms: ['ES256'] })
+            const [[type, profile] = ['', {}]] = Object.entries((payload.events ?? {}) as Record<string, Doc>)
+            const time = profile.updated_at
+            if (type.endsWith('user-deleted')) {
+                expect(time === undefined, `a deletion carries updated_at ${String(time)}`)
+                continue
+            }
+            expect(Number.isInteger(time) && (time as number) >= RUN_STARTED - 60 && (time as number) <= Date.now() / 1000 + 60, `${type} has updated_at ${String(time)}`)
+            if (payload.sub === ninaSub) expect((time as number) <= ninaTokenTime, `nina's sign-up at ${String(time)} is later than her token at ${ninaTokenTime}`)
+        }
+    })
+
     await check('the bridge relayed four webhooks and ignored three, and no request ended with a log code of a disagreement', async () => {
         const lines = bridgeLines.map((line) => JSON.parse(line) as Doc)
         const bad = lines.map((line) => line.code as string | undefined).filter((code) => code !== undefined && BAD_CODES.includes(code))
@@ -522,6 +544,8 @@ async function main(): Promise<void> {
         const relayed = webhooks.filter((line) => line.delivered === 1).length
         const ignored = webhooks.filter((line) => line.code === 'ignored').length
         expect(relayed === 4 && ignored === 3, `${relayed} webhooks were relayed and ${ignored} ignored, of ${webhooks.length}`)
+        const untimed = lines.filter((line) => line.updatedAt !== undefined)
+        expect(untimed.length === 0, `requests without a usable time: ${JSON.stringify(untimed)}`)
     })
 }
 
