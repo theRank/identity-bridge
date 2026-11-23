@@ -77,6 +77,7 @@ async function issue(
     }
     const { idp, subject, uid, profile } = verified
     ctx.idp = idp.id
+    if (verified.updatedAtStatus !== undefined) ctx.updatedAt = verified.updatedAtStatus
 
     let userId: string
     try {

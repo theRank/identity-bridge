@@ -57,11 +57,12 @@ function requireIntegerSeconds(nowSec: number): void {
 }
 
 // Members are copied one by one, so nothing else a Profile object holds can become a claim
-function profileClaims(profile: Profile): Record<string, string> {
-    const claims: Record<string, string> = {}
+function profileClaims(profile: Profile): Record<string, string | number> {
+    const claims: Record<string, string | number> = {}
     if (profile.email !== undefined) claims.email = profile.email
     if (profile.phoneNumber !== undefined) claims.phone_number = profile.phoneNumber
     if (profile.name !== undefined) claims.name = profile.name
     if (profile.picture !== undefined) claims.picture = profile.picture
+    if (profile.updatedAt !== undefined) claims.updated_at = profile.updatedAt
     return claims
 }

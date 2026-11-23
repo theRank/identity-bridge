@@ -480,6 +480,56 @@ describe('verifySubjectToken', () => {
         })
     })
 
+    describe('profile time', () => {
+        const mapped = (claim: string) => (doc: Doc) => (doc.idps[Object.keys(doc.idps)[0]!].claims.updatedAt = claim)
+
+        it('reads the mapped claim into the profile', async () => {
+            const { verify } = clerk(mapped('updated_at'))
+            const verified = await verify(await signToken(keys.clerk, clerkClaims({ updated_at: NOW_SEC - 3600 })))
+            expect(verified.profile.updatedAt).toBe(NOW_SEC - 3600)
+            expect(verified).not.toHaveProperty('updatedAtStatus')
+        })
+
+        it('can take the token iat, as for Casdoor', async () => {
+            const { verify } = casdoor(mapped('iat'))
+            const verified = await verify(await signToken(keys.casdoor, casdoorClaims({ iat: NOW_SEC - 20 })))
+            expect(verified.profile.updatedAt).toBe(NOW_SEC - 20)
+        })
+
+        it('reads nothing when the IdP maps no updatedAt, whatever the token carries', async () => {
+            const { verify } = clerk()
+            const verified = await verify(await signToken(keys.clerk, clerkClaims({ updated_at: NOW_SEC - 3600 })))
+            expect(verified.profile).not.toHaveProperty('updatedAt')
+            expect(verified).not.toHaveProperty('updatedAtStatus')
+        })
+
+        it.each([
+            ['absent', undefined, 'missing'],
+            ['null, as Clerk renders an unset shortcode', null, 'missing'],
+            ['a string', String(NOW_SEC - 3600), 'invalid'],
+            ['zero', 0, 'invalid'],
+            ['beyond the clock tolerance', NOW_SEC + 61, 'invalid'],
+        ] as const)('exchanges without a time, reporting it, when the mapped claim is %s', async (_, value, status) => {
+            const { verify } = clerk(mapped('updated_at'))
+            const verified = await verify(await signToken(keys.clerk, clerkClaims({ updated_at: value })))
+            expect(verified.subject).toBe(CLERK_SUB)
+            expect(verified.profile).not.toHaveProperty('updatedAt')
+            expect(verified.updatedAtStatus).toBe(status)
+        })
+
+        it('keeps a time within the clock tolerance', async () => {
+            const { verify } = clerk(mapped('updated_at'))
+            expect((await verify(await signToken(keys.clerk, clerkClaims({ updated_at: NOW_SEC + 60 })))).profile.updatedAt).toBe(NOW_SEC + 60)
+        })
+
+        it('reads only an own member', async () => {
+            const { verify } = clerk(mapped('constructor'))
+            const verified = await verify(await signToken(keys.clerk, clerkClaims()))
+            expect(verified.profile).not.toHaveProperty('updatedAt')
+            expect(verified.updatedAtStatus).toBe('missing')
+        })
+    })
+
     describe('time and subject claims', () => {
         // Clerk's IdP record allows 60 s of clock skew and tokens up to 900 s old
         it.each([

@@ -88,6 +88,7 @@ export interface LogLine {
     source?: string
     delivered?: number
     failed?: number
+    updatedAt?: TimeStatus
 }
 
 export type LogCode =
@@ -133,6 +134,7 @@ export interface RouteContext {
     code?: LogCode
     delivered?: number
     failed?: number
+    updatedAt?: TimeStatus
 }
 
 export type RouteHandler = (request: Request, runtime: Runtime, deps: Deps, ctx: RouteContext) => Promise<Response>
@@ -180,7 +182,12 @@ export interface Profile {
     phoneNumber?: string
     name?: string
     picture?: string
+    // Seconds since the epoch, possibly fractional: when the IdP's state of this profile was current
+    updatedAt?: number
 }
+
+// Why a profile that should have carried a time does not
+export type TimeStatus = 'missing' | 'invalid'
 
 export type EventType = 'user-created' | 'user-updated' | 'user-deleted'
 

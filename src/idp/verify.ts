@@ -1,6 +1,6 @@
 import { decodeJwt, errors, jwtVerify, type JWTPayload } from 'jose'
-import { cleanProfile } from '../profile'
-import type { Config, Deps, IdpBinding, IdpConfig, LogCode, ProductConfig, Profile } from '../types'
+import { cleanProfile, profileTime } from '../profile'
+import type { Config, Deps, IdpBinding, IdpConfig, LogCode, ProductConfig, Profile, TimeStatus } from '../types'
 import { claim, mapClaims } from './claims'
 import { JwksFetchError } from './fetch'
 import { remoteJwks } from './jwks'
@@ -11,6 +11,8 @@ export interface VerifiedSubject {
     // Unchecked until deriveUserId; absent when the token has no mapped uid.
     uid?: unknown
     profile: Profile
+    // Set when the IdP maps updatedAt but the token gave no usable time; the exchange goes on without one
+    updatedAtStatus?: TimeStatus
 }
 
 // The message is the log code alone, so nothing from the token is ever echoed
@@ -46,7 +48,20 @@ export async function verifySubjectToken(token: string, product: ProductConfig, 
     if (typeof subject !== 'string' || subject === '') throw new ExchangeError('missing_claim', idp.id)
     const verified: VerifiedSubject = { idp, subject, profile: cleanProfile(mapped.profile) }
     if (Object.hasOwn(mapped, 'uid')) verified.uid = mapped.uid
+    if (idp.claims.updatedAt !== undefined) addTime(verified, mapped.updatedAt, idp, deps)
     return verified
+}
+
+// A missing time is not an error: while a Clerk rollout settles, edge-minted tokens can still carry the claim set
+// from before it, and refusing them would lock users out
+function addTime(verified: VerifiedSubject, value: unknown, idp: IdpConfig, deps: Deps): void {
+    if (value === undefined || value === null) {
+        verified.updatedAtStatus = 'missing'
+        return
+    }
+    const time = profileTime(value, deps.now() / 1000, idp.clockToleranceSeconds)
+    if (time === undefined) verified.updatedAtStatus = 'invalid'
+    else verified.profile.updatedAt = time
 }
 
 function unverifiedIssuer(token: string): string {

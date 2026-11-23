@@ -203,6 +203,20 @@ describe('/token', () => {
             ])
         })
 
+        it('carries updated_at from the claim the IdP maps', async () => {
+            const { send } = setup('clerk', { edit: (doc) => (doc.idps['clerk-acme'].claims.updatedAt = 'updated_at') })
+            const accessToken = await expectIssued(await send(post(form(await clerkToken({ updated_at: NOW_SEC - 3600 })))))
+            const { payload } = await jwtVerify(accessToken, await bridgeJwks(send), { currentDate: new Date(START_MS) })
+            expect(payload.updated_at).toBe(NOW_SEC - 3600)
+        })
+
+        it('carries no updated_at when the IdP maps none', async () => {
+            const { send } = setup()
+            const accessToken = await expectIssued(await send(post(form(await clerkToken({ updated_at: NOW_SEC - 3600 })))))
+            const { payload } = await jwtVerify(accessToken, await bridgeJwks(send), { currentDate: new Date(START_MS) })
+            expect(payload).not.toHaveProperty('updated_at')
+        })
+
         it('issues a Casdoor user an access token with its uid override as sub', async () => {
             const { send } = setup('casdoor')
             const accessToken = await expectIssued(await send(post(form(await casdoorToken()))))
@@ -709,6 +723,20 @@ describe('/token', () => {
                 line(400, 'bad_signature', { product: 'acme', idp: 'clerk-acme' }),
                 { route: 'token', status: 200, ms: 0, outcome: 'ok', product: 'acme', idp: 'clerk-acme' },
             ])
+        })
+
+        it('reports a mapped updatedAt claim that is missing or invalid, never its value', async () => {
+            const { send, logs } = setup('clerk', { edit: (doc) => (doc.idps['clerk-acme'].claims.updatedAt = 'updated_at') })
+            await expectIssued(await send(post(form(await clerkToken()))))
+            await expectIssued(await send(post(form(await clerkToken({ updated_at: 'yesterday' })))))
+            await expectIssued(await send(post(form(await clerkToken({ updated_at: NOW_SEC - 3600 })))))
+            const ok = { route: 'token', status: 200, ms: 0, outcome: 'ok', product: 'acme', idp: 'clerk-acme' }
+            expect(logs).toEqual([
+                { ...ok, updatedAt: 'missing' },
+                { ...ok, updatedAt: 'invalid' },
+                ok,
+            ])
+            expect(JSON.stringify(logs)).not.toContain('yesterday')
         })
 
         it('never carries a token, a profile value or an id, and no error body echoes the token', async () => {
