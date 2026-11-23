@@ -210,8 +210,8 @@ accept an event as an access token that never expires.
 ### Profile time
 
 `updated_at` lets a product keep the newest profile when access tokens and events arrive out of order, from
-several devices, or redelivered. It is seconds since the epoch, a JSON number that may be fractional, and means
-the IdP's state of the profile was current at that time:
+several devices, or redelivered. It is whole seconds since the epoch, and means the IdP's state of the profile
+was current at that time:
 
 - For Clerk, the user's last update, from the session token claim `{{user.updated_at}}`
   ([setup](idp-clerk.md#session-token)). Not the Clerk token's `iat`: Clerk can mint a token with a new `iat`
@@ -219,10 +219,12 @@ the IdP's state of the profile was current at that time:
 - For Casdoor, the Casdoor token's `iat`. Casdoor reads the user from its store when it issues a token, so the
   profile was current then, and no change happened between its last update and that time.
 
-So for Casdoor it is not a last-update time. Compare it; do not show it as one. The bridge leaves it out,
-without failing the exchange, when the mapped claim is absent, is not a positive finite number, or is later
-than now plus the IdP's `clockToleranceSeconds`. [integrate.md](integrate.md#data-rules) shows how a product
-uses it.
+So for Casdoor it is not a last-update time. Compare it; do not show it as one. For the same reason, times of
+different IdPs do not compare, and an IdP can map one only if every product bound to it is bound to no other IdP
+([configuration](configuration.md#rules)). The bridge floors a fractional value, and leaves it out, without
+failing the exchange, when the mapped claim is absent, is not a positive finite number, or is later than now plus
+the IdP's `clockToleranceSeconds`. Within one second, two different profiles can share a time.
+[integrate.md](integrate.md#data-rules) shows how a product uses it.
 
 ## User ids
 
@@ -413,9 +415,9 @@ Header:
 
 `updated_at` has the access token's meaning ([profile time](#profile-time)) and is compared with it directly. It
 is present when the source's IdP maps `updatedAt`, so that events and tokens carry times together, and when
-the payload gives a valid time: for Clerk, the payload's `data.updated_at`, or its `timestamp` without it; for
-Casdoor, the record's `createdTime`. It comes from the IdP's payload, so a redelivery carries the same time
-however late it arrives, unlike `iat`.
+the payload gives a valid time: for Clerk, the payload's `data.updated_at`, or its `timestamp` when that is not a
+number, both in milliseconds and floored to seconds; for Casdoor, the record's `createdTime`. It comes from the
+IdP's payload, so a redelivery carries the same time however late it arrives, unlike `iat`.
 
 An example payload, for the Clerk source `clerk-acme`, the `svix-id` `msg_2pVYk0Example`, and the user
 `user_2pVYk0Example` of the IdP issuer `https://clerk.acme.example`, without an override:

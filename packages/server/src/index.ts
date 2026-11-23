@@ -29,9 +29,9 @@ export interface BridgeProfile {
     /** An avatar URL. */
     picture?: string
     /**
-     * When the identity provider's state of this profile was current, in seconds since the epoch, possibly
-     * fractional. Present when the bridge maps a time for the identity provider. Compare it across access tokens and
-     * events to keep the newest profile; it is not meant for display.
+     * When the identity provider's state of this profile was current, in whole seconds since the epoch. Present when
+     * the bridge maps a time for the identity provider. Keep the profile with the latest one across access tokens and
+     * events; it is not meant for display.
      */
     updatedAt?: number
 }
@@ -54,7 +54,10 @@ export interface BridgeEvent {
     jti: string
     type: BridgeEventType
     userId: string
-    /** The user's current profile; empty for `user-deleted`. */
+    /**
+     * The user's profile when the event happened, which a late delivery may no longer be: compare its `updatedAt`
+     * before applying it. Empty for `user-deleted`.
+     */
     profile: BridgeProfile
     /** When the bridge signed the event, in seconds since the epoch. */
     issuedAt: number

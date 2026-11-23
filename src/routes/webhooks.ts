@@ -71,8 +71,9 @@ export const webhooksRoute: RouteHandler = async (request, runtime, deps, ctx) =
     return answer(ctx, delivered, failed, failed.length === 0 ? undefined : 'delivery_failed')
 }
 
-// Times are given only when the IdP's tokens carry them too: with timed events and untimed tokens, a product
-// keeping the newest profile would ignore every token after the first event.
+// Times follow the IdP's updatedAt mapping, which also gives its tokens times: with timed events and untimed tokens,
+// a product keeping the newest profile would ignore every token after the first event. For Clerk the tokens also
+// need the session claim, which only the token log line can show missing (docs/idp-clerk.md).
 function withTime(event: LifecycleEvent, idp: IdpConfig, deps: Deps, ctx: RouteContext): LifecycleEvent {
     if (event.type === 'user-deleted') return event
     const { updatedAt } = event

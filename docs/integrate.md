@@ -237,7 +237,7 @@ type Claims struct {
 	Jti       string                     `json:"jti"`
 	Email     string                     `json:"email"`
 	Name      string                     `json:"name"`
-	UpdatedAt *float64                   `json:"updated_at"` // seconds, possibly fractional
+	UpdatedAt *int64                     `json:"updated_at"`
 	Events    map[string]json.RawMessage `json:"events"`
 }
 
@@ -449,8 +449,9 @@ webhook sources that list it ([fan-out](api.md#fan-out)). The body is the event 
 2. **Process each `jti` once.** The same event arrives again whenever the IdP redelivers a webhook, which it
    does after any product's delivery fails. Record the `jti` in the same transaction as the change it causes,
    so a crash between the two cannot apply an event twice or lose it.
-3. **Keep deleted users deleted.** Events carry no sequence: an event an IdP redelivers can arrive after a
-   later one, as Clerk warns ([Clerk](https://clerk.com/docs/guides/development/webhooks/overview)). A late
+3. **Keep deleted users deleted.** Events arrive in no fixed order: an event an IdP redelivers can arrive after
+   a later one, as Clerk warns ([Clerk](https://clerk.com/docs/guides/development/webhooks/overview)). Profiles
+   carry an `updated_at` to order them by ([data rules](#data-rules)); deletions need more. A late
    `user-created` or `user-updated` has its own `jti`, so it passes the check above; on a `user-deleted`, keep
    a tombstone for the id, and skip upserts for ids that have one. Take a lock on the user id first: two events
    for one user can arrive at once, and without it an upsert that found no tombstone can commit after the
@@ -492,12 +493,12 @@ export async function identityEvents(request: Request): Promise<Response> {
         }
         const { rowCount: deleted } = await tx.query('SELECT 1 FROM deleted_users WHERE id = $1', [event.userId])
         if (deleted > 0) return
-        // Keep the newest profile (data rules, below): an older one changes nothing
+        // Keep the newest profile (data rules, below): one that is not newer changes nothing
         const updatedAt = event.profile.updatedAt === undefined ? null : new Date(event.profile.updatedAt * 1000)
         await tx.query(
             `INSERT INTO users (id, email, name, idp_updated_at) VALUES ($1, $2, $3, $4)
              ON CONFLICT (id) DO UPDATE SET email = $2, name = $3, idp_updated_at = $4
-             WHERE users.idp_updated_at IS NULL OR users.idp_updated_at <= $4`,
+             WHERE users.idp_updated_at IS NULL OR users.idp_updated_at < $4`,
             [event.userId, event.profile.email ?? null, event.profile.name ?? null, updatedAt],
         )
     })
@@ -519,20 +520,22 @@ request, which is why users are created on first sight, below.
 - **Refresh profiles from token claims, keeping the newest.** Tokens include available email, phone, name and
   picture fields; email and phone appear only when verified. For Casdoor users this is the only way profile
   changes arrive. Tokens from several devices and events in any order all carry profiles, so apply one only if
-  it is not older than the stored one: keep its [`updated_at`](api.md#profile-time) with it, in a column of its
-  own (a table's `updated_at` usually means its last write), and compare. A profile without `updated_at`
-  applies only while none is stored. Then a token issued before the user changed their email, still valid on
-  another device, and a late or redelivered event change nothing:
+  it is newer than the stored one: keep its [`updated_at`](api.md#profile-time) with it, in a column of its own
+  (a table's `updated_at` usually means its last write), and compare. A profile without `updated_at` applies
+  only while none is stored. Then a token issued before the user changed their email, still valid on another
+  device, and a late or redelivered event change nothing:
 
   ```sql
   UPDATE users SET email = $2, phone = $3, idp_updated_at = $4
-   WHERE id = $1 AND (idp_updated_at IS NULL OR idp_updated_at <= $4)
+   WHERE id = $1 AND (idp_updated_at IS NULL OR idp_updated_at < $4)
   ```
 
   With `$4` null, for a profile without `updated_at`, the comparison is unknown, so only a user without a
-  stored time is updated. Equal times apply, since a redelivery or a second token for the same state carries
-  the same values. To stop using times, set the stored ones to null before the deployment drops `updatedAt`
-  ([configuration](configuration.md#claim-mapping)).
+  stored time is updated. An equal time does not apply. Times are whole seconds, so two different profiles can
+  share one, as when a user changes their email within the second a token was issued; keeping the first stops
+  them from replacing each other in turn, and the next newer token or event brings the latest. A redelivery or a
+  second token for the same state changes nothing either way. To stop using times, set the stored ones to null
+  before the deployment drops `updatedAt` ([configuration](configuration.md#claim-mapping)).
 - **Keep authorization in the product**, keyed by `sub`. The bridge carries no roles or permissions.
 - **After `user-deleted`**, keep the tombstone: later events for the id change nothing. The bridge does not
   know about the deletion: it still exchanges an IdP token issued before it until that token expires or is too

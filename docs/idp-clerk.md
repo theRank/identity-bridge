@@ -64,6 +64,9 @@ bridge maps in the Clerk Dashboard, on the **Sessions** page, under **Customize 
   the other claims, so it always matches them. Every change to a user's email addresses, and every sign-in,
   moves it forward. Without the claim, as in tokens minted before it was added, the token carries no time; the
   bridge logs `"updatedAt": "missing"` and exchanges it anyway.
+- Add the claim here before the bridge maps `updatedAt`. Events take their time from the webhook payload,
+  whatever the session token holds, so with the mapping and without the claim, products that keep the newest
+  profile would ignore every token after the first event and follow webhooks alone.
 - Clerk's session tokens expire after 60 seconds, and `getToken()` returns a valid one, from its cache or newly
   minted ([`getToken()`][clerk-gettoken]), so a token can be up to a minute old. That is far younger than the
   default `maxTokenAgeSeconds` of 900; for Clerk, keep it at 60 or more, although the configuration allows 30.
