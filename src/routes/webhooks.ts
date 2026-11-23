@@ -76,11 +76,13 @@ export const webhooksRoute: RouteHandler = async (request, runtime, deps, ctx) =
 // need the session claim, which only the token log line can show missing (docs/idp-clerk.md).
 function withTime(event: LifecycleEvent, idp: IdpConfig, deps: Deps, ctx: RouteContext): LifecycleEvent {
     if (event.type === 'user-deleted') return event
-    const { updatedAt } = event
-    const time = updatedAt === undefined || updatedAt === null ? undefined : profileTime(updatedAt, deps.now() / 1000, idp.clockToleranceSeconds)
-    if (time !== undefined) return { ...event, profile: { ...event.profile, updatedAt: time } }
+    const given = (event.times ?? []).filter((value) => value !== null)
+    for (const value of given) {
+        const time = profileTime(value, deps.now() / 1000, idp.clockToleranceSeconds)
+        if (time !== undefined) return { ...event, profile: { ...event.profile, updatedAt: time } }
+    }
     // invalid is the more telling of the two, so it wins across the events of one request
-    if (ctx.updatedAt !== 'invalid') ctx.updatedAt = updatedAt === undefined || updatedAt === null ? 'missing' : 'invalid'
+    if (ctx.updatedAt !== 'invalid') ctx.updatedAt = given.length === 0 ? 'missing' : 'invalid'
     return event
 }
 

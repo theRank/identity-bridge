@@ -53,7 +53,7 @@ export const casdoor: WebhookAdapter = {
             if (uid !== undefined) event.uid = uid
         }
         // The server sets the record's time after the sign-up. The user's own times can come from API callers.
-        if (type === 'user-created' && Object.hasOwn(record, 'createdTime')) event.updatedAt = recordTime(own(record, 'createdTime'))
+        if (type === 'user-created' && Object.hasOwn(record, 'createdTime')) event.times = [recordTime(own(record, 'createdTime'))]
         return [event]
     },
 }

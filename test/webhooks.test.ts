@@ -750,13 +750,31 @@ describe('/webhooks/{source}', () => {
                     delete event.timestamp
                 },
             ],
-            ['invalid', (event) => void (event.data.updated_at = CLERK_NOW_MS + 61_000)],
+            [
+                'invalid',
+                (event) => {
+                    event.data.updated_at = CLERK_NOW_MS + 61_000
+                    delete event.timestamp
+                },
+            ],
         ])('delivers without a time and logs updatedAt %s', async (status, edit) => {
             const request = clerkRequest(await resignClerk(clerkUpdated, { event: edit }))
             const { payload, logs } = await deliveredPayload(request, 'clerk', { edit: timed('clerk') })
             expect(payload).not.toHaveProperty('updated_at')
             expect(payload.email).toBe('ada+clerk_test@acme.example')
             expect(logs).toEqual([{ ...line('clerk', 200, { delivered: 1, failed: 0 }), updatedAt: status }])
+        })
+
+        it.each([
+            ['zero', 0],
+            ['negative', -1],
+            ['beyond the clock tolerance', CLERK_NOW_MS + 61_000],
+            ['a string', '1794608379357'],
+        ])('takes the event timestamp when data.updated_at is %s', async (_, value) => {
+            const request = clerkRequest(await resignClerk(clerkUpdated, { event: (event) => (event.data.updated_at = value) }))
+            const { payload, logs } = await deliveredPayload(request, 'clerk', { edit: timed('clerk') })
+            expect(payload.updated_at).toBe(1794608379)
+            expect(logs).toEqual([line('clerk', 200, { delivered: 1, failed: 0 })])
         })
 
         it('keeps a time within the clock tolerance', async () => {

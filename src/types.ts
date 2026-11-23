@@ -182,7 +182,7 @@ export interface Profile {
     phoneNumber?: string
     name?: string
     picture?: string
-    // Seconds since the epoch, possibly fractional: when the IdP's state of this profile was current
+    // Whole seconds since the epoch: when the IdP's state of this profile was current
     updatedAt?: number
 }
 
@@ -197,6 +197,7 @@ export interface LifecycleEvent {
     subject: string
     uid?: unknown
     profile: Profile
-    // Seconds when the payload gave a usable value, else the value as found, for the route to check
-    updatedAt?: unknown
+    // Candidate profile times, most preferred first: numbers converted to seconds but not yet checked, other values
+    // as found. The route takes the first usable one.
+    times?: unknown[]
 }

@@ -144,7 +144,7 @@ describe('Casdoor webhooks', () => {
                         type: 'user-created',
                         subject: '33d91987-4b7e-4c23-8097-01a93c1873aa',
                         profile: { name: 'Nina Signup', picture: PICTURE },
-                        updatedAt: Date.parse('2026-11-13T22:38:07Z') / 1000,
+                        times: [Date.parse('2026-11-13T22:38:07Z') / 1000],
                     },
                 ])
             })
@@ -156,14 +156,14 @@ describe('Casdoor webhooks', () => {
                         type: 'user-created',
                         subject: '7219e2b2-93de-4e9d-9dd2-dc9b73b5f62b',
                         profile: { email: 'gus@globex.example', name: 'Gus Example', picture: PICTURE },
-                        updatedAt: Date.parse('2026-11-13T22:38:09Z') / 1000,
+                        times: [Date.parse('2026-11-13T22:38:09Z') / 1000],
                     },
                 ])
             })
 
             describe('time', () => {
                 it('takes the record createdTime with its offset', () => {
-                    const at = (createdTime: unknown) => parseEdited(newUserSignup, { record: (record) => (record.createdTime = createdTime) })[0]!.updatedAt
+                    const at = (createdTime: unknown) => parseEdited(newUserSignup, { record: (record) => (record.createdTime = createdTime) })[0]!.times?.[0]
                     expect(at('2026-11-14T06:38:07+08:00')).toBe(Date.parse('2026-11-13T22:38:07Z') / 1000)
                     expect(at('2026-11-13T17:38:07-05:00')).toBe(Date.parse('2026-11-13T22:38:07Z') / 1000)
                     expect(at('2026-11-13T22:38:07.250Z')).toBe(Date.parse('2026-11-13T22:38:07Z') / 1000 + 0.25)
@@ -176,7 +176,7 @@ describe('Casdoor webhooks', () => {
                             user.updatedTime = '2030-01-01T00:00:00Z'
                         },
                     })
-                    expect(event!.updatedAt).toBe(Date.parse('2026-11-13T22:38:07Z') / 1000)
+                    expect(event!.times).toStrictEqual([Date.parse('2026-11-13T22:38:07Z') / 1000])
                 })
 
                 it.each([
@@ -188,16 +188,16 @@ describe('Casdoor webhooks', () => {
                     ['null', null],
                 ])('passes %s on unchanged, for the route to refuse', (_, value) => {
                     const [event] = parseEdited(newUserSignup, { record: (record) => (record.createdTime = value) })
-                    expect(event!.updatedAt).toStrictEqual(value)
+                    expect(event!.times).toStrictEqual([value])
                 })
 
                 it('gives no time without a createdTime', () => {
                     const [event] = parseEdited(newUserSignup, { record: (record) => delete record.createdTime })
-                    expect(event).not.toHaveProperty('updatedAt')
+                    expect(event).not.toHaveProperty('times')
                 })
 
                 it('gives a deleted user no time', () => {
-                    expect(parse(deleteByAdmin)[0]).not.toHaveProperty('updatedAt')
+                    expect(parse(deleteByAdmin)[0]).not.toHaveProperty('times')
                 })
             })
 
