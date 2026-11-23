@@ -4,7 +4,7 @@ import { handle } from '../src/app'
 import { parseConfig } from '../src/config'
 import { deriveUserId } from '../src/ids'
 import { importSigningKeys } from '../src/keys'
-import type { Deps, LogCode, LogLine, Runtime, SigningKeys } from '../src/types'
+import type { Deps, LogCode, LogLine, Runtime, SigningKeys, TimeStatus } from '../src/types'
 import { casdoorConfig, clerkConfig } from './helpers/config'
 import { fakeDeps } from './helpers/deps'
 import { fakeFetch, hang, type FetchCall, type Responder } from './helpers/fetch'
@@ -676,6 +676,81 @@ describe('/webhooks/{source}', () => {
                 await expectBody(await send(clerkRequest(clerkCreated)), 200, { delivered: ['acme', 'globex'], failed: [] })
                 expect(vi.getTimerCount()).toBe(0)
             })
+        })
+    })
+
+    describe('profile time', () => {
+        const timed = (deployment: Deployment, claim = deployment === 'clerk' ? 'updated_at' : 'iat') => (doc: Doc) =>
+            (doc.idps[SOURCES[deployment].idp].claims.updatedAt = claim)
+        // After the Casdoor captures, which are later than the Clerk ones the default clock follows
+        const CASDOOR_NOW_MS = Date.parse('2026-11-13T22:38:30Z')
+
+        async function deliveredPayload(request: Request, deployment: Deployment, options: SetupOptions) {
+            const { send, calls, logs } = setup(deployment, options)
+            await expectBody(await send(request), 200, { delivered: ['acme'], failed: [] })
+            const { payload } = await verifyEvent(calls[0]!.body, deployment, 'acme')
+            return { payload: Object.values(payload.events as Doc)[0] as Doc, iat: payload.iat, logs }
+        }
+
+        it('gives a Clerk user-updated the time of data.updated_at when the IdP maps updatedAt', async () => {
+            const { payload, logs } = await deliveredPayload(clerkRequest(clerkUpdated), 'clerk', { edit: timed('clerk') })
+            expect(payload.updated_at).toBe(1794608379.357)
+            expect(logs).toEqual([line('clerk', 200, { delivered: 1, failed: 0 })])
+        })
+
+        it('gives a Casdoor user-created the time of the record', async () => {
+            const { payload } = await deliveredPayload(casdoorRequest(newUserOauthSignup), 'casdoor', {
+                edit: timed('casdoor'),
+                deps: { now: () => CASDOOR_NOW_MS },
+            })
+            expect(payload.updated_at).toBe(Date.parse('2026-11-13T22:38:09Z') / 1000)
+        })
+
+        it('gives no time when the IdP maps no updatedAt, whatever the payload holds', async () => {
+            const { payload, logs } = await deliveredPayload(clerkRequest(clerkUpdated), 'clerk', {})
+            expect(payload).not.toHaveProperty('updated_at')
+            expect(logs).toEqual([line('clerk', 200, { delivered: 1, failed: 0 })])
+        })
+
+        it('keeps user-deleted empty and reports nothing for it', async () => {
+            const { payload, logs } = await deliveredPayload(clerkRequest(clerkDeleted), 'clerk', { edit: timed('clerk') })
+            expect(payload).toStrictEqual({})
+            expect(logs).toEqual([line('clerk', 200, { delivered: 1, failed: 0 })])
+        })
+
+        it('gives a redelivery the same time, though the bridge signs it later', async () => {
+            const options = { edit: timed('clerk') }
+            const first = await deliveredPayload(clerkRequest(clerkUpdated), 'clerk', options)
+            // Svix signs each attempt again, with the attempt's own timestamp and the same svix-id and body
+            const retry = await resignClerk(clerkUpdated, { timestamp: String(Number(clerkUpdated.headers['Svix-Timestamp']) + 86_400) })
+            const later = await deliveredPayload(clerkRequest(retry), 'clerk', { ...options, deps: { now: () => CLERK_NOW_MS + 86_400_000 } })
+            expect(later.iat).toBe(first.iat! + 86_400)
+            expect(later.payload.updated_at).toBe(first.payload.updated_at)
+        })
+
+        it.each<[TimeStatus, (event: Doc) => void]>([
+            [
+                'missing',
+                (event) => {
+                    delete event.data.updated_at
+                    delete event.timestamp
+                },
+            ],
+            ['missing', (event) => void (event.data.updated_at = null)],
+            ['invalid', (event) => void (event.data.updated_at = '1794608379357')],
+            ['invalid', (event) => void (event.data.updated_at = CLERK_NOW_MS + 61_000)],
+        ])('delivers without a time and logs updatedAt %s', async (status, edit) => {
+            const request = clerkRequest(await resignClerk(clerkUpdated, { event: edit }))
+            const { payload, logs } = await deliveredPayload(request, 'clerk', { edit: timed('clerk') })
+            expect(payload).not.toHaveProperty('updated_at')
+            expect(payload.email).toBe('ada+clerk_test@acme.example')
+            expect(logs).toEqual([{ ...line('clerk', 200, { delivered: 1, failed: 0 }), updatedAt: status }])
+        })
+
+        it('keeps a time within the clock tolerance', async () => {
+            const request = clerkRequest(await resignClerk(clerkUpdated, { event: (event) => (event.data.updated_at = CLERK_NOW_MS + 60_000) }))
+            const { payload } = await deliveredPayload(request, 'clerk', { edit: timed('clerk') })
+            expect(payload.updated_at).toBe(NOW_SEC + 60)
         })
     })
 

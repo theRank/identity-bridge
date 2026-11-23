@@ -31,6 +31,8 @@ const GRACE_EMAIL = 'grace+clerk_test@acme.example'
 
 const imageUrl = (fixture: Delivery) => (JSON.parse(fixture.body) as Doc).data.image_url as string
 const timestampOf = (fixture: Delivery) => Number(fixture.headers['Svix-Timestamp'])
+// data.updated_at in seconds, the time the adapter gives a user-created or user-updated
+const updatedAtOf = (fixture: Delivery) => ((JSON.parse(fixture.body) as Doc).data.updated_at as number) / 1000
 
 interface AuthOptions {
     nowMs?: number
@@ -169,6 +171,7 @@ describe('Clerk webhooks', () => {
                     subject: ADA,
                     uid: ADA_UID,
                     profile: { email: ADA_EMAIL, name: 'Bridge Test', picture: imageUrl(created) },
+                    updatedAt: updatedAtOf(created),
                 },
             ])
         })
@@ -181,6 +184,7 @@ describe('Clerk webhooks', () => {
                     subject: ADA,
                     uid: ADA_UID,
                     profile: { email: ADA_EMAIL, name: 'Bridged Test', picture: imageUrl(updated) },
+                    updatedAt: updatedAtOf(updated),
                 },
             ])
         })
@@ -199,6 +203,7 @@ describe('Clerk webhooks', () => {
                     subject: GRACE,
                     uid: null,
                     profile: { email: GRACE_EMAIL, name: 'Bridge Test', picture: imageUrl(createdWithoutExternalId) },
+                    updatedAt: updatedAtOf(createdWithoutExternalId),
                 },
             ])
         })
@@ -232,6 +237,42 @@ describe('Clerk webhooks', () => {
                 ).toStrictEqual([])
             },
         )
+
+        describe('time', () => {
+            it('gives user-created and user-updated the time of data.updated_at, in seconds', () => {
+                expect(parse(created)[0]!.updatedAt).toBe(1794608377.727)
+                expect(parse(updated)[0]!.updatedAt).toBe(1794608379.357)
+            })
+
+            it('falls back to the event timestamp when data.updated_at is absent', async () => {
+                const [event] = await parseEdited((event) => {
+                    delete event.data.updated_at
+                }, updated)
+                expect(event!.updatedAt).toBe(1794608379.358)
+            })
+
+            it('gives a deleted user no time', () => {
+                expect(parse(deleted)[0]).not.toHaveProperty('updatedAt')
+            })
+
+            it('gives no time when neither member is present', async () => {
+                const [event] = await parseEdited((event) => {
+                    delete event.data.updated_at
+                    delete event.timestamp
+                })
+                expect(event).not.toHaveProperty('updatedAt')
+            })
+
+            it.each([['a string', '1794608377727'], ['null', null], ['an object', {}]])(
+                'passes %s on unchanged, for the route to refuse',
+                async (_, value) => {
+                    const [event] = await parseEdited((event) => {
+                        event.data.updated_at = value
+                    })
+                    expect(event!.updatedAt).toStrictEqual(value)
+                },
+            )
+        })
 
         it('ignores an unmapped event before reading its data', async () => {
             expect(

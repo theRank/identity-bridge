@@ -197,4 +197,6 @@ export interface LifecycleEvent {
     subject: string
     uid?: unknown
     profile: Profile
+    // Seconds when the payload gave a usable value, else the value as found, for the route to check
+    updatedAt?: unknown
 }

@@ -1,7 +1,8 @@
 import { empty, json, readBody } from '../http'
 import { BadUidError, deriveUserId, eventId } from '../ids'
+import { profileTime } from '../profile'
 import { mintEventToken } from '../tokens'
-import type { Config, Deps, LifecycleEvent, LogCode, RouteContext, RouteHandler, Runtime, WebhookSourceConfig } from '../types'
+import type { Config, Deps, IdpConfig, LifecycleEvent, LogCode, RouteContext, RouteHandler, Runtime, WebhookSourceConfig } from '../types'
 import { BadPayloadError, type WebhookAdapter } from '../webhooks/adapter'
 import { casdoor } from '../webhooks/casdoor'
 import { clerk } from '../webhooks/clerk'
@@ -57,7 +58,8 @@ export const webhooksRoute: RouteHandler = async (request, runtime, deps, ctx) =
         return answer(ctx, [], [], 'bad_uid')
     }
 
-    const deliveries = await mint(events, userIds, source, runtime, Math.floor(deps.now() / 1000))
+    const timedEvents = idp.claims.updatedAt === undefined ? events : events.map((event) => withTime(event, idp, deps, ctx))
+    const deliveries = await mint(timedEvents, userIds, source, runtime, Math.floor(deps.now() / 1000))
     const errors = await Promise.all(deliveries.map((delivery) => deliver(deps.fetch, delivery)))
     const delivered: string[] = []
     const failed: Failure[] = []
@@ -67,6 +69,18 @@ export const webhooksRoute: RouteHandler = async (request, runtime, deps, ctx) =
         else failed.push({ product, error })
     })
     return answer(ctx, delivered, failed, failed.length === 0 ? undefined : 'delivery_failed')
+}
+
+// Times are given only when the IdP's tokens carry them too: with timed events and untimed tokens, a product
+// keeping the newest profile would ignore every token after the first event.
+function withTime(event: LifecycleEvent, idp: IdpConfig, deps: Deps, ctx: RouteContext): LifecycleEvent {
+    if (event.type === 'user-deleted') return event
+    const { updatedAt } = event
+    const time = updatedAt === undefined || updatedAt === null ? undefined : profileTime(updatedAt, deps.now() / 1000, idp.clockToleranceSeconds)
+    if (time !== undefined) return { ...event, profile: { ...event.profile, updatedAt: time } }
+    // invalid is the more telling of the two, so it wins across the events of one request
+    if (ctx.updatedAt !== 'invalid') ctx.updatedAt = updatedAt === undefined || updatedAt === null ? 'missing' : 'invalid'
+    return event
 }
 
 // Sign all tokens before sending, so signing failures cannot cause a partial fan-out.

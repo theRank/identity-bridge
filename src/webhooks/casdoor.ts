@@ -7,6 +7,8 @@ import { BadPayloadError, isObject, own, parseObject, type JsonObject, type Webh
 // Casdoor formats the outcome itself, not as JSON. ok also covers requests that changed nothing.
 const OK = '{status:"ok"'
 const BEARER = /^bearer +(.+)$/i
+// RFC 3339 as Casdoor writes it: whole seconds and the server's offset; fractions accepted
+const RFC3339 = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d{1,9}))?(Z|[+-]\d{2}:\d{2})$/
 
 // Casdoor does not sign webhooks: the webhook is configured to send the secret as a bearer header
 export const casdoor: WebhookAdapter = {
@@ -50,8 +52,19 @@ export const casdoor: WebhookAdapter = {
             const uid = properties === null ? undefined : own(properties, source.uidField)
             if (uid !== undefined) event.uid = uid
         }
+        // The server sets the record's time after the sign-up. The user's own times can come from API callers.
+        if (type === 'user-created' && Object.hasOwn(record, 'createdTime')) event.updatedAt = recordTime(own(record, 'createdTime'))
         return [event]
     },
+}
+
+// Date.parse is specified for exactly three fraction digits, so the fraction is cut or padded to three first
+function recordTime(value: unknown): unknown {
+    const match = typeof value === 'string' ? RFC3339.exec(value) : null
+    if (match === null) return value
+    const [, dateTime, fraction = '', offset] = match
+    const ms = Date.parse(`${dateTime}.${fraction.slice(0, 3).padEnd(3, '0')}${offset}`)
+    return Number.isFinite(ms) ? ms / 1000 : value
 }
 
 // new-user carries stored data; delete-user carries caller input. Trust deletions only from an organization
