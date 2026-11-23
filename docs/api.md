@@ -81,8 +81,8 @@ grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Atoken-exchange&subject_tok
 6. When the binding lists them: one of the token's client ids (the claim named by `claims.clientId`, `aud` by
    default, a string or an array) is in `clientIds`, and the token's `azp` is in `authorizedParties`.
 7. `sub` is a non-empty string.
-8. The IdP's claims are mapped to a profile ([claim mapping](configuration.md#claim-mapping)) and the user id
-   is derived ([user ids](#user-ids)).
+8. The IdP's claims are mapped to a profile ([claim mapping](configuration.md#claim-mapping)), with its
+   [profile time](#profile-time) when the IdP maps one, and the user id is derived ([user ids](#user-ids)).
 9. The access token is signed and returned. Nothing is stored.
 
 The bridge does not check session or account status at the IdP. Once the IdP stops issuing tokens to a user,
@@ -188,6 +188,7 @@ Header:
 | `phone_number` | if verified and E.164 | Only a verified number in E.164 form. One the IdP stores as a national number and a region is joined first ([Casdoor](idp-casdoor.md#phone-numbers)) |
 | `name` | if present | The display name, trimmed, not empty |
 | `picture` | if present and `https` | The avatar URL as given, without userinfo, spaces, control characters or backslashes |
+| `updated_at` | if the IdP maps `updatedAt` and its value is a valid time | When the IdP's state of the profile claims above, their absence included, was current ([profile time](#profile-time)) |
 
 There is no `email_verified` claim: an `email` present is verified by definition, and so is a `phone_number`.
 The token carries no roles, permissions or groups; authorization stays in each product.
@@ -205,6 +206,23 @@ The token carries no roles, permissions or groups; authorization stays in each p
 The `typ` check is essential. [Event tokens](#event-token) are signed with the same key, name the product as
 `aud` and the user as `sub`, and carry no `exp`; a verifier that skips `typ` and does not require `exp` would
 accept an event as an access token that never expires.
+
+### Profile time
+
+`updated_at` lets a product keep the newest profile when access tokens and events arrive out of order, from
+several devices, or redelivered. It is seconds since the epoch, a JSON number that may be fractional, and means
+the IdP's state of the profile was current at that time:
+
+- For Clerk, the user's last update, from the session token claim `{{user.updated_at}}`
+  ([setup](idp-clerk.md#session-token)). Not the Clerk token's `iat`: Clerk can mint a token with a new `iat`
+  and claims copied from an earlier token.
+- For Casdoor, the Casdoor token's `iat`. Casdoor reads the user from its store when it issues a token, so the
+  profile was current then, and no change happened between its last update and that time.
+
+So for Casdoor it is not a last-update time. Compare it; do not show it as one. The bridge leaves it out,
+without failing the exchange, when the mapped claim is absent, is not a positive finite number, or is later
+than now plus the IdP's `clockToleranceSeconds`. [integrate.md](integrate.md#data-rules) shows how a product
+uses it.
 
 ## User ids
 
@@ -389,9 +407,15 @@ Header:
 
 | Event type URI | Payload |
 |---|---|
-| `urn:identity-bridge:event:user-created` | The profile: `email`, `phone_number`, `name`, `picture`, each only when known and, for email and phone, verified, with the same rules as the access token |
+| `urn:identity-bridge:event:user-created` | The profile: `email`, `phone_number`, `name`, `picture`, each only when known and, for email and phone, verified, with the same rules as the access token; and `updated_at`, below |
 | `urn:identity-bridge:event:user-updated` | The same profile, with current values |
 | `urn:identity-bridge:event:user-deleted` | `{}` |
+
+`updated_at` has the access token's meaning ([profile time](#profile-time)) and is compared with it directly. It
+is present when the source's IdP maps `updatedAt`, so that events and tokens carry times together, and when
+the payload gives a valid time: for Clerk, the payload's `data.updated_at`, or its `timestamp` without it; for
+Casdoor, the record's `createdTime`. It comes from the IdP's payload, so a redelivery carries the same time
+however late it arrives, unlike `iat`.
 
 An example payload, for the Clerk source `clerk-acme`, the `svix-id` `msg_2pVYk0Example`, and the user
 `user_2pVYk0Example` of the IdP issuer `https://clerk.acme.example`, without an override:

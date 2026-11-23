@@ -85,6 +85,12 @@ With `JWT-Custom`, a selected field becomes a claim in camel case, and `Properti
 claim named `<key>` ([source][casdoor-custom-claims]). Fields that are not selected are not in the token.
 Phone numbers take two more fields and a decision: see [Phone numbers](#phone-numbers).
 
+Map `"updatedAt": "iat"` to give tokens and events a [profile time](api.md#profile-time). Casdoor builds each
+token from the user it loads from its store at that moment: when it issues an authorization code
+([source][casdoor-code-user]), which the client exchanges within minutes, and on every refresh
+([source][casdoor-refresh-user]). A token's `iat` is therefore a time at which its profile was current. Do not
+select the user's `UpdatedTime` for it: API callers and syncers can set it, and some writes leave it unchanged.
+
 The IdP record sets `requiredClaims` to `{"tokenType": "access-token"}`. Casdoor's access, refresh and ID
 tokens are all JWTs signed with the same key, with the same `iss`; only `tokenType` tells them apart
 ([source][casdoor-token-types]). Without the check, a client could exchange a refresh token, which lives much
@@ -282,8 +288,8 @@ For most actions a record's `object` is whatever the caller sent. The bridge rel
   Products see a changed profile in the claims of the user's next access token.
 - **Users created without a sign-up flow**: an admin's `add-user`, bulk uploads, LDAP or database syncers, and
   mini program code login. Only the sign-up flows ask for a `new-user` record ([password and code
-  sign-up][casdoor-signup-record], [OAuth sign-up][casdoor-mfa]), so products first see these users in a
-  token.
+  sign-up][casdoor-signup-record], [OAuth sign-up][casdoor-mfa], [magic link sign-up][casdoor-magic-link]),
+  so products first see these users in a token.
 - **Deletions other than an organization admin's `delete-user`**: self-service `delete-own-account`
   ([source][casdoor-delete-own]), global admins (whose records belong to `built-in`), application credentials
   (whose records name an application, not a stored user, so `extendedUser` is `null`;
@@ -300,6 +306,11 @@ OAuth sign-up suppresses it ([source][casdoor-mfa]). `user-deleted` can also fol
 organization that enables it ([source][casdoor-soft-delete]), or a deletion that matched no user, which
 Casdoor answers `ok` too ([source][casdoor-unaffected]). Products therefore create users on first sight, whether
 from an event or a token ([integrate.md](integrate.md#data-rules)).
+
+With `"updatedAt": "iat"` mapped, a `user-created` carries the record's `createdTime` as its `updated_at`. Casdoor
+sets it on the server ([source][casdoor-record-time]) when it records the request, after the sign-up is done
+([source][casdoor-after-request]), and a retry sends the same record.
+The user object's own `createdTime` and `updatedTime` are not used, as API callers can set them.
 
 ## WeChat mini programs
 
@@ -382,6 +393,9 @@ program call only the HTTPS domains listed there, and those domains need ICP fil
 [casdoor-webhook-api]: https://github.com/casdoor/casdoor/blob/3d81f45bc98be0fe379b3a21973c783060066af5/controllers/webhook.go#L71-L125
 [casdoor-worker-start]: https://github.com/casdoor/casdoor/blob/3d81f45bc98be0fe379b3a21973c783060066af5/object/webhook_worker.go#L41-L49
 [casdoor-new-user]: https://github.com/casdoor/casdoor/blob/3d81f45bc98be0fe379b3a21973c783060066af5/routers/record.go#L166-L191
+[casdoor-code-user]: https://github.com/casdoor/casdoor/blob/3d81f45bc98be0fe379b3a21973c783060066af5/object/token_oauth_util.go#L448-L449
+[casdoor-magic-link]: https://github.com/casdoor/casdoor/blob/3d81f45bc98be0fe379b3a21973c783060066af5/controllers/magic_link.go#L188
+[casdoor-record-time]: https://github.com/casdoor/casdoor/blob/3d81f45bc98be0fe379b3a21973c783060066af5/object/record.go#L200-L202
 [casdoor-signup-record]: https://github.com/casdoor/casdoor/blob/3d81f45bc98be0fe379b3a21973c783060066af5/controllers/account.go#L323-L350
 [casdoor-delete-own]: https://github.com/casdoor/casdoor/blob/3d81f45bc98be0fe379b3a21973c783060066af5/routers/router.go#L101
 [casdoor-record-actor]: https://github.com/casdoor/casdoor/blob/3d81f45bc98be0fe379b3a21973c783060066af5/object/record.go#L217-L241

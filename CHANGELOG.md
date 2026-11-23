@@ -24,6 +24,11 @@ breaking change to the [wire contract](docs/api.md) is a new major version of al
 - One JSON configuration document, checked at load, and a failure mode that keeps answering `/healthz` with
   `503` when the configuration, the keys or a webhook secret cannot be loaded.
 - One JSON log line per request, without tokens or personal data.
+- `updated_at` in access tokens and in `user-created` / `user-updated` event profiles, when the IdP maps the new
+  `updatedAt` claim: when the IdP's state of the profile was current, so products keep the newest profile
+  whatever the order tokens and events arrive in. Clerk takes it from the session token claim
+  `{{user.updated_at}}` and the webhook's `data.updated_at`, Casdoor from its token's `iat` and the record's
+  `createdTime`. The log line reports a token or event that should carry one but does not.
 
 ### Runtimes and artifacts
 
@@ -43,7 +48,8 @@ breaking change to the [wire contract](docs/api.md) is a new major version of al
 
 - `@therank/identity-bridge-client`: exchange, in-memory cache, refresh and retries, with a WeChat mini program
   entry point for Casdoor's mini program login.
-- `@therank/identity-bridge-server`: verification of access tokens and events, every check fixed.
+- `@therank/identity-bridge-server`: verification of access tokens and events, every check fixed, with each
+  profile's `updatedAt`.
 
 ### Documentation
 
