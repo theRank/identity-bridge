@@ -1,6 +1,6 @@
 {
     "name": "identity-bridge",
-    "description": "A stateless identity bridge: RFC 8693 token exchange, a JWKS and signed lifecycle events for products",
+    "description": "Stateless identity broker that exchanges Clerk and Casdoor JWTs for its own access tokens and relays user webhooks as signed events",
     "license": "Apache-2.0",
     "repository": {
         "type": "git",

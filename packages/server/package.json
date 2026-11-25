@@ -2,6 +2,13 @@
     "name": "@therank/identity-bridge-server",
     "version": "0.0.0",
     "description": "Server SDK for identity-bridge: verify bridge access tokens and lifecycle events",
+    "keywords": [
+        "clerk",
+        "casdoor",
+        "jwt",
+        "webhooks",
+        "cloudflare-workers"
+    ],
     "license": "Apache-2.0",
     "repository": {
         "type": "git",
